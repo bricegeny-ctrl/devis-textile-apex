@@ -146,8 +146,8 @@ st.sidebar.header("🖼️ Logo de l'entreprise")
 logo_file = st.sidebar.file_uploader("Importer le logo Apex (PNG/JPG)", type=["png", "jpg", "jpeg"])
 
 st.sidebar.markdown("---")
-st.sidebar.header("⚙️ Configuration Gmail (Envoi direct)")
-gmail_password = st.sidebar.text_input("Mot de passe d'application Gmail", type="password", help="Générez un mot de passe d'application depuis votre compte Google (brice.geny@gmail.com)")
+# Récupération automatique et invisible du mot de passe stocké dans les secrets Streamlit Cloud
+gmail_password = st.secrets.get("EMAIL_PASSWORD", "")
 
 noms_onglets = [f"Article {i+1}" for i in range(10)] + ["📊 Général & Devis"]
 onglets = st.tabs(noms_onglets)
