@@ -12,8 +12,9 @@ from reportlab.lib import colors
 
 st.set_page_config(page_title="Gestionnaire de Devis - Marquage Textile", layout="wide")
 
-# --- GESTION DU COMPTEUR DE DEVIS AUTOMATIQUE (Incrémentation stricte) ---
+# --- GESTION DU COMPTEUR DE DEVIS & CRM ---
 COMPTEUR_FILE = "compteur_devis.json"
+CRM_FILE = "crm_devis.csv"
 
 def obtenir_prochain_numero_devis():
     annee_courante = datetime.now().strftime("%Y")
@@ -39,6 +40,18 @@ def obtenir_prochain_numero_devis():
         json.dump({"dernier_num": nouveau_num}, f)
         
     return nouveau_num
+
+def enregistrer_dans_crm(data_devis):
+    df_new = pd.DataFrame([data_devis])
+    if os.path.exists(CRM_FILE):
+        try:
+            df_exist = pd.read_csv(CRM_FILE)
+            df_final = pd.concat([df_exist, df_new], ignore_index=True)
+        except Exception:
+            df_final = df_new
+    else:
+        df_final = df_new
+    df_final.to_csv(CRM_FILE, index=False)
 
 # --- FONCTIONS DE CALCUL DES TARIFS & TRANCHES ---
 
@@ -222,7 +235,7 @@ logo_defaut_github = "Gemini_Generated_Image_mxbmbrmxbmbrmxbm.jpeg"
 if logo_file is None and os.path.exists(logo_defaut_github):
     st.sidebar.image(logo_defaut_github, width=150, caption="Logo actif (GitHub)")
 
-noms_onglets = [f"Article {i+1}" for i in range(10)] + ["📊 Général & Devis"]
+noms_onglets = [f"Article {i+1}" for i in range(10)] + ["📊 Général & Devis", "📈 Suivi CRM"]
 onglets = st.tabs(noms_onglets)
 
 articles_saisis = []
@@ -362,7 +375,7 @@ for art in articles_saisis:
         with onglets[articles_saisis.index(art) if art in articles_saisis else 0]:
             st.markdown(f"### **Sous-total Article HT : {total_ligne_ht:.2f} €**")
 
-# --- ONGLET GÉNÉRAL & DEVIS ---
+# --- ONGLET 10 : GÉNÉRAL & DEVIS ---
 with onglets[10]:
     st.subheader("📊 Récapitulatif Général & Génération du Devis Professionnel")
 
@@ -396,11 +409,30 @@ with onglets[10]:
             st.session_state['dernier_pdf'] = pdf_filename
             st.session_state['dernier_num'] = num_devis
             st.session_state['total_ttc_cache'] = total_ttc
+            st.session_state['total_ht_cache'] = total_general_ht
+
+            # Enregistrement automatique dans le CRM
+            data_crm = {
+                "Date": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                "Numero_Devis": num_devis,
+                "Conseiller": conseiller_nom,
+                "Client": client_nom,
+                "Entreprise": client_entreprise,
+                "Email": client_email,
+                "Telephone": client_contact,
+                "Quantite_Totale": quantite_globale_totale,
+                "Total_HT": round(total_general_ht, 2),
+                "Total_TTC": round(total_ttc, 2),
+                "Statut": "Devis Envoyé"
+            }
+            enregistrer_dans_crm(data_crm)
+            st.success("✅ Données enregistrées dans le CRM avec succès !")
 
         if 'dernier_pdf' in st.session_state:
             pdf_filename = st.session_state['dernier_pdf']
             num_devis = st.session_state['dernier_num']
             total_ttc = st.session_state['total_ttc_cache']
+            total_general_ht = st.session_state['total_ht_cache']
 
             # --- GÉNÉRATION DU PDF PROFESSIONNEL ---
             doc = SimpleDocTemplate(pdf_filename, pagesize=A4, rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)
@@ -599,3 +631,22 @@ Application créée par APEX - Tous droits réservés
                         st.success(f"✅ E-mail envoyé avec succès à {client_email} depuis la boîte de {conseiller_nom} (avec copie à {autre_email}) !")
                     except Exception as e:
                         st.error(f"❌ Erreur lors de l'envoi de l'e-mail : {e}")
+
+# --- ONGLET 11 : SUIVI CRM ---
+with onglets[11]:
+    st.subheader("📈 Tableau de Suivi CRM & Historique des Devis")
+    
+    if os.path.exists(CRM_FILE):
+        df_crm = pd.read_csv(CRM_FILE)
+        st.dataframe(df_crm, use_container_width=True)
+        
+        # Bouton de téléchargement pour ouvrir dans Excel ou Google Sheets
+        csv_data = df_crm.to_csv(index=False).encode('utf-8')
+        st.download_button(
+            label="📥 Télécharger le CRM au format CSV (compatible Excel / Google Sheets)",
+            data=csv_data,
+            file_name=f"crm_apex_devis_{datetime.now().strftime('%Y_%m_%d')}.csv",
+            mime="text/csv"
+        )
+    else:
+        st.info("Aucun devis n'a encore été généré pour l'instant. Les données apparaîtront ici dès que vous créerez votre premier devis.")
