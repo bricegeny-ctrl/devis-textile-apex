@@ -200,16 +200,49 @@ def calculer_frais_port(montant_ht, zone):
         else: return 90.00
     else: return 0.0
 
+# --- CHARGEMENT DU CRM POUR L'AUTO-COMPLÉTION ---
+clients_connus = []
+entreprises_connues = []
+dict_clients = {}
+if os.path.exists(CRM_FILE):
+    try:
+        df_crm_load = pd.read_csv(CRM_FILE)
+        for _, row in df_crm_load.drop_duplicates(subset=["Client"]).iterrows():
+            c_nom = str(row.get("Client", ""))
+            c_ent = str(row.get("Entreprise", ""))
+            if c_nom and c_nom != "nan": clients_connus.append(c_nom)
+            if c_ent and c_ent != "nan": entreprises_connues.append(c_ent)
+            dict_clients[c_nom] = {
+                "entreprise": c_ent,
+                "email": row.get("Email", ""),
+                "telephone": row.get("Telephone", "")
+            }
+    except Exception:
+        pass
+
 # --- INTERFACE ---
 st.title("🖨️ Gestionnaire de Devis - Marquage Textile")
 
 st.sidebar.header("📋 Infos Client & Expédition")
-client_nom = st.sidebar.text_input("Nom de la personne contact (ex: Jean Dupont)")
-client_entreprise = st.sidebar.text_input("Nom de l'Entreprise / Société")
+
+# Recherche / Auto-complétion par nom ou entreprise
+client_entreprise = st.sidebar.text_input("Nom de l'Entreprise / Société", value="")
+client_nom = st.sidebar.text_input("Nom de la personne contact (ex: Jean Dupont)", value="")
+
+# Autocomplétion intelligente si le client existe déjà
+if client_nom in dict_clients and client_nom != "":
+    infos = dict_clients[client_nom]
+    if not client_entreprise: client_entreprise = infos["entreprise"]
+    default_email = infos["email"]
+    default_tel = infos["telephone"]
+else:
+    default_email = ""
+    default_tel = ""
+
 client_adresse = st.sidebar.text_area("Adresse complète du Client")
 client_siret = st.sidebar.text_input("SIRET du Client (optionnel)")
-client_contact = st.sidebar.text_input("Téléphone du Client")
-client_email = st.sidebar.text_input("E-mail du Client")
+client_contact = st.sidebar.text_input("Téléphone du Client", value=default_tel)
+client_email = st.sidebar.text_input("E-mail du Client", value=default_email)
 zone_livraison = st.sidebar.selectbox("Zone de Livraison", ["France Continentale", "Corse, Monaco ou Andorre", "Espace UE", "DOM/TOM et pays hors UE"])
 offrir_port = st.sidebar.checkbox("Offrir les frais de port (0 €)", value=False)
 frais_techniques_dossier = st.sidebar.number_input("Frais techniques de commande (€ HT)", value=19.80)
@@ -638,14 +671,14 @@ Application créée par APEX - Tous droits réservés
                     except Exception as e:
                         st.error(f"❌ Erreur lors de l'envoi de l'e-mail : {e}")
 
-# --- ONGLET 11 : SUIVI CRM (Avec gestion des droits et statuts) ---
+# --- ONGLET 11 : SUIVI CRM INTERACTIF ---
 with onglets[11]:
     st.subheader("📈 Tableau de Suivi CRM & Historique des Devis")
     
     if os.path.exists(CRM_FILE):
         df_crm = pd.read_csv(CRM_FILE)
         
-        # Gestion des accès : Brice Geny et Brice Bugna voient tout, les autres ne voient que leurs devis
+        # Filtrage des rôles
         if conseiller_email not in ["brice.geny@gmail.com", "brice.bugna@gmail.com"]:
             if "Conseiller" in df_crm.columns:
                 df_crm = df_crm[df_crm["Conseiller"] == conseiller_nom]
@@ -654,24 +687,69 @@ with onglets[11]:
             st.success("👑 Accès administrateur global activé (Vue de tous les devis de l'agence).")
 
         if not df_crm.empty:
-            st.markdown("### 📝 Modifier le statut d'un devis")
-            col_m1, col_m2 = st.columns(2)
-            with col_m1:
-                devis_a_modifier = st.selectbox("Sélectionner le N° de Devis à modifier", df_crm["Numero_Devis"].tolist())
-            with col_m2:
-                nouveau_statut = st.selectbox("Nouveau Statut", ["En cours", "Accepté", "Refusé", "Sans suite"])
+            st.markdown("### 🗂️ Liste des devis et gestion des statuts")
             
-            if st.button("Mettre à jour le statut"):
-                mettre_a_jour_statut_crm(devis_a_modifier, nouveau_statut)
-                st.success(f"Statut du devis {devis_a_modifier} mis à jour : **{nouveau_statut}**")
-                st.rerun()
+            # Affichage interactif avec mise en forme
+            edited_df = st.data_editor(
+                df_crm,
+                column_config={
+                    "Statut": st.column_config.SelectboxColumn(
+                        "Statut du Devis",
+                        help="Modifier le statut du devis",
+                        options=["En cours", "Accepté", "Refusé", "Sans suite"],
+                        required=True
+                    ),
+                    "Total_HT": st.column_config.NumberColumn("Total HT (€)", format="%.2f €"),
+                    "Total_TTC": st.column_config.NumberColumn("Total TTC (€)", format="%.2f €"),
+                },
+                disabled=["Date", "Numero_Devis", "Conseiller", "Client", "Entreprise", "Email", "Telephone", "Quantite_Totale"],
+                use_container_width=True,
+                key="crm_editor"
+            )
+
+            # Sauvegarde automatique si les statuts ont été modifiés dans le tableau
+            if not edited_df.equals(df_crm):
+                edited_df.to_csv(CRM_FILE, index=False)
+                st.toast("✅ Statuts mis à jour avec succès !", icon="💾")
 
             st.markdown("---")
-            st.dataframe(df_crm, use_container_width=True)
+            st.markdown("### ⚡ Actions rapides sur un devis")
+            col_act1, col_act2, col_act3 = st.columns(3)
             
+            with col_act1:
+                devis_selectionne = st.selectbox("Sélectionner un devis", df_crm["Numero_Devis"].tolist(), key="select_devis_action")
+            
+            if devis_selectionne:
+                pdf_cible = f"Devis_{devis_selectionne.replace('/', '_')}.pdf"
+                with col_act2:
+                    st.write("")
+                    st.write("")
+                    if os.path.exists(pdf_cible):
+                        with open(pdf_cible, "rb") as pdf_file:
+                            st.download_button(
+                                label="📥 Télécharger le PDF",
+                                data=pdf_file,
+                                file_name=pdf_cible,
+                                mime="application/pdf"
+                            )
+                    else:
+                        st.warning("PDF archivé non trouvé localement.")
+                
+                with col_act3:
+                    st.write("")
+                    st.write("")
+                    if st.button("📋 Dupliquer ce devis pour un autre client"):
+                        # Récupération des données du devis sélectionné pour pré-remplissage rapide
+                        ligne_source = df_crm[df_crm["Numero_Devis"] == devis_selectionne].iloc[0]
+                        st.session_state['duplique_client'] = ligne_source.get("Client", "")
+                        st.session_state['duplique_entreprise'] = ligne_source.get("Entreprise", "")
+                        st.session_state['duplique_email'] = ligne_source.get("Email", "")
+                        st.success("✨ Devis dupliqué ! Remontez sur les onglets articles pour ajuster et générer le nouveau devis.")
+
+            st.markdown("---")
             csv_data = df_crm.to_csv(index=False).encode('utf-8')
             st.download_button(
-                label="📥 Télécharger le CRM au format CSV (compatible Excel / Google Sheets)",
+                label="📥 Exporter tout le CRM au format CSV (compatible Excel / Google Sheets)",
                 data=csv_data,
                 file_name=f"crm_apex_devis_{datetime.now().strftime('%Y_%m_%d')}.csv",
                 mime="text/csv"
