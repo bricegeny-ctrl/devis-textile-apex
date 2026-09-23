@@ -53,6 +53,13 @@ def enregistrer_dans_crm(data_devis):
         df_final = df_new
     df_final.to_csv(CRM_FILE, index=False)
 
+def mettre_a_jour_statut_crm(numero_devis, nouveau_statut):
+    if os.path.exists(CRM_FILE):
+        df = pd.read_csv(CRM_FILE)
+        if "Numero_Devis" in df.columns:
+            df.loc[df["Numero_Devis"] == numero_devis, "Statut"] = nouveau_statut
+            df.to_csv(CRM_FILE, index=False)
+
 # --- FONCTIONS DE CALCUL DES TARIFS & TRANCHES ---
 
 def get_tarif_dtf_fin(qte_globale, emplacement):
@@ -411,7 +418,6 @@ with onglets[10]:
             st.session_state['total_ttc_cache'] = total_ttc
             st.session_state['total_ht_cache'] = total_general_ht
 
-            # Enregistrement automatique dans le CRM
             data_crm = {
                 "Date": datetime.now().strftime("%Y-%m-%d %H:%M"),
                 "Numero_Devis": num_devis,
@@ -423,7 +429,7 @@ with onglets[10]:
                 "Quantite_Totale": quantite_globale_totale,
                 "Total_HT": round(total_general_ht, 2),
                 "Total_TTC": round(total_ttc, 2),
-                "Statut": "Devis Envoyé"
+                "Statut": "En cours"
             }
             enregistrer_dans_crm(data_crm)
             st.success("✅ Données enregistrées dans le CRM avec succès !")
@@ -632,21 +638,45 @@ Application créée par APEX - Tous droits réservés
                     except Exception as e:
                         st.error(f"❌ Erreur lors de l'envoi de l'e-mail : {e}")
 
-# --- ONGLET 11 : SUIVI CRM ---
+# --- ONGLET 11 : SUIVI CRM (Avec gestion des droits et statuts) ---
 with onglets[11]:
     st.subheader("📈 Tableau de Suivi CRM & Historique des Devis")
     
     if os.path.exists(CRM_FILE):
         df_crm = pd.read_csv(CRM_FILE)
-        st.dataframe(df_crm, use_container_width=True)
         
-        # Bouton de téléchargement pour ouvrir dans Excel ou Google Sheets
-        csv_data = df_crm.to_csv(index=False).encode('utf-8')
-        st.download_button(
-            label="📥 Télécharger le CRM au format CSV (compatible Excel / Google Sheets)",
-            data=csv_data,
-            file_name=f"crm_apex_devis_{datetime.now().strftime('%Y_%m_%d')}.csv",
-            mime="text/csv"
-        )
+        # Gestion des accès : Brice Geny et Brice Bugna voient tout, les autres ne voient que leurs devis
+        if conseiller_email not in ["brice.geny@gmail.com", "brice.bugna@gmail.com"]:
+            if "Conseiller" in df_crm.columns:
+                df_crm = df_crm[df_crm["Conseiller"] == conseiller_nom]
+                st.info(f"🔒 Vue restreinte aux devis émis par {conseiller_nom}.")
+        else:
+            st.success("👑 Accès administrateur global activé (Vue de tous les devis de l'agence).")
+
+        if not df_crm.empty:
+            st.markdown("### 📝 Modifier le statut d'un devis")
+            col_m1, col_m2 = st.columns(2)
+            with col_m1:
+                devis_a_modifier = st.selectbox("Sélectionner le N° de Devis à modifier", df_crm["Numero_Devis"].tolist())
+            with col_m2:
+                nouveau_statut = st.selectbox("Nouveau Statut", ["En cours", "Accepté", "Refusé", "Sans suite"])
+            
+            if st.button("Mettre à jour le statut"):
+                mettre_a_jour_statut_crm(devis_a_modifier, nouveau_statut)
+                st.success(f"Statut du devis {devis_a_modifier} mis à jour : **{nouveau_statut}**")
+                st.rerun()
+
+            st.markdown("---")
+            st.dataframe(df_crm, use_container_width=True)
+            
+            csv_data = df_crm.to_csv(index=False).encode('utf-8')
+            st.download_button(
+                label="📥 Télécharger le CRM au format CSV (compatible Excel / Google Sheets)",
+                data=csv_data,
+                file_name=f"crm_apex_devis_{datetime.now().strftime('%Y_%m_%d')}.csv",
+                mime="text/csv"
+            )
+        else:
+            st.info("Aucun devis trouvé pour ce profil.")
     else:
         st.info("Aucun devis n'a encore été généré pour l'instant. Les données apparaîtront ici dès que vous créerez votre premier devis.")
