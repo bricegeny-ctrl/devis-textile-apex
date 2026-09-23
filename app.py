@@ -40,7 +40,7 @@ def obtenir_prochain_numero_devis():
         
     return nouveau_num
 
-# --- FONCTIONS DE CALCUL DES TARIFS ---
+# --- FONCTIONS DE CALCUL DES TARIFS & TRANCHES ---
 
 def get_tarif_dtf_fin(qte_globale, emplacement):
     if qte_globale <= 5: idx = 0
@@ -114,6 +114,53 @@ def get_tarif_broderie(qte_globale, emplacement):
     }
     return tarifs.get(emplacement, [0]*10)[idx]
 
+def get_frais_prog_broderie(qte):
+    if qte <= 1: return 41.00
+    elif qte <= 3: return 41.00
+    elif qte <= 11: return 23.00
+    else: return 0.00
+
+def get_tarif_assurance(qte):
+    if qte <= 11: return 3.08
+    elif qte <= 24: return 2.38
+    elif qte_globale_tranche := qte <= 49: return 1.83 # tranches
+    elif qte <= 49: return 1.83
+    elif qte <= 99: return 1.25
+    elif qte <= 249: return 0.98
+    elif qte <= 499: return 0.70
+    elif qte <= 999: return 0.64
+    elif qte <= 1999: return 0.61
+    else: return 0.55
+
+def get_tarif_ensachage(qte, type_sachet):
+    # Grille sachet T-shirt/Polo vs Veste/Sweat
+    if type_sachet == "Sachet (T-shirt/Polo)":
+        if qte <= 11: return 1.38
+        elif qte <= 24: return 1.24
+        elif qte <= 49: return 1.17
+        elif qte <= 99: return 1.11
+        elif qte <= 249: return 1.08
+        elif qte <= 499: return 1.06
+        elif qte <= 1999: return 1.00
+        else: return 0.98
+    else: # Veste / Sweat
+        if qte <= 11: return 1.75
+        elif qte <= 24: return 1.65
+        elif qte <= 49: return 1.53
+        elif qte <= 99: return 1.43
+        elif qte <= 249: return 1.39
+        elif qte <= 499: return 1.36
+        elif qte <= 1999: return 1.34
+        else: return 1.32
+
+def get_tarif_stockage(qte):
+    if qte < 50: return 0.0
+    elif qte <= 99: return 1.00
+    elif qte <= 249: return 0.56
+    elif qte <= 499: return 0.50
+    elif qte <= 1999: return 0.43
+    else: return 0.30
+
 def calculer_frais_port(montant_ht, zone):
     if montant_ht >= 1500: return 0.0
     if zone in ["France Continentale", "Corse, Monaco ou Andorre"] and montant_ht >= 1000: return 0.0
@@ -152,7 +199,6 @@ st.sidebar.markdown("---")
 st.sidebar.header("🖼️ Logo de l'entreprise")
 logo_file = st.sidebar.file_uploader("Importer un autre logo (PNG/JPG)", type=["png", "jpg", "jpeg"])
 
-# Affichage du logo par défaut dans la barre latérale s'il est présent sur GitHub
 logo_defaut_github = "Gemini_Generated_Image_mxbmbrmxbmbrmxbm.jpeg"
 if logo_file is None and os.path.exists(logo_defaut_github):
     st.sidebar.image(logo_defaut_github, width=150, caption="Logo actif (GitHub)")
@@ -163,7 +209,6 @@ gmail_password = st.secrets.get("EMAIL_PASSWORD", "")
 noms_onglets = [f"Article {i+1}" for i in range(10)] + ["📊 Général & Devis"]
 onglets = st.tabs(noms_onglets)
 
-# --- ÉTAPE 1 : COLLECTE DES DONNÉES BRUTES DE CHAQUE ARTICLE ---
 articles_saisis = []
 
 for i in range(10):
@@ -180,7 +225,7 @@ for i in range(10):
             nb_marquages = st.selectbox(f"Nombre de marquages pour l'article {i+1}", [1, 2, 3, 4], key=f"nb_m_{i}")
 
         marquages_config = []
-        frais_creation_broderie_article = 0.0
+        has_broderie = False
         
         for m in range(nb_marquages):
             st.markdown(f"--- *Marquage {m+1}*")
@@ -196,20 +241,20 @@ for i in range(10):
                     emp = st.selectbox(f"Emplacement M{m+1}", ["Poitrine (9x8 cm)", "Dos D10 (25x10 cm)", "Dos Large D20 (25x20)", "Col/Signature (7x2)", "Casquettes / Bonnets", "Manche (8x5 cm)", "Pantalon / Poche", "+ Perso. Nom (Cœur)"], key=f"emp_b_{i}_{m}")
             
             if t_marq == "Broderie HD":
-                frais_prog = st.number_input(f"Frais de création/punsch broderie M{m+1} (€ HT)", min_value=0.0, value=35.00, key=f"frais_brod_{i}_{m}")
-                frais_creation_broderie_article += frais_prog
+                has_broderie = True
 
             marquages_config.append({"technique": t_marq, "emplacement": emp})
 
         st.markdown("---")
-        st.markdown("**Options & Remise spécifiques à l'article**")
+        st.markdown("**Options & Logistique spécifiques à l'article**")
         oc1, oc2, oc3, oc4 = st.columns(4)
         with oc1:
-            option_ensachage = st.checkbox(f"Ensachage (+0.35€/pce) {i+1}", key=f"ens_{i}")
+            option_ensachage = st.checkbox(f"Ensachage individuel {i+1}", key=f"ens_{i}")
+            type_sachet = st.selectbox(f"Type de sachet {i+1}", ["Sachet (T-shirt/Polo)", "Sachet (Veste/Sweat)"], key=f"tsach_{i}") if option_ensachage else ""
         with oc2:
-            option_assurance = st.checkbox(f"Assurance transport {i+1}", key=f"ass_{i}")
+            option_assurance = st.checkbox(f"Assurance MHC (Garantie) {i+1}", key=f"ass_{i}")
         with oc3:
-            option_stockage = st.checkbox(f"Stockage dédié {i+1}", key=f"stock_{i}")
+            option_stockage = st.checkbox(f"Mise en stockage + picking {i+1}", key=f"stock_{i}")
         with oc4:
             remise_fidelite = st.number_input(f"Réduction fidélité (%) {i+1}", min_value=0.0, max_value=100.0, value=0.0, step=1.0, key=f"rem_{i}")
 
@@ -219,8 +264,9 @@ for i in range(10):
                 "quantite": qte,
                 "prix_vet_unit": prix_vetement_ht,
                 "marquages_config": marquages_config,
-                "frais_creation_broderie": frais_creation_broderie_article,
+                "has_broderie": has_broderie,
                 "option_ensachage": option_ensachage,
+                "type_sachet": type_sachet,
                 "option_assurance": option_assurance,
                 "option_stockage": option_stockage,
                 "remise_fidelite": remise_fidelite
@@ -255,12 +301,17 @@ for art in articles_saisis:
         total_marquage_unit += tarif_m
         marquages_calcules.append({"nom": f"{m['technique']} - {m['emplacement']}", "tarif": tarif_m})
 
-    total_unit_ht = art["prix_vet_unit"] + total_marquage_unit
+    # Calcul des frais de programme broderie selon tranche
+    frais_prog_broderie = get_frais_prog_broderie(qte) if art["has_broderie"] else 0.0
+
+    # Coût unitaire logistique par pièce
+    coût_ensachage_unit = get_tarif_ensachage(qte, art["type_sachet"]) if art["option_ensachage"] else 0.0
+    coût_assurance_unit = get_tarif_assurance(qte) if art["option_assurance"] else 0.0
+    coût_stockage_unit = get_tarif_stockage(qte) if art["option_stockage"] else 0.0
+
+    total_unit_ht = art["prix_vet_unit"] + total_marquage_unit + coût_ensachage_unit + coût_assurance_unit + coût_stockage_unit
     
-    surcout_ensachage_unit = 0.35 if art["option_ensachage"] else 0.0
-    total_unit_ht += surcout_ensachage_unit
-    
-    total_ligne_brut = (total_unit_ht * qte) + art["frais_creation_broderie"]
+    total_ligne_brut = (total_unit_ht * qte) + frais_prog_broderie
     montant_remise = total_ligne_brut * (art["remise_fidelite"] / 100.0)
     total_ligne_ht = total_ligne_brut - montant_remise
     
@@ -269,10 +320,14 @@ for art in articles_saisis:
         "quantite": qte,
         "prix_vet_unit": art["prix_vet_unit"],
         "marquages": marquages_calcules,
-        "frais_creation_broderie": art["frais_creation_broderie"],
+        "frais_prog_broderie": frais_prog_broderie,
         "option_ensachage": art["option_ensachage"],
+        "type_sachet": art["type_sachet"],
+        "coût_ensachage_unit": coût_ensachage_unit,
         "option_assurance": art["option_assurance"],
+        "coût_assurance_unit": coût_assurance_unit,
         "option_stockage": art["option_stockage"],
+        "coût_stockage_unit": coût_stockage_unit,
         "remise_fidelite": art["remise_fidelite"],
         "total_ligne_ht": total_ligne_ht
     })
@@ -332,7 +387,6 @@ with onglets[10]:
             style_right_bold = ParagraphStyle('RightBold', parent=styles['Normal'], fontSize=9, leading=11, fontName='Helvetica-Bold', alignment=2)
             style_right_normal = ParagraphStyle('RightNormal', parent=styles['Normal'], fontSize=9, leading=11, alignment=2)
 
-            # Gestion du logo (priorité à l'upload manuel, sinon utilisation du logo GitHub par défaut)
             logo_path = None
             if logo_file is not None:
                 logo_path = "temp_logo.png"
@@ -350,7 +404,8 @@ with onglets[10]:
             )
             
             if logo_path and os.path.exists(logo_path):
-                img_logo = RLImage(logo_path, width=110, height=45)
+                # Utilisation de preserveAspectRatio=True pour éviter que le logo soit écrasé
+                img_logo = RLImage(logo_path, width=110, height=45, preserveAspectRatio=True, anchor='nw')
                 t_header = Table([[img_logo, header_text]], colWidths=[120, 420])
                 t_header.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'MIDDLE')]))
                 story.append(t_header)
@@ -397,36 +452,37 @@ with onglets[10]:
                         f"{m['tarif']:.2f} €", 
                         f"{m['tarif']*item['quantite']:.2f} €"
                     ])
-                if item['frais_creation_broderie'] > 0:
+                if item['frais_prog_broderie'] > 0:
                     table_data.append([
-                        Paragraph("&nbsp;&nbsp;&bull; Frais de création / punsch broderie", style_cell), 
+                        Paragraph("&nbsp;&nbsp;&bull; Frais de technique & programme Broderie", style_cell), 
                         "1", 
-                        f"{item['frais_creation_broderie']:.2f} €", 
-                        f"{item['frais_creation_broderie']:.2f} €"
+                        f"{item['frais_prog_broderie']:.2f} €", 
+                        f"{item['frais_prog_broderie']:.2f} €"
                     ])
                 if item['option_ensachage']:
                     table_data.append([
-                        Paragraph("&nbsp;&nbsp;&bull; Option : Ensachage individuel", style_cell), 
+                        Paragraph(f"&nbsp;&nbsp;&bull; Option : {item['type_sachet']}", style_cell), 
                         str(item['quantite']), 
-                        "0.35 €", 
-                        f"{0.35*item['quantite']:.2f} €"
+                        f"{item['coût_ensachage_unit']:.2f} €", 
+                        f"{item['coût_ensachage_unit']*item['quantite']:.2f} €"
                     ])
                 if item['option_assurance']:
                     table_data.append([
-                        Paragraph("&nbsp;&nbsp;&bull; Option : Assurance transport renforcée", style_cell), 
-                        "1", 
-                        "Inclus", 
-                        "0.00 €"
+                        Paragraph("&nbsp;&nbsp;&bull; Option : Assurance MHC (Garantie textile)", style_cell), 
+                        str(item['quantite']), 
+                        f"{item['coût_assurance_unit']:.2f} €", 
+                        f"{item['coût_assurance_unit']*item['quantite']:.2f} €"
                     ])
                 if item['option_stockage']:
                     table_data.append([
-                        Paragraph("&nbsp;&nbsp;&bull; Option : Mise en stockage dédiée", style_cell), 
-                        "1", 
-                        "Inclus", 
-                        "0.00 €"
+                        Paragraph("&nbsp;&nbsp;&bull; Option : Mise en stockage + picking", style_cell), 
+                        str(item['quantite']), 
+                        f"{item['coût_stockage_unit']:.2f} €", 
+                        f"{item['coût_stockage_unit']*item['quantite']:.2f} €"
                     ])
                 if item['remise_fidelite'] > 0:
-                    montant_remise_ligne = ( (item['prix_vet_unit']*item['quantite']) + sum([m['tarif']*item['quantite'] for m in item['marquages']]) + item['frais_creation_broderie'] + (0.35*item['quantite'] if item['option_ensachage'] else 0) ) * (item['remise_fidelite']/100.0)
+                    brut_calc = (item['prix_vet_unit']*item['quantite']) + sum([m['tarif']*item['quantite'] for m in item['marquages']]) + item['frais_prog_broderie'] + (item['coût_ensachage_unit']*item['quantite'] if item['option_ensachage'] else 0) + (item['coût_assurance_unit']*item['quantite'] if item['option_assurance'] else 0) + (item['coût_stockage_unit']*item['quantite'] if item['option_stockage'] else 0)
+                    montant_remise_ligne = brut_calc * (item['remise_fidelite']/100.0)
                     table_data.append([
                         Paragraph(f"&nbsp;&nbsp;&bull; <b>Réduction fidélité ({item['remise_fidelite']}%)</b>", style_cell), 
                         "1", 
