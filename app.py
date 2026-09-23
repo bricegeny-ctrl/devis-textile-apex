@@ -184,14 +184,35 @@ def calculer_frais_port(montant_ht, zone):
 st.title("🖨️ Gestionnaire de Devis - Marquage Textile")
 
 st.sidebar.header("📋 Infos Client & Expédition")
-client_nom = st.sidebar.text_input("Nom du Client / Entreprise")
+client_nom = st.sidebar.text_input("Nom de la personne contact (ex: Jean Dupont)")
+client_entreprise = st.sidebar.text_input("Nom de l'Entreprise / Société")
 client_adresse = st.sidebar.text_area("Adresse complète du Client")
 client_siret = st.sidebar.text_input("SIRET du Client (optionnel)")
-client_contact = st.sidebar.text_input("Contact / Téléphone")
+client_contact = st.sidebar.text_input("Téléphone du Client")
 client_email = st.sidebar.text_input("E-mail du Client")
 zone_livraison = st.sidebar.selectbox("Zone de Livraison", ["France Continentale", "Corse, Monaco ou Andorre", "Espace UE", "DOM/TOM et pays hors UE"])
 offrir_port = st.sidebar.checkbox("Offrir les frais de port (0 €)", value=False)
 frais_techniques_dossier = st.sidebar.number_input("Frais techniques de commande (€ HT)", value=19.80)
+
+st.sidebar.markdown("---")
+st.sidebar.header("👤 Conseiller émetteur")
+conseiller_choix = st.sidebar.selectbox(
+    "Envoyer en tant que :", 
+    ["Brice Geny (brice.geny@gmail.com)", "Brice Bugna (brice.bugna@gmail.com)"]
+)
+
+if "Brice Geny" in conseiller_choix:
+    conseiller_nom = "Brice Geny"
+    conseiller_email = "brice.geny@gmail.com"
+    conseiller_tel = "06 32 69 73 28"
+    autre_email = "brice.bugna@gmail.com"
+    gmail_password = st.secrets.get("EMAIL_PASSWORD_GENY", st.secrets.get("EMAIL_PASSWORD", ""))
+else:
+    conseiller_nom = "Brice Bugna"
+    conseiller_email = "brice.bugna@gmail.com"
+    conseiller_tel = "06 29 92 94 74"
+    autre_email = "brice.geny@gmail.com"
+    gmail_password = st.secrets.get("EMAIL_PASSWORD_BUGNA", st.secrets.get("EMAIL_PASSWORD", ""))
 
 st.sidebar.markdown("---")
 st.sidebar.header("🖼️ Logo de l'entreprise")
@@ -200,9 +221,6 @@ logo_file = st.sidebar.file_uploader("Importer un autre logo (PNG/JPG)", type=["
 logo_defaut_github = "Gemini_Generated_Image_mxbmbrmxbmbrmxbm.jpeg"
 if logo_file is None and os.path.exists(logo_defaut_github):
     st.sidebar.image(logo_defaut_github, width=150, caption="Logo actif (GitHub)")
-
-st.sidebar.markdown("---")
-gmail_password = st.secrets.get("EMAIL_PASSWORD", "")
 
 noms_onglets = [f"Article {i+1}" for i in range(10)] + ["📊 Général & Devis"]
 onglets = st.tabs(noms_onglets)
@@ -213,7 +231,6 @@ for i in range(10):
     with onglets[i]:
         st.subheader(f"Configuration de l'Article {i+1}")
         
-        # Option vêtement sans marquage (fourniture seule)
         sans_marquage = st.checkbox(f"Vêtement sans marquage (fourniture seule) {i+1}", key=f"sans_marq_{i}")
         
         col1, col2 = st.columns(2)
@@ -413,16 +430,7 @@ with onglets[10]:
             )
             
             if logo_path and os.path.exists(logo_path):
-                # Correction proportionnelle du logo : largeur 110, hauteur automatique (laissée à None) pour éviter l'effet écrasé
                 img_logo = RLImage(logo_path, width=110, height=45)
-                # Astuce pour forcer le ratio sans écrasement sous ReportLab
-                img_logo.hAlign = 'LEFT'
-                try:
-                    img_logo.drawWidth = 110
-                    img_logo.drawHeight = 45 # Ajusté pour ne pas étirer l'image
-                except Exception:
-                    pass
-
                 t_header = Table([[img_logo, header_text]], colWidths=[120, 420])
                 t_header.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'MIDDLE')]))
                 story.append(t_header)
@@ -435,8 +443,9 @@ with onglets[10]:
 
             siret_txt = f"<br/>SIRET : {client_siret}" if client_siret else ""
             contact_txt = f"<br/>Contact : {client_contact}" if client_contact else ""
-            client_info_text = f"<b>CLIENT / DESTINATAIRE :</b><br/><b>{client_nom or 'Client'}</b><br/>{client_adresse.replace(chr(10), '<br/>')}{siret_txt}{contact_txt}<br/>Email : {client_email}"
-            order_info_text = f"<b>DÉTAILS DE LA COMMANDE :</b><br/>Quantité globale : {quantite_globale_totale} pièces<br/>Délai estimé : 8 à 10 jours ouvrés<br/>Conseiller : Brice Geny"
+            nom_aff_client = f"<b>{client_entreprise}</b><br/>À l'attention de : {client_nom}" if client_entreprise else f"<b>{client_nom or 'Client'}</b>"
+            client_info_text = f"<b>CLIENT / DESTINATAIRE :</b><br/>{nom_aff_client}<br/>{client_adresse.replace(chr(10), '<br/>')}{siret_txt}{contact_txt}<br/>Email : {client_email}"
+            order_info_text = f"<b>DÉTAILS DE LA COMMANDE :</b><br/>Quantité globale : {quantite_globale_totale} pièces<br/>Délai estimé : 8 à 10 jours ouvrés<br/>Conseiller : {conseiller_nom}"
             
             t_info = Table([[Paragraph(client_info_text, style_cell), Paragraph(order_info_text, style_cell)]], colWidths=[270, 270])
             t_info.setStyle(TableStyle([
@@ -546,20 +555,20 @@ with onglets[10]:
             st.success(f"Devis PDF professionnel généré sous le numéro : **{num_devis}** (`{pdf_filename}`)")
 
             # --- ENVOI DIRECT GMAIL ---
-            st.markdown("### ✉️ Envoi direct par E-mail (via brice.geny@gmail.com)")
+            st.markdown(f"### ✉️ Envoi direct par E-mail (via {conseiller_email})")
             
             if st.button("🚀 Envoyer le devis par e-mail maintenant"):
                 if not client_email:
                     st.error("Veuillez renseigner l'e-mail du client dans la barre latérale.")
                 elif not gmail_password:
-                    st.error("Veuillez renseigner votre mot de passe d'application Gmail dans les secrets Streamlit Cloud.")
+                    st.error(f"Veuillez renseigner le mot de passe d'application Gmail pour {conseiller_email} dans les secrets Streamlit Cloud.")
                 else:
                     try:
                         msg = EmailMessage()
                         msg['Subject'] = f"Devis {num_devis} - Marquage Textile"
-                        msg['From'] = "brice.geny@gmail.com"
+                        msg['From'] = conseiller_email
                         msg['To'] = client_email
-                        msg['Cc'] = "brice.geny@gmail.com"
+                        msg['Cc'] = autre_email
                         
                         corps_mail = f"""Bonjour {client_nom or 'Client'},
 
@@ -568,7 +577,13 @@ Veuillez trouver ci-joint votre devis n° {num_devis} d'un montant total de {tot
 Restant à votre disposition pour toute information complémentaire.
 
 Cordialement,
-Brice Geny
+{conseiller_nom}
+APEX BUSINESS & COM
+Tél : {conseiller_tel}
+Email : {conseiller_email}
+
+---
+Application créée par APEX - Tous droits réservés
 """
                         msg.set_content(corps_mail)
 
@@ -578,9 +593,9 @@ Brice Geny
                         msg.add_attachment(file_data, maintype='application', subtype='pdf', filename=file_name)
 
                         with smtplib.SMTP_SSL('smtp.gmail.com', 465) as smtp:
-                            smtp.login("brice.geny@gmail.com", gmail_password)
+                            smtp.login(conseiller_email, gmail_password)
                             smtp.send_message(msg)
                         
-                        st.success(f"✅ E-mail envoyé avec succès à {client_email} (avec copie à vous-même) !")
+                        st.success(f"✅ E-mail envoyé avec succès à {client_email} depuis la boîte de {conseiller_nom} (avec copie à {autre_email}) !")
                     except Exception as e:
                         st.error(f"❌ Erreur lors de l'envoi de l'e-mail : {e}")
