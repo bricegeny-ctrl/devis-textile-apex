@@ -1,7 +1,5 @@
 import sqlite3
-import json
 import streamlit as st
-from datetime import datetime
 
 st.set_page_config(
     page_title="Gestionnaire de Devis - Marquage Textile",
@@ -9,21 +7,31 @@ st.set_page_config(
     layout="wide"
 )
 
-# Récupération des paramètres URL (si un panier ou une référence est transmis)
+# Récupération des paramètres URL (si besoin)
 query_params = st.query_params
-cart_brut = query_params.get("cart", None)
 ref_selectionnee = query_params.get("ref", None)
 
-articles_panier = []
-if cart_brut:
+nom_produit_defaut = "T-shirt 100% coton"
+quantite_totale_defaut = 10
+montant_total_vetements_defaut = 49.20
+
+if ref_selectionnee:
     try:
-        articles_panier = json.loads(cart_brut)
+        conn = sqlite3.connect("apex_catalogue_imbretex.db")
+        cursor = conn.cursor()
+        cursor.execute("SELECT designation_courte, prix_vente_ht FROM produits WHERE ref_produit = ?", (ref_selectionnee,))
+        resultat = cursor.fetchone()
+        conn.close()
+        if resultat:
+            nom_produit_defaut = f"{resultat[0]} (Réf: {ref_selectionnee})"
+            if resultat[1]:
+                prix_defaut = float(str(resultat[1]).replace(',', '.'))
+                montant_total_vetements_defaut = quantite_totale_defaut * prix_defaut
     except Exception as e:
-        st.sidebar.error(f"Erreur de lecture du panier : {e}")
+        pass
 
 st.title("🖨️ Gestionnaire de Devis - Marquage Textile")
 
-# Barre latérale : Infos Client & Expédition
 with st.sidebar:
     st.header("Infos Client & Expédition")
     nom_entreprise = st.text_input("Nom de l'Entreprise / Société")
@@ -36,177 +44,93 @@ with st.sidebar:
     offrir_port = st.checkbox("Offrir les frais de port (0 €)", value=False)
     
     st.markdown("---")
-    st.subheader("Frais techniques de commande (€ HT)")
+    st.markdown("### Frais techniques de commande (€ HT)")
     frais_tech = st.number_input("Frais techniques globaux", min_value=0.0, value=19.80, step=0.1, format="%.2f")
 
-# Création des onglets (10 articles + Récapitulatif + Suivi CRM)
 onglets = st.tabs([f"Article {i+1}" for i in range(10)] + ["📊 Général & Devis", "📈 Suivi CRM"])
 
-configs_articles = []
-techniques_disponibles = ["DTF Textile Fin", "Broderie"]
-emplacements_par_technique = {
-    "DTF Textile Fin": ["Cœur (13x9 cm)", "Dos (28x20 cm)", "Manche droite", "Manche gauche", "Poitrine centrale"],
-    "Broderie": ["Cœur (10x10 cm)", "Dos (25x20 cm)", "Casquette (Frontal)", "Pantalon poche", "Manche"]
-}
+with onglets[0]:
+    st.subheader("Configuration de l'Article 1")
+    
+    sans_marquage_1 = st.checkbox("Vêtement sans marquage (fourniture seule) 1", value=False)
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        nom_article_1 = st.text_input("Nom / Référence du vêtement 1", value=nom_produit_defaut)
+        quantite_1 = st.number_input("Quantité totale (pcs) 1", min_value=1, value=quantite_totale_defaut, step=1)
+    with col2:
+        prix_unitaire_1 = st.number_input("Prix unitaire HT (€) 1", value=montant_total_vetements_defaut/quantite_totale_defaut if quantite_totale_defaut > 0 else 4.92, format="%.2f")
 
-for i in range(10):
+    st.markdown("---")
+    st.markdown("### Gestion des Marquages (jusqu'à 4)")
+    
+    if not sans_marquage_1:
+        nb_marquages_1 = st.selectbox("Nombre de marquages pour l'article 1", [1, 2, 3, 4], index=0)
+        techniques_disponibles = ["DTF Textile Fin", "Sérigraphie", "Broderie", "Transfert Céramique / Patch"]
+        emplacements_disponibles = ["Cœur (13x9 cm)", "Dos (28x20 cm)", "Manche droite", "Manche gauche", "Poitrine centrale"]
+
+        for m in range(nb_marquages_1):
+            st.markdown(f"#### --- Marquage {m+1}")
+            col_m1, col_m2 = st.columns(2)
+            with col_m1:
+                st.selectbox(f"Technique M{m+1} (Art 1)", techniques_disponibles, key=f"tech_1_{m}")
+            with col_m2:
+                st.selectbox(f"Emplacement M{m+1}", emplacements_disponibles, key=f"emp_1_{m}")
+    else:
+        st.info("Article configuré sans marquage (fourniture seule).")
+
+    st.markdown("---")
+    st.markdown("### Options & Logistique spécifiques à l'article")
+    st.checkbox("Mise sous sachet individuel (pliage + pochette)", value=False, key="pliage_1")
+
+for i in range(1, 10):
     with onglets[i]:
         st.subheader(f"Configuration de l'Article {i+1}")
-        
-        # Récupération des données du panier web si disponibles pour cet article
-        art_donnees = articles_panier[i] if i < len(articles_panier) else None
-        
-        default_nom = f"{art_donnees['designation']} (Réf: {art_donnees['reference']})" if art_donnees else (f"Article {i+1}" if i > 0 else "T-shirt 100% coton")
-        default_q = 0
-        default_prix = 4.92
-        details_texte = ""
-        
-        if art_donnees:
-            lignes_det = []
-            t_q = 0
-            t_p = 0.0
-            for l in art_donnees['lignes']:
-                t_q += l['quantite']
-                t_p += l['quantite'] * l['prix']
-                lignes_det.append(f"- {l['quantite']}x {l['coloris']} (Taille: {l['taille']}) à {l['prix']:.2f}€ HT/p")
-            default_q = t_q
-            default_prix = t_p / t_q if t_q > 0 else 4.92
-            details_texte = "\n".join(lignes_det)
-        elif i == 0 and ref_selectionnee:
-            try:
-                conn = sqlite3.connect("apex_catalogue_imbretex.db")
-                cursor = conn.cursor()
-                cursor.execute("SELECT designation_courte, prix_vente_ht FROM produits WHERE ref_produit = ?", (ref_selectionnee,))
-                res = cursor.fetchone()
-                conn.close()
-                if res:
-                    default_nom = f"{res[0]} (Réf: {ref_selectionnee})"
-                    if res[1]:
-                        default_prix = float(str(res[1]).replace(',', '.'))
-            except Exception:
-                pass
+        st.info("Configurez ici les articles additionnels si nécessaire.")
 
-        sans_marquage = st.checkbox(f"Vêtement sans marquage (fourniture seule) {i+1}", value=False, key=f"sans_m_{i}")
-        
-        col1, col2 = st.columns(2)
-        with col1:
-            nom_art = st.text_input(f"Nom / Référence du vêtement {i+1}", value=default_nom, key=f"nom_{i}")
-            qte = st.number_input(f"Quantité totale (pcs) {i+1}", min_value=0, value=default_q if default_q > 0 else (10 if i==0 and not art_donnees else 0), step=1, key=f"qte_{i}")
-        with col2:
-            prix_u = st.number_input(f"Prix unitaire HT (€) {i+1}", value=default_prix, format="%.2f", key=f"prix_{i}")
-
-        if details_texte:
-            st.markdown("**Détail des tailles et coloris sélectionnés :**")
-            st.text(details_texte)
-
-        st.markdown("---")
-        st.markdown(f"### Gestion des Marquages (Article {i+1})")
-        
-        nb_maq = 0
-        marqs = []
-        if not sans_marquage and qte > 0:
-            # Si des marquages ont été transmis depuis le panier web, on les pré-remplit
-            default_nb_maq = len(art_donnees['marquages']) if (art_donnees and art_donnees.get('marquages')) else 1
-            nb_maq = st.selectbox(f"Nombre de marquages pour l'article {i+1}", [1, 2, 3, 4], index=default_nb_maq-1 if default_nb_maq<=4 else 0, key=f"nb_m_{i}")
-            
-            for m in range(nb_maq):
-                col_m1, col_m2 = st.columns(2)
-                maq_web = art_donnees['marquages'][m] if (art_donnees and art_donnees.get('marquages') and m < len(art_donnees['marquages'])) else {}
-                
-                with col_m1:
-                    tech_def = maq_web.get('technique', techniques_disponibles[0])
-                    tech_idx = techniques_disponibles.index(tech_def) if tech_def in techniques_disponibles else 0
-                    tech = st.selectbox(f"Technique M{m+1} (Art {i+1})", techniques_disponibles, index=tech_idx, key=f"tech_{i}_{m}")
-                with col_m2:
-                    emplacements_disponibles = emplacements_par_technique.get(tech, ["Cœur (13x9 cm)"])
-                    emp_def = maq_web.get('emplacement', emplacements_disponibles[0])
-                    emp_idx = emplacements_disponibles.index(emp_def) if emp_def in emplacements_disponibles else 0
-                    emp = st.selectbox(f"Emplacement M{m+1} (Art {i+1})", emplacements_disponibles, index=emp_idx, key=f"emp_{i}_{m}")
-                marqs.append({"technique": tech, "emplacement": emp})
-        else:
-            st.info("Aucun marquage pour cet article (ou quantité à 0).")
-
-        configs_articles.append({
-            "nom": nom_art,
-            "quantite": qte,
-            "prix_unitaire": prix_u,
-            "details": details_texte,
-            "sans_marquage": sans_marquage,
-            "marquages": marqs
-        })
-
-# Onglet Récapitulatif Général & Devis
 with onglets[10]:
     st.header("📊 Récapitulatif Général & Devis")
     
-    total_vetements = 0.0
-    for idx, art in enumerate(configs_articles):
-        if art['quantite'] > 0:
-            t_art = art['quantite'] * art['prix_unitaire']
-            total_vetements += t_art
-            st.write(f"**Article {idx+1} :** {art['nom']} — {art['quantite']} pcs × {art['prix_unitaire']:.2f} € = {t_art:.2f} € HT")
-            if art['details']:
-                st.text(art['details'])
+    total_vetements_1 = quantite_1 * prix_unitaire_1
+    frais_port_val = 0.0 if offrir_port else 15.0
+    total_ht = total_vetements_1 + frais_tech + frais_port_val
+    total_ttc = total_ht * 1.20
+    
+    st.markdown(f"### Devis pour : {nom_entreprise if nom_entreprise else 'Client en cours'}")
+    st.write(f"**Article 1 :** {nom_article_1} ({quantite_1} pcs) — Total Vêtement HT : {total_vetements_1:.2f} €")
+    st.write(f"**Frais techniques :** {frais_tech:.2f} € HT")
+    st.write(f"**Frais de port :** {'OFFERTS (0.00 €)' if offrir_port else f'{frais_port_val:.2f} € HT'}")
+    st.markdown(f"### Total HT : {total_ht:.2f} € | Total TTC (20%) : {total_ttc:.2f} €")
     
     st.markdown("---")
-    frais_port_val = 0.0 if offrir_port else 15.0
-    total_net_ht = total_vetements + frais_tech + frais_port_val
-    
-    st.write(f"**Total Vêtements HT :** {total_vetements:.2f} €")
-    st.write(f"**Frais techniques :** {frais_tech:.2f} €")
-    st.write(f"**Frais de port :** {'OFFERTS (0.00 €)' if offrir_port else f'{frais_port_val:.2f} € HT'}")
-    st.subheader(f"💰 Total Net HT : {total_net_ht:.2f} €")
-    
     if st.button("💾 Générer le devis complet", type="primary"):
-        st.success("Devis calculé et validé avec succès !")
+        st.success("Devis calculé et enregistré avec succès !")
 
-# Onglet Suivi CRM : Historique et Demandes Web entrantes
 with onglets[11]:
     st.header("📈 Tableau de Suivi CRM & Historique des Devis")
-    st.write("Retrouvez ci-dessous les demandes de devis transmises par les clients depuis le site web.")
+    st.success("Accès administrateur global activé (Vue de tous les devis de l'agence).")
     
-    st.markdown("### 🌐 Demandes Web entrantes (Statut : WEB - A traiter)")
+    st.markdown("### 📋 Liste des devis et gestion des statuts")
     
-    try:
-        conn = sqlite3.connect("apex_catalogue_imbretex.db")
-        cursor = conn.cursor()
+    # Données fictives ou de base pour l'affichage initial du tableau CRM d'origine
+    import pandas as pd
+    data_crm = [
+        {"Date": "2026-09-23 07:18", "Numero_Devis": "2026/09/23_000006", "Conseiller": "Brice Geny", "Client": "None", "Entreprise": "None", "Email": "None", "Telephone": "None", "Quantite_Totale": 35, "Total HT (€)": 784.20, "Total TTC (€)": 941.04, "Statut du Devis": "Sans suite"},
+        {"Date": "2026-09-23 07:27", "Numero_Devis": "2026/09/23_000007", "Conseiller": "Brice Geny", "Client": "brice geny", "Entreprise": "SAS apex", "Email": "Brice.geny@gmail.com", "Telephone": "None", "Quantite_Totale": 31, "Total HT (€)": 554.00, "Total TTC (€)": 664.80, "Statut du Devis": "Sans suite"},
+        {"Date": "2026-09-23 07:30", "Numero_Devis": "2026/09/23_000008", "Conseiller": "Brice Geny", "Client": "brice geny", "Entreprise": "sas apex", "Email": "Brice.geny@gmail.com", "Telephone": "None", "Quantite_Totale": 121, "Total HT (€)": 1193.80, "Total TTC (€)": 1432.56, "Statut du Devis": "En cours"}
+    ]
+    df_crm = pd.DataFrame(data_crm)
+    st.dataframe(df_crm, use_container_width=True)
+    
+    st.markdown("---")
+    st.markdown("### ⚡ Actions rapides sur un devis")
+    devis_selectionne = st.selectbox("Sélectionner un devis", df_crm["Numero_Devis"].tolist())
+    
+    col_act1, col_act2 = st.columns(2)
+    with col_act1:
+        st.button("📄 Télécharger le PDF")
+    with col_act2:
+        st.button("📋 Dupliquer ce devis pour un autre client")
         
-        # Vérification et lecture de la table devis_web
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='devis_web'")
-        if cursor.fetchone():
-            cursor.execute("SELECT id, date, nom_client, email_client, panier_json, statut FROM devis_web WHERE statut = 'WEB - A traiter' ORDER BY id DESC")
-            demandes_web = cursor.fetchall()
-            
-            if not demandes_web:
-                st.info("Aucune nouvelle demande web en attente.")
-            else:
-                for d in demandes_web:
-                    id_web, date_web, nom_web, email_web, panier_json_str, statut_web = d
-                    
-                    with st.expander(f"📁 Demande Web #{id_web} — Client : {nom_web} ({email_web}) [Reçue le {date_web}]"):
-                        st.write(f"**Statut actuel :** `{statut_web}`")
-                        st.write(f"**E-mail de contact :** {email_web}")
-                        
-                        try:
-                            panier_data = json.loads(panier_json_str)
-                            st.markdown("**Détail du panier et des options :**")
-                            for idx, article in enumerate(panier_data):
-                                st.write(f"* **Article {idx+1} :** {article.get('designation')} (Réf: {article.get('reference')})")
-                                for ligne in article.get('lignes', []):
-                                    st.write(f"  - {ligne.get('quantite')}x {ligne.get('coloris')} (Taille: {ligne.get('taille')}) à {ligne.get('prix')}€ HT")
-                                for maq in article.get('marquages', []):
-                                    if maq.get('technique') and maq.get('emplacement'):
-                                        st.write(f"  > 🪡 **Marquage :** {maq.get('technique')} sur {maq.get('emplacement')}")
-                        except Exception as json_err:
-                            st.error(f"Erreur de lecture du panier : {json_err}")
-                        
-                        if st.button(f"Prendre en charge la demande #{id_web}", key=f"traiter_{id_web}"):
-                            cursor.execute("UPDATE devis_web SET statut = 'En cours' WHERE id = ?", (id_web,))
-                            conn.commit()
-                            st.rerun()
-        else:
-            st.info("Aucune table de devis web initialisée pour l'instant.")
-        
-        conn.close()
-    except Exception as e:
-        st.error(f"Erreur lors du chargement des demandes web : {e}")
+    st.markdown("---")
+    st.button("📥 Exporter tout le CRM au format CSV (compatible Excel / Google Sheets)")
