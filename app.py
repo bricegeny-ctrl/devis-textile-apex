@@ -405,7 +405,7 @@ with onglets[10]:
             
             if logo_path and os.path.exists(logo_path):
                 # Utilisation de preserveAspectRatio=True pour éviter que le logo soit écrasé
-                img_logo = RLImage(logo_path, width=110, height=45, preserveAspectRatio=True, anchor='nw')
+                img_logo = RLImage(logo_path, width=110, height=45)
                 t_header = Table([[img_logo, header_text]], colWidths=[120, 420])
                 t_header.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'MIDDLE')]))
                 story.append(t_header)
