@@ -12,28 +12,35 @@ from reportlab.lib import colors
 
 st.set_page_config(page_title="Gestionnaire de Devis - Marquage Textile", layout="wide")
 
-# --- GESTION DU COMPTEUR DE DEVIS AUTOMATIQUE ---
+# --- GESTION DU COMPTEUR DE DEVIS AUTOMATIQUE (Incrémentation stricte) ---
 COMPTEUR_FILE = "compteur_devis.json"
 
 def obtenir_prochain_numero_devis():
-    date_jour = datetime.now().strftime("%Y_%m_%d")
-    data = {"date": date_jour, "seq": 1}
+    annee_courante = datetime.now().strftime("%Y")
+    mois_courant = datetime.now().strftime("%m")
+    jour_courant = datetime.now().strftime("%d")
     
+    seq = 1
     if os.path.exists(COMPTEUR_FILE):
         try:
             with open(COMPTEUR_FILE, "r") as f:
                 saved_data = json.load(f)
-                if saved_data.get("date") == date_jour:
-                    data["seq"] = saved_data.get("seq", 0) + 1
+                dernier_num = saved_data.get("dernier_num", "")
+                if "_" in dernier_num:
+                    parts = dernier_num.split("_")
+                    if len(parts) > 1 and parts[1].isdigit():
+                        seq = int(parts[1]) + 1
         except Exception:
-            pass
-            
-    with open(COMPTEUR_FILE, "w") as f:
-        json.dump(data, f)
-        
-    return f"{datetime.now().strftime('%Y/%m/%d')}_{data['seq']:06d}"
+            seq = 1
 
-# --- FONCTIONS DE CALCUL DES TARIFS (AVEC QUANTITÉ GLOBALE) ---
+    nouveau_num = f"{annee_courante}/{mois_courant}/{jour_courant}_{seq:06d}"
+    
+    with open(COMPTEUR_FILE, "w") as f:
+        json.dump({"dernier_num": nouveau_num}, f)
+        
+    return nouveau_num
+
+# --- FONCTIONS DE CALCUL DES TARIFS ---
 
 def get_tarif_dtf_fin(qte_globale, emplacement):
     if qte_globale <= 5: idx = 0
@@ -143,10 +150,14 @@ frais_techniques_dossier = st.sidebar.number_input("Frais techniques de commande
 
 st.sidebar.markdown("---")
 st.sidebar.header("🖼️ Logo de l'entreprise")
-logo_file = st.sidebar.file_uploader("Importer le logo Apex (PNG/JPG)", type=["png", "jpg", "jpeg"])
+logo_file = st.sidebar.file_uploader("Importer un autre logo (PNG/JPG)", type=["png", "jpg", "jpeg"])
+
+# Affichage du logo par défaut dans la barre latérale s'il est présent sur GitHub
+logo_defaut_github = "Gemini_Generated_Image_mxbmbrmxbmbrmxbm.jpeg"
+if logo_file is None and os.path.exists(logo_defaut_github):
+    st.sidebar.image(logo_defaut_github, width=150, caption="Logo actif (GitHub)")
 
 st.sidebar.markdown("---")
-# Récupération automatique et invisible du mot de passe stocké dans les secrets Streamlit Cloud
 gmail_password = st.secrets.get("EMAIL_PASSWORD", "")
 
 noms_onglets = [f"Article {i+1}" for i in range(10)] + ["📊 Général & Devis"]
@@ -169,6 +180,8 @@ for i in range(10):
             nb_marquages = st.selectbox(f"Nombre de marquages pour l'article {i+1}", [1, 2, 3, 4], key=f"nb_m_{i}")
 
         marquages_config = []
+        frais_creation_broderie_article = 0.0
+        
         for m in range(nb_marquages):
             st.markdown(f"--- *Marquage {m+1}*")
             mc1, mc2 = st.columns(2)
@@ -182,14 +195,35 @@ for i in range(10):
                 else:
                     emp = st.selectbox(f"Emplacement M{m+1}", ["Poitrine (9x8 cm)", "Dos D10 (25x10 cm)", "Dos Large D20 (25x20)", "Col/Signature (7x2)", "Casquettes / Bonnets", "Manche (8x5 cm)", "Pantalon / Poche", "+ Perso. Nom (Cœur)"], key=f"emp_b_{i}_{m}")
             
+            if t_marq == "Broderie HD":
+                frais_prog = st.number_input(f"Frais de création/punsch broderie M{m+1} (€ HT)", min_value=0.0, value=35.00, key=f"frais_brod_{i}_{m}")
+                frais_creation_broderie_article += frais_prog
+
             marquages_config.append({"technique": t_marq, "emplacement": emp})
+
+        st.markdown("---")
+        st.markdown("**Options & Remise spécifiques à l'article**")
+        oc1, oc2, oc3, oc4 = st.columns(4)
+        with oc1:
+            option_ensachage = st.checkbox(f"Ensachage (+0.35€/pce) {i+1}", key=f"ens_{i}")
+        with oc2:
+            option_assurance = st.checkbox(f"Assurance transport {i+1}", key=f"ass_{i}")
+        with oc3:
+            option_stockage = st.checkbox(f"Stockage dédié {i+1}", key=f"stock_{i}")
+        with oc4:
+            remise_fidelite = st.number_input(f"Réduction fidélité (%) {i+1}", min_value=0.0, max_value=100.0, value=0.0, step=1.0, key=f"rem_{i}")
 
         if qte > 0:
             articles_saisis.append({
                 "nom_article": nom_article,
                 "quantite": qte,
                 "prix_vet_unit": prix_vetement_ht,
-                "marquages_config": marquages_config
+                "marquages_config": marquages_config,
+                "frais_creation_broderie": frais_creation_broderie_article,
+                "option_ensachage": option_ensachage,
+                "option_assurance": option_assurance,
+                "option_stockage": option_stockage,
+                "remise_fidelite": remise_fidelite
             })
 
 # --- ÉTAPE 2 : CALCUL DES QUANTITÉS GLOBALES PAR MARQUAGE POUR TARIFICATION DÉGRESSIVE ---
@@ -222,15 +256,30 @@ for art in articles_saisis:
         marquages_calcules.append({"nom": f"{m['technique']} - {m['emplacement']}", "tarif": tarif_m})
 
     total_unit_ht = art["prix_vet_unit"] + total_marquage_unit
-    total_ligne_ht = total_unit_ht * qte
+    
+    surcout_ensachage_unit = 0.35 if art["option_ensachage"] else 0.0
+    total_unit_ht += surcout_ensachage_unit
+    
+    total_ligne_brut = (total_unit_ht * qte) + art["frais_creation_broderie"]
+    montant_remise = total_ligne_brut * (art["remise_fidelite"] / 100.0)
+    total_ligne_ht = total_ligne_brut - montant_remise
     
     lignes_devis_global.append({
         "nom_article": art["nom_article"],
         "quantite": qte,
         "prix_vet_unit": art["prix_vet_unit"],
         "marquages": marquages_calcules,
+        "frais_creation_broderie": art["frais_creation_broderie"],
+        "option_ensachage": art["option_ensachage"],
+        "option_assurance": art["option_assurance"],
+        "option_stockage": art["option_stockage"],
+        "remise_fidelite": art["remise_fidelite"],
         "total_ligne_ht": total_ligne_ht
     })
+
+    if qte > 0:
+        with onglets[articles_saisis.index(art) if art in articles_saisis else 0]:
+            st.markdown(f"### **Sous-total Article HT : {total_ligne_ht:.2f} €**")
 
 # --- ONGLET GÉNÉRAL & DEVIS ---
 with onglets[10]:
@@ -283,23 +332,15 @@ with onglets[10]:
             style_right_bold = ParagraphStyle('RightBold', parent=styles['Normal'], fontSize=9, leading=11, fontName='Helvetica-Bold', alignment=2)
             style_right_normal = ParagraphStyle('RightNormal', parent=styles['Normal'], fontSize=9, leading=11, alignment=2)
 
+            # Gestion du logo (priorité à l'upload manuel, sinon utilisation du logo GitHub par défaut)
             logo_path = None
             if logo_file is not None:
                 logo_path = "temp_logo.png"
                 with open(logo_path, "wb") as f:
                     f.write(logo_file.getbuffer())
-            else:
-                # Logo par défaut intégré s'il n'est pas uploadé
-                logo_path = "logo_apex.png"
-                if not os.path.exists(logo_path):
-                    # Création d'une image de secours propre si le fichier physique n'est pas là
-                    from PIL import Image as PILImage, ImageDraw
-                    img_secours = PILImage.new('RGB', (300, 120), color=(240, 240, 240))
-                    d = ImageDraw.Draw(img_secours)
-                    d.text((20, 40), "APEX Business & COM", fill=(200, 30, 30))
-                    img_secours.save(logo_path)
+            elif os.path.exists(logo_defaut_github):
+                logo_path = logo_defaut_github
 
-            # En-tête avec téléphones sur une ligne et e-mail en dessous
             header_text = Paragraph(
                 "<b>APEX BUSINESS & COM - SOLUTIONS TEXTILE & MARQUAGE</b><br/>"
                 "70 - Marnay<br/>"
@@ -356,6 +397,42 @@ with onglets[10]:
                         f"{m['tarif']:.2f} €", 
                         f"{m['tarif']*item['quantite']:.2f} €"
                     ])
+                if item['frais_creation_broderie'] > 0:
+                    table_data.append([
+                        Paragraph("&nbsp;&nbsp;&bull; Frais de création / punsch broderie", style_cell), 
+                        "1", 
+                        f"{item['frais_creation_broderie']:.2f} €", 
+                        f"{item['frais_creation_broderie']:.2f} €"
+                    ])
+                if item['option_ensachage']:
+                    table_data.append([
+                        Paragraph("&nbsp;&nbsp;&bull; Option : Ensachage individuel", style_cell), 
+                        str(item['quantite']), 
+                        "0.35 €", 
+                        f"{0.35*item['quantite']:.2f} €"
+                    ])
+                if item['option_assurance']:
+                    table_data.append([
+                        Paragraph("&nbsp;&nbsp;&bull; Option : Assurance transport renforcée", style_cell), 
+                        "1", 
+                        "Inclus", 
+                        "0.00 €"
+                    ])
+                if item['option_stockage']:
+                    table_data.append([
+                        Paragraph("&nbsp;&nbsp;&bull; Option : Mise en stockage dédiée", style_cell), 
+                        "1", 
+                        "Inclus", 
+                        "0.00 €"
+                    ])
+                if item['remise_fidelite'] > 0:
+                    montant_remise_ligne = ( (item['prix_vet_unit']*item['quantite']) + sum([m['tarif']*item['quantite'] for m in item['marquages']]) + item['frais_creation_broderie'] + (0.35*item['quantite'] if item['option_ensachage'] else 0) ) * (item['remise_fidelite']/100.0)
+                    table_data.append([
+                        Paragraph(f"&nbsp;&nbsp;&bull; <b>Réduction fidélité ({item['remise_fidelite']}%)</b>", style_cell), 
+                        "1", 
+                        "-", 
+                        f"-{montant_remise_ligne:.2f} €"
+                    ])
 
             table_data.append([Paragraph("Frais techniques de dossier", style_cell), "1", f"{frais_techniques_dossier:.2f} €", f"{frais_techniques_dossier:.2f} €"])
             if frais_port > 0 or offrir_port:
@@ -401,7 +478,7 @@ with onglets[10]:
                 if not client_email:
                     st.error("Veuillez renseigner l'e-mail du client dans la barre latérale.")
                 elif not gmail_password:
-                    st.error("Veuillez renseigner votre mot de passe d'application Gmail dans la barre latérale.")
+                    st.error("Veuillez renseigner votre mot de passe d'application Gmail dans les secrets Streamlit Cloud.")
                 else:
                     try:
                         msg = EmailMessage()
