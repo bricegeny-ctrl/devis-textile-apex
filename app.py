@@ -123,7 +123,6 @@ def get_frais_prog_broderie(qte):
 def get_tarif_assurance(qte):
     if qte <= 11: return 3.08
     elif qte <= 24: return 2.38
-    elif qte_globale_tranche := qte <= 49: return 1.83 # tranches
     elif qte <= 49: return 1.83
     elif qte <= 99: return 1.25
     elif qte <= 249: return 0.98
@@ -133,7 +132,6 @@ def get_tarif_assurance(qte):
     else: return 0.55
 
 def get_tarif_ensachage(qte, type_sachet):
-    # Grille sachet T-shirt/Polo vs Veste/Sweat
     if type_sachet == "Sachet (T-shirt/Polo)":
         if qte <= 11: return 1.38
         elif qte <= 24: return 1.24
@@ -143,7 +141,7 @@ def get_tarif_ensachage(qte, type_sachet):
         elif qte <= 499: return 1.06
         elif qte <= 1999: return 1.00
         else: return 0.98
-    else: # Veste / Sweat
+    else:
         if qte <= 11: return 1.75
         elif qte <= 24: return 1.65
         elif qte <= 49: return 1.53
@@ -214,6 +212,10 @@ articles_saisis = []
 for i in range(10):
     with onglets[i]:
         st.subheader(f"Configuration de l'Article {i+1}")
+        
+        # Option vêtement sans marquage (fourniture seule)
+        sans_marquage = st.checkbox(f"Vêtement sans marquage (fourniture seule) {i+1}", key=f"sans_marq_{i}")
+        
         col1, col2 = st.columns(2)
         with col1:
             nom_article = st.text_input(f"Nom / Référence du vêtement {i+1}", value=f"T-Shirt 100% coton" if i==0 else f"Article {i+1}", key=f"nom_{i}")
@@ -221,29 +223,34 @@ for i in range(10):
             prix_vetement_ht = st.number_input(f"Prix unitaire HT du vêtement (€) {i+1}", min_value=0.0, value=4.92, key=f"px_vet_{i}")
             
         with col2:
-            st.markdown("**Gestion des Marquages (jusqu'à 4)**")
-            nb_marquages = st.selectbox(f"Nombre de marquages pour l'article {i+1}", [1, 2, 3, 4], key=f"nb_m_{i}")
+            if not sans_marquage:
+                st.markdown("**Gestion des Marquages (jusqu'à 4)**")
+                nb_marquages = st.selectbox(f"Nombre de marquages pour l'article {i+1}", [1, 2, 3, 4], key=f"nb_m_{i}")
+            else:
+                nb_marquages = 0
+                st.info("ℹ️ Article sans marquage (fourniture seule sélectionnée).")
 
         marquages_config = []
         has_broderie = False
         
-        for m in range(nb_marquages):
-            st.markdown(f"--- *Marquage {m+1}*")
-            mc1, mc2 = st.columns(2)
-            with mc1:
-                t_marq = st.selectbox(f"Technique M{m+1} (Art {i+1})", ["DTF Textile Fin", "DTF Textile Épais", "Broderie HD"], key=f"t_marq_{i}_{m}")
-            with mc2:
-                if t_marq == "DTF Textile Fin":
-                    emp = st.selectbox(f"Emplacement M{m+1}", ["Cœur (13x9 cm)", "Dos D10 (20x13 cm)", "Dos D20 (28x20 cm)", "Format P (37x27 cm)", "Manche (9x8 cm)", "+ Perso. Nom"], key=f"emp_f_{i}_{m}")
-                elif t_marq == "DTF Textile Épais":
-                    emp = st.selectbox(f"Emplacement M{m+1}", ["Cœur (13x9 cm)", "Dos D10 (20x13 cm)", "Dos D20 (28x20 cm)", "Format P (37x27 cm)", "Manche (9x8 cm)", "+ Perso. Nom"], key=f"emp_e_{i}_{m}")
-                else:
-                    emp = st.selectbox(f"Emplacement M{m+1}", ["Poitrine (9x8 cm)", "Dos D10 (25x10 cm)", "Dos Large D20 (25x20)", "Col/Signature (7x2)", "Casquettes / Bonnets", "Manche (8x5 cm)", "Pantalon / Poche", "+ Perso. Nom (Cœur)"], key=f"emp_b_{i}_{m}")
-            
-            if t_marq == "Broderie HD":
-                has_broderie = True
+        if not sans_marquage:
+            for m in range(nb_marquages):
+                st.markdown(f"--- *Marquage {m+1}*")
+                mc1, mc2 = st.columns(2)
+                with mc1:
+                    t_marq = st.selectbox(f"Technique M{m+1} (Art {i+1})", ["DTF Textile Fin", "DTF Textile Épais", "Broderie HD"], key=f"t_marq_{i}_{m}")
+                with mc2:
+                    if t_marq == "DTF Textile Fin":
+                        emp = st.selectbox(f"Emplacement M{m+1}", ["Cœur (13x9 cm)", "Dos D10 (20x13 cm)", "Dos D20 (28x20 cm)", "Format P (37x27 cm)", "Manche (9x8 cm)", "+ Perso. Nom"], key=f"emp_f_{i}_{m}")
+                    elif t_marq == "DTF Textile Épais":
+                        emp = st.selectbox(f"Emplacement M{m+1}", ["Cœur (13x9 cm)", "Dos D10 (20x13 cm)", "Dos D20 (28x20 cm)", "Format P (37x27 cm)", "Manche (9x8 cm)", "+ Perso. Nom"], key=f"emp_e_{i}_{m}")
+                    else:
+                        emp = st.selectbox(f"Emplacement M{m+1}", ["Poitrine (9x8 cm)", "Dos D10 (25x10 cm)", "Dos Large D20 (25x20)", "Col/Signature (7x2)", "Casquettes / Bonnets", "Manche (8x5 cm)", "Pantalon / Poche", "+ Perso. Nom (Cœur)"], key=f"emp_b_{i}_{m}")
+                
+                if t_marq == "Broderie HD":
+                    has_broderie = True
 
-            marquages_config.append({"technique": t_marq, "emplacement": emp})
+                marquages_config.append({"technique": t_marq, "emplacement": emp})
 
         st.markdown("---")
         st.markdown("**Options & Logistique spécifiques à l'article**")
@@ -263,6 +270,7 @@ for i in range(10):
                 "nom_article": nom_article,
                 "quantite": qte,
                 "prix_vet_unit": prix_vetement_ht,
+                "sans_marquage": sans_marquage,
                 "marquages_config": marquages_config,
                 "has_broderie": has_broderie,
                 "option_ensachage": option_ensachage,
@@ -275,10 +283,11 @@ for i in range(10):
 # --- ÉTAPE 2 : CALCUL DES QUANTITÉS GLOBALES PAR MARQUAGE POUR TARIFICATION DÉGRESSIVE ---
 compteur_global_marquages = {}
 for art in articles_saisis:
-    qte_art = art["quantite"]
-    for m in art["marquages_config"]:
-        cle = (m["technique"], m["emplacement"])
-        compteur_global_marquages[cle] = compteur_global_marquages.get(cle, 0) + qte_art
+    if not art["sans_marquage"]:
+        qte_art = art["quantite"]
+        for m in art["marquages_config"]:
+            cle = (m["technique"], m["emplacement"])
+            compteur_global_marquages[cle] = compteur_global_marquages.get(cle, 0) + qte_art
 
 # --- ÉTAPE 3 : CONSOLIDATION DU DEVIS ---
 lignes_devis_global = []
@@ -287,24 +296,23 @@ for art in articles_saisis:
     marquages_calcules = []
     total_marquage_unit = 0.0
     
-    for m in art["marquages_config"]:
-        cle = (m["technique"], m["emplacement"])
-        qte_globale_marq = compteur_global_marquages.get(cle, qte)
-        
-        if m["technique"] == "DTF Textile Fin":
-            tarif_m = get_tarif_dtf_fin(qte_globale_marq, m["emplacement"])
-        elif m["technique"] == "DTF Textile Épais":
-            tarif_m = get_tarif_dtf_epais(qte_globale_marq, m["emplacement"])
-        else:
-            tarif_m = get_tarif_broderie(qte_globale_marq, m["emplacement"])
+    if not art["sans_marquage"]:
+        for m in art["marquages_config"]:
+            cle = (m["technique"], m["emplacement"])
+            qte_globale_marq = compteur_global_marquages.get(cle, qte)
             
-        total_marquage_unit += tarif_m
-        marquages_calcules.append({"nom": f"{m['technique']} - {m['emplacement']}", "tarif": tarif_m})
+            if m["technique"] == "DTF Textile Fin":
+                tarif_m = get_tarif_dtf_fin(qte_globale_marq, m["emplacement"])
+            elif m["technique"] == "DTF Textile Épais":
+                tarif_m = get_tarif_dtf_epais(qte_globale_marq, m["emplacement"])
+            else:
+                tarif_m = get_tarif_broderie(qte_globale_marq, m["emplacement"])
+                
+            total_marquage_unit += tarif_m
+            marquages_calcules.append({"nom": f"{m['technique']} - {m['emplacement']}", "tarif": tarif_m})
 
-    # Calcul des frais de programme broderie selon tranche
     frais_prog_broderie = get_frais_prog_broderie(qte) if art["has_broderie"] else 0.0
 
-    # Coût unitaire logistique par pièce
     coût_ensachage_unit = get_tarif_ensachage(qte, art["type_sachet"]) if art["option_ensachage"] else 0.0
     coût_assurance_unit = get_tarif_assurance(qte) if art["option_assurance"] else 0.0
     coût_stockage_unit = get_tarif_stockage(qte) if art["option_stockage"] else 0.0
@@ -319,6 +327,7 @@ for art in articles_saisis:
         "nom_article": art["nom_article"],
         "quantite": qte,
         "prix_vet_unit": art["prix_vet_unit"],
+        "sans_marquage": art["sans_marquage"],
         "marquages": marquages_calcules,
         "frais_prog_broderie": frais_prog_broderie,
         "option_ensachage": art["option_ensachage"],
@@ -404,8 +413,16 @@ with onglets[10]:
             )
             
             if logo_path and os.path.exists(logo_path):
-                # Utilisation de preserveAspectRatio=True pour éviter que le logo soit écrasé
+                # Correction proportionnelle du logo : largeur 110, hauteur automatique (laissée à None) pour éviter l'effet écrasé
                 img_logo = RLImage(logo_path, width=110, height=45)
+                # Astuce pour forcer le ratio sans écrasement sous ReportLab
+                img_logo.hAlign = 'LEFT'
+                try:
+                    img_logo.drawWidth = 110
+                    img_logo.drawHeight = 45 # Ajusté pour ne pas étirer l'image
+                except Exception:
+                    pass
+
                 t_header = Table([[img_logo, header_text]], colWidths=[120, 420])
                 t_header.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'MIDDLE')]))
                 story.append(t_header)
@@ -439,8 +456,9 @@ with onglets[10]:
             ]]
 
             for item in lignes_devis_global:
+                libelle_support = f"<b>Support (Sans marquage) : {item['nom_article']}</b>" if item['sans_marquage'] else f"<b>Support : {item['nom_article']}</b>"
                 table_data.append([
-                    Paragraph(f"<b>Support : {item['nom_article']}</b>", style_cell), 
+                    Paragraph(libelle_support, style_cell), 
                     str(item['quantite']), 
                     f"{item['prix_vet_unit']:.2f} €", 
                     f"{item['prix_vet_unit']*item['quantite']:.2f} €"
