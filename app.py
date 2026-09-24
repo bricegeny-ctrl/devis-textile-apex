@@ -26,12 +26,14 @@ if not os.path.exists(PDF_DIR):
     os.makedirs(PDF_DIR)
 
 def charger_secrets_smtp():
+    # 1. Tentative via st.secrets natif de Streamlit Cloud
     try:
         if "smtp" in st.secrets:
             return st.secrets["smtp"]["email"], st.secrets["smtp"]["password"]
     except Exception:
         pass
     
+    # 2. Tentative via le chemin local spécifique
     chemin_local = r"C:\Users\setup\OneDrive\OneDrive - IRIS - AB Com\Bureau\reprise\site et appli\.streamlit\secrets.toml"
     if os.path.exists(chemin_local):
         try:
@@ -41,6 +43,7 @@ def charger_secrets_smtp():
         except Exception:
             pass
             
+    # 3. Tentative dans le répertoire courant
     for chemin_relatif in [".streamlit/secrets.toml", "secrets.toml"]:
         if os.path.exists(chemin_relatif):
             try:
@@ -56,6 +59,7 @@ def obtenir_prochain_numero_devis():
     annee_courante = datetime.now().strftime("%Y")
     mois_courant = datetime.now().strftime("%m")
     jour_courant = datetime.now().strftime("%d")
+    date_prefix = f"{annee_courante}/{mois_courant}/{jour_courant}"
     
     seq = 1
     if os.path.exists(COMPTEUR_FILE):
@@ -63,14 +67,14 @@ def obtenir_prochain_numero_devis():
             with open(COMPTEUR_FILE, "r") as f:
                 saved_data = json.load(f)
                 dernier_num = saved_data.get("dernier_num", "")
-                if "_" in dernier_num:
+                if "_" in dernier_num and dernier_num.startswith(date_prefix):
                     parts = dernier_num.split("_")
                     if len(parts) > 1 and parts[1].isdigit():
                         seq = int(parts[1]) + 1
         except Exception:
             seq = 1
 
-    nouveau_num = f"{annee_courante}/{mois_courant}/{jour_courant}_{seq:06d}"
+    nouveau_num = f"{date_prefix}_{seq:08d}"
     with open(COMPTEUR_FILE, "w") as f:
         json.dump({"dernier_num": nouveau_num}, f)
     return nouveau_num
@@ -144,7 +148,7 @@ def enregistrer_dans_crm(devis_data):
 def envoyer_email_smtp(destinataire, sujet, corps, pdf_path):
     smtp_user, smtp_password = charger_secrets_smtp()
     if not smtp_user or not smtp_password:
-        return False, "Erreur : Identifiants SMTP introuvables dans secrets.toml."
+        return False, "⚠️ E-mail non envoyé : Identifiants SMTP non configurés dans secrets.toml (génération du devis PDF réussie)."
 
     expediteur = smtp_user
     bcc = "Brice.geny@gmail.com"
@@ -169,7 +173,7 @@ def envoyer_email_smtp(destinataire, sujet, corps, pdf_path):
         server.login(smtp_user, smtp_password)
         server.sendmail(expediteur, [destinataire, bcc], msg.as_string())
         server.quit()
-        return True, "E-mail envoyé avec succès avec copie à Brice.geny@gmail.com !"
+        return True, "✅ E-mail envoyé avec succès avec copie à Brice.geny@gmail.com !"
     except Exception as e:
         return False, f"Erreur SMTP : {e}"
 
@@ -227,7 +231,13 @@ for i in range(10):
                         t_marq = st.selectbox(f"Technique M{m+1}", ["DTF Textile Fin", "DTF Textile Épais", "Broderie HD"], key=f"t_marq_{i}_{m}")
                     with mc2:
                         emp = st.selectbox(f"Emplacement M{m+1}", ["Cœur", "Dos", "Manche", "Poitrine"], key=f"emp_{i}_{m}")
-                    tarif_m = 2.50 if qte < 50 else (1.80 if qte < 200 else 1.20)
+                    
+                    # Tarif dynamique selon technique et quantité
+                    if "Broderie" in t_marq:
+                        tarif_m = 6.50 if qte < 20 else (5.00 if qte < 50 else 3.80)
+                    else:
+                        tarif_m = 2.50 if qte < 50 else (1.80 if qte < 200 else 1.20)
+                        
                     marquages.append({"nom": f"{t_marq} ({emp})", "tarif": tarif_m})
 
             frais_prog_broderie = 35.0 if any("Broderie" in m["nom"] for m in marquages) else 0.0
@@ -275,15 +285,15 @@ for i in range(10):
                     liste_designations = df_filtre['Designation'].dropna().unique().tolist() if 'Designation' in df_filtre.columns else []
                     nom_article = st.selectbox(f"Article du catalogue {i+1}", liste_designations, key=f"nom_print_{i}")
                     
-                    # Mise à jour automatique du prix selon la quantité
-                    prix_defaut = obtenir_prix_catalogue(df_catalogue, nom_article, qte)
+                    # Récupération automatique du prix selon la catégorie, désignation et quantité
+                    prix_defaut = obtenir_prix_catalogue(df_filtre, nom_article, qte)
                 else:
                     nom_article = st.text_input(f"Désignation article print {i+1}", value="Flyer A5", key=f"nom_print_libre_{i}")
                     prix_defaut = 0.10
 
                 prix_vetement_ht = st.number_input(f"Prix unitaire HT (€) {i+1}", min_value=0.0, value=float(prix_defaut), format="%.3f", key=f"px_print_{i}")
             with col2:
-                st.info("ℹ️ Prix unitaire calculé dynamiquement depuis la grille de tarifs du catalogue Excel.")
+                st.info("ℹ️ Prix unitaire calculé dynamiquement depuis la grille de tarifs du catalogue Excel par catégorie.")
                 remise_fidelite = st.number_input(f"Remise commerciale (%) {i+1}", min_value=0.0, max_value=100.0, value=0.0, key=f"rem_print_{i}")
 
             if qte > 0:
@@ -315,11 +325,9 @@ with onglets[10]:
     if not articles_saisis:
         st.warning("Veuillez renseigner au moins un article avec une quantité supérieure à 0.")
     else:
-        # Option pour supprimer les frais techniques
         supprimer_frais_tech = st.checkbox("⚙️ Supprimer / Offrir les frais techniques de dossier", value=False)
         frais_techniques_dossier = 0.0 if supprimer_frais_tech else frais_tech_auto
 
-        # Calcul global des lignes
         lignes_devis_global = []
         for item in articles_saisis:
             q = item["quantite"]
