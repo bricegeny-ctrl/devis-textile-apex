@@ -65,7 +65,6 @@ def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
             break
             
     if start_row == -1:
-        # Recherche élargie par mot-clé fort si non trouvé exact
         keyword = cat_print.split()[0].lower()
         for r in range(len(df_all)):
             row_text = " ".join([str(df_all.iloc[r, c]) for c in range(df_all.shape[1]) if pd.notna(df_all.iloc[r, c])]).lower()
@@ -89,13 +88,12 @@ def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
                     num = int(val_str)
                     if num in [1, 2, 5, 10, 25, 50, 100, 200, 250, 500, 1000, 2500, 5000, 10000]:
                         paliers_trouves.append((c_idx, num))
-        if len(paliers_trouves] >= 2:
+        if len(paliers_trouves) >= 2:
             header_col_idx = r
             qtes_paliers = paliers_trouves
             break
 
     if header_col_idx == -1 or not qtes_paliers:
-        # Fallback de recherche globale des paliers dans tout le fichier si introuvable près de la catégorie
         for r in range(len(df_all)):
             paliers_trouves = []
             for c_idx, val in enumerate(df_all.iloc[r].values):
@@ -103,7 +101,7 @@ def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
                     val_str = str(val).replace('.0', '').strip()
                     if val_str.isdigit() and int(val_str) in [1, 2, 5, 10, 25, 50, 100, 200, 250, 500, 1000, 2500, 5000, 10000]:
                         paliers_trouves.append((c_idx, int(val_str)))
-            if len(paliers_trouves] >= 2:
+            if len(paliers_trouves) >= 2:
                 header_col_idx = r
                 qtes_paliers = paliers_trouves
                 break
@@ -111,7 +109,7 @@ def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
     if not qtes_paliers:
         return 0.15
 
-    # 3. Trouver la ligne du modèle exact (ex: A6, 135g, Banderole 200x80, etc.)
+    # 3. Trouver la ligne du modèle exact
     best_row = -1
     mots_cles = choix_ref.lower().split()
     max_match = 0
@@ -144,7 +142,6 @@ def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
     try:
         prix_val = float(df_all.iloc[best_row, col_cible])
         if pd.isna(prix_val) or prix_val <= 0:
-            # Chercher dans la ligne juste en dessous ou au dessus si vide
             for offset in [1, -1, 2, -2]:
                 alt_row = best_row + offset
                 if 0 <= alt_row < len(df_all):
@@ -157,6 +154,7 @@ def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
         return round(prix_val, 4)
     except Exception:
         return 0.15
+
 # --- GRILLES TARIFAIRES OFFICIELLES (MARQUAGE & BRODERIE) ---
 def obtenir_tarif_dtf_unitaire(type_textile, emplacement, qte_totale):
     grille_fin = {
