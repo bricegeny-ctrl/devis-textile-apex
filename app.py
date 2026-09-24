@@ -150,7 +150,7 @@ def envoyer_email_smtp(destinataire, sujet, corps, pdf_path):
         smtp_user = st.secrets["smtp"]["email"]
         smtp_password = st.secrets["smtp"]["password"]
     except Exception as e:
-        return False, fnu"Erreur de lecture des secrets Streamlit (secrets.toml) : {e}"
+        return False, f"Erreur de lecture des secrets Streamlit (secrets.toml) : {e}"
 
     expediteur = smtp_user
     bcc = "Brice.geny@gmail.com"
@@ -192,7 +192,7 @@ client_tel = st.sidebar.text_input("Téléphone du Client")
 
 st.sidebar.markdown("---")
 st.sidebar.subheader("🚚 Logistique & Commercial")
-zone_livraison = st.sidebar.selectbox("Zone de Livraison", ["France Continentale", "Corse, Monaco ou Andorre", "Espace UE"])
+zone_livraison = st.sidebar.selectbox("Zone de Livraison", ["France Continentale", "Livraison Corse, Monaco ou Andorre", "Espace UE"])
 
 conseiller_choix = st.sidebar.selectbox("Commercial / Conseiller", ["Brice Geny", "Brice Bugna"])
 mode_reglement = st.sidebar.selectbox("Mode de Règlement", ["Virement bancaire 30 jours", "Comptant à la commande", "50% à la commande, 50% à 30 jours"])
@@ -255,7 +255,6 @@ for i in range(10):
             with col1:
                 qte = st.number_input(f"Quantité (exemplaires) {i+1}", min_value=0, value=100 if i==0 else 0, key=f"qte_print_{i}")
                 
-                # Récupération automatique du prix unitaire depuis le catalogue selon la quantité
                 if not df_catalogue.empty:
                     categories_dispo = df_catalogue['Categorie'].dropna().unique().tolist() if 'Categorie' in df_catalogue.columns else []
                     cat_choisie = st.selectbox(f"Catégorie Print {i+1}", categories_dispo, key=f"cat_print_{i}")
@@ -327,21 +326,19 @@ with onglets[10]:
         # Frais techniques textile automatiques : Commande textile < 800 € HT = 24.90 €
         frais_techniques_dossier = 24.90 if (total_textile_brut > 0 and total_textile_brut < 800.0) else 0.0
 
-        # Calcul automatique des frais de port selon la grille officielle
-        # Détermination de la base de calcul pour le port (Sous-total + frais techniques)
         montant_base_port = sous_total_articles + frais_techniques_dossier
 
         if zone_livraison == "France Continentale":
             if montant_base_port < 99.99: port_auto = 14.95
             elif montant_base_port < 499.99: port_auto = 20.95
             elif montant_base_port < 999.99: port_auto = 24.95
-            else: port_auto = 0.0 # Franco de port
+            else: port_auto = 0.0
         elif zone_livraison == "Livraison Corse, Monaco ou Andorre":
             if montant_base_port < 99.99: port_auto = 19.95
             elif montant_base_port < 499.99: port_auto = 25.95
             elif montant_base_port < 999.99: port_auto = 29.95
-            else: port_auto = 0.0 # Franco de port
-        else: # Espace UE
+            else: port_auto = 0.0
+        else:
             if montant_base_port < 99.99: port_auto = 25.95
             elif montant_base_port < 499.99: port_auto = 39.0
             elif montant_base_port < 999.99: port_auto = 60.0
@@ -406,7 +403,6 @@ with onglets[10]:
             enregistrer_devis_crm(devis_record)
             st.success(f"✨ PDF généré avec succès ({pdf_path}) et enregistré dans le CRM !")
 
-            # Envoi automatique via secrets.toml sans demande de code
             sujet = f"Votre devis n° {numero_devis_genere}"
             corps = f"""Bonjour {client_contact or client_nom},
 
