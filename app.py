@@ -9,8 +9,9 @@ from reportlab.lib.pagesizes import A4
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image as RLImage
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
+import urllib.parse
 
-st.set_page_config(page_title="Gestionnaire de Devis - Multi-Métiers", layout="wide")
+st.set_page_config(page_title="Gestionnaire de Devis - APEX", layout="wide")
 
 # --- GESTION DES FICHIERS ---
 COMPTEUR_FILE = "compteur_devis.json"
@@ -58,19 +59,22 @@ df_catalogue = charger_catalogue()
 def obtenir_prix_catalogue(df, designation, qte):
     if df.empty:
         return 0.10 * qte
-    # Recherche simplifiée et robuste dans le catalogue Excel
+    
+    # Recherche intelligente dans le fichier Excel des tarifs print & signalétique
+    # On parcourt les lignes pour trouver la désignation ou l'article correspondant
     for r in range(len(df)):
         row_str = str(df.iloc[r].values)
-        if designation.lower() in row_str.lower():
+        if designation.lower() in row_str.lower() or any(str(df.iloc[r, c]).lower() in designation.lower() for c in range(df.shape[1]) if pd.notna(df.iloc[r, c])):
+            # Chercher une valeur numérique proche ou un prix unitaire dans les colonnes adjacentes
             for c in range(df.shape[1]):
                 val = df.iloc[r, c]
                 try:
                     p = float(val)
-                    if p > 0:
-                        return p * qte
+                    if p > 0 and p < 1000: # Filtre pour éviter de prendre des références ou des quantés
+                        return p
                 except ValueError:
                     pass
-    return 0.10 * qte
+    return 0.15 * qte # Valeur par défaut si non trouvé
 
 # --- GRILLES TARIFAIRES OFFICIELLES (MARQUAGE & BRODERIE) ---
 def obtenir_tarif_dtf_unitaire(type_textile, emplacement, qte_totale):
@@ -227,23 +231,51 @@ for i in range(10):
                 })
                 total_textile_brut += qte * prix_vetement_ht
         else:
+            # --- SELECTION PRINT & SIGNALETIQUE AVEC TOUTES LES CATEGORIES ---
+            cat_print = st.selectbox(
+                f"Catégorie Print & Signalétique {i+1}",
+                [
+                    "Flyers", "Dépliants", "Blocs notes", "Chemises de présentation", 
+                    "Banderoles", "Panneaux de chantier", "Roll-Up", "Sous bocks", 
+                    "Adhésifs", "Cartes de visite", "Calendriers", "Menus restaurants"
+                ],
+                key=f"cat_print_{i}"
+            )
+            
+            # Choix d'articles par catégorie
+            options_articles = {
+                "Flyers": ["Flyer A6 - 135g couché brillant - Recto", "Flyer A6 - 135g couché brillant - Recto/Verso", "Flyer A5 - 135g couché brillant - Recto", "Flyer A5 - 135g couché brillant - Recto/Verso"],
+                "Dépliants": ["Dépliant A6 fermé / A5 ouvert (1 pli) - 135g couché brillant", "Dépliant A5 fermé / A4 ouvert (1 pli) - 135g couché brillant", "Dépliant A4 fermé / A3 ouvert (1 pli) - 135g couché brillant"],
+                "Blocs notes": ["Bloc Note collé - Format A6 - 25 Feuilles - 90 Gr Offset", "Bloc Note collé - Format A5 - 50 Feuilles - 90 Gr Offset", "Bloc Note collé - Format A4 - 50 Feuilles - 90 Gr Offset"],
+                "Chemises de présentation": ["Chemise de présentation A4 - 300g - 2 rabats - Recto", "Chemise de présentation A4 - 300g - 2 rabats - Recto/Verso"],
+                "Banderoles": ["Banderole 200 x 80 cm - 510g M1 avec œillets", "Banderole 300 x 100 cm - 510g M1 avec œillets", "Banderole 400 x 100 cm - 510g M1 avec œillets"],
+                "Panneaux de chantier": ["Panneau Akylux 60 x 40 cm - 3,5mm - Recto", "Panneau Akylux 80 x 60 cm - 3,5mm - Recto", "Panneau Akylux 120 x 80 cm - 3,5mm - Recto"],
+                "Roll-Up": ["Roll-Up Eco - Bâche PVC 510g M1 - 85x200cm", "Roll-Up Pro - Bâche Mat 510g M1 - 85x200cm"],
+                "Sous bocks": ["Sous bock carton 580g - 9,3x9,3 cm", "Sous bock carton 580g - Rond 10cm"],
+                "Adhésifs": ["Adhésif vinyl classique 10x10cm", "Adhésif vinyl classique 20x20cm"],
+                "Cartes de visite": ["Carte de visite standard - 350g - Recto", "Carte de visite standard - 350g - Recto/Verso + Pelliculage"],
+                "Calendriers": ["Calendrier A4 - 250g couché brillant - Recto/Verso", "Calendrier A5 - 250g couché brillant - Recto/Verso"],
+                "Menus restaurants": ["Menu restaurant indéchirable 300g - A5 fermé / A4 ouvert"]
+            }
+            
+            choix_ref = st.selectbox(f"Modèle exact {i+1}", options_articles.get(cat_print, ["Article standard"]), key=f"ref_print_{i}")
+            
             col1, col2 = st.columns(2)
             with col1:
                 qte = st.number_input(f"Quantité (exemplaires) {i+1}", min_value=0, value=100 if i==0 else 0, key=f"qte_print_{i}")
-                nom_article = st.text_input(f"Désignation article print/signalétique {i+1}", value="Flyer A5 135g couché brillant", key=f"nom_print_{i}")
                 
-                prix_total_cat = obtenir_prix_catalogue(df_catalogue, nom_article, qte)
-                prix_unitaire_auto = prix_total_cat / qte if qte > 0 else 0.10
+                # Calcul automatique du prix unitaire depuis le catalogue Excel
+                prix_unitaire_auto = obtenir_prix_catalogue(df_catalogue, choix_ref, qte)
                 
                 prix_vetement_ht = st.number_input(f"Prix unitaire HT (€) {i+1}", min_value=0.0, value=float(prix_unitaire_auto), format="%.3f", key=f"px_print_{i}")
             with col2:
-                st.info("ℹ️ Tarif unitaire récupéré et calculé automatiquement depuis le catalogue Excel officiel.")
+                st.info(f"ℹ️ Prix unitaire calculé automatiquement (Catalogue APEX).")
                 remise_fidelite = st.number_input(f"Remise commerciale (%) {i+1}", min_value=0.0, max_value=100.0, value=0.0, key=f"rem_print_{i}")
 
             if qte > 0:
                 articles_saisis.append({
                     "type_univers": "print",
-                    "nom_article": nom_article,
+                    "nom_article": f"{cat_print} - {choix_ref}",
                     "quantite": qte,
                     "prix_vet_unit": prix_vetement_ht,
                     "sans_marquage": True,
@@ -255,7 +287,7 @@ for i in range(10):
                     "remise_fidelite": remise_fidelite
                 })
 
-# --- CORRECTION : CALCUL DES QUANTITÉS CUMULÉES PAR MARQUAGE/BRODERIE IDENTIQUE ---
+# --- CALCUL DES QUANTITÉS CUMULÉES PAR MARQUAGE/BRODERIE IDENTIQUE ---
 quantites_cumulees_marquages = {}
 for item in articles_saisis:
     if item["type_univers"] == "textile" and not item["sans_marquage"]:
@@ -393,7 +425,7 @@ with onglets[10]:
             enregistrer_dans_crm(data_crm)
             st.success("✅ Données enregistrées dans le CRM avec succès !")
 
-            # --- GÉNÉRATION DU PDF ---
+            # --- GÉNÉRATION DU PDF (MENTION APEX UNIQUEMENT) ---
             doc = SimpleDocTemplate(pdf_filename, pagesize=A4, rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)
             story = []
             styles = getSampleStyleSheet()
@@ -413,10 +445,10 @@ with onglets[10]:
                 logo_path = logo_defaut_github
 
             header_text = Paragraph(
-                "<b>SAS ABCOM - SOLUTIONS VISUELLES, PRINT & TEXTILE</b><br/>"
+                "<b>APEX - SOLUTIONS VISUELLES, PRINT & TEXTILE</b><br/>"
                 "Plasne (Jura)<br/>"
                 "Tél (Brice Geny) : 06 32 69 73 28 &nbsp;|&nbsp; Tél (Brice Bugna) : 06 29 92 94 74<br/>"
-                "Email : contact@abcom.fr", 
+                "Email : contact@apex-visual.fr", 
                 style_sub
             )
             if logo_path and os.path.exists(logo_path):
@@ -517,15 +549,32 @@ with onglets[10]:
                 st.markdown("---")
                 st.subheader("✉️ Envoi direct du devis par e-mail en 1 clic")
                 email_dest = st.text_input("Destinataire de l'e-mail", value=client_email)
-                sujet_mail = st.text_input("Objet de l'e-mail", value=f"Devis {st.session_state.get('dernier_num', '')} - SAS ABCOM")
-                corps_mail = st.text_area("Message", value=f"Bonjour {client_nom},\n\nVeuillez trouver ci-joint votre devis établi par SAS ABCOM.\n\nCordialement,\n{conseiller_nom}\nSAS ABCOM")
+                sujet_mail = st.text_input("Objet de l'e-mail", value=f"Devis {st.session_state.get('dernier_num', '')} - APEX")
+                corps_mail = st.text_area("Message", value=f"Bonjour {client_nom},\n\nVeuillez trouver ci-joint votre devis établi par APEX.\n\nCordialement,\n{conseiller_nom}\nAPEX")
 
+                # Mode d'envoi SMTP robuste ou configuration manuelle directe
+                use_manual_smtp = st.checkbox("Configurer les identifiants SMTP directement ici (si secrets.toml non configuré)", value=False)
+                if use_manual_smtp:
+                    sm1, sm2 = st.columns(2)
+                    with sm1:
+                        smtp_srv_input = st.text_input("Serveur SMTP", "smtp.gmail.com")
+                        smtp_prt_input = st.number_input("Port SMTP", value=465)
+                    with sm2:
+                        smtp_usr_input = st.text_input("Email expéditeur", "")
+                        smtp_pwd_input = st.text_input("Mot de passe application", type="password")
+                
                 def envoyer_devis_smtp(destinataire, sujet, corps, pdf_path):
                     try:
-                        smtp_server = st.secrets["email"]["smtp_server"]
-                        smtp_port = st.secrets["email"]["smtp_port"]
-                        smtp_user = st.secrets["email"]["smtp_user"]
-                        smtp_password = st.secrets["email"]["smtp_password"]
+                        if use_manual_smtp:
+                            smtp_server = smtp_srv_input
+                            smtp_port = int(smtp_prt_input)
+                            smtp_user = smtp_usr_input
+                            smtp_password = smtp_pwd_input
+                        else:
+                            smtp_server = st.secrets["email"]["smtp_server"]
+                            smtp_port = int(st.secrets["email"]["smtp_port"])
+                            smtp_user = st.secrets["email"]["smtp_user"]
+                            smtp_password = st.secrets["email"]["smtp_password"]
 
                         msg = EmailMessage()
                         msg["Subject"] = sujet
@@ -545,12 +594,19 @@ with onglets[10]:
                     except Exception as e:
                         return False, str(e)
 
-                if st.button("🚀 Envoyer le devis par e-mail en 1 clic", type="primary"):
-                    succes, err_msg = envoyer_devis_smtp(email_dest, sujet_mail, corps_mail, pdf_filename)
-                    if succes:
-                        st.success(f"E-mail avec pièce jointe PDF envoyé avec succès à {email_dest} en un clic !")
-                    else:
-                        st.error(f"Erreur lors de l'envoi SMTP : {err_msg}. Vérifiez votre configuration dans .streamlit/secrets.toml.")
+                col_b1, col_b2 = st.columns(2)
+                with col_b1:
+                    if st.button("🚀 Envoyer le devis par e-mail en 1 clic (SMTP)", type="primary"):
+                        succes, err_msg = envoyer_devis_smtp(email_dest, sujet_mail, corps_mail, pdf_filename)
+                        if succes:
+                            st.success(f"E-mail avec pièce jointe PDF envoyé avec succès à {email_dest} !")
+                        else:
+                            st.error(f"Erreur d'envoi SMTP : {err_msg}. Utilisez le bouton ci-contre pour l'envoi direct via votre messagerie.")
+                
+                with col_b2:
+                    # Lien mailto de secours infaillible en un clic
+                    mailto_link = f"mailto:{email_dest}?subject={urllib.parse.quote(sujet_mail)}&body={urllib.parse.quote(corps_mail)}"
+                    st.markdown(f'<a href="{mailto_link}" target="_blank"><button style="background-color:#2b6cb0; color:white; border:none; padding:10px 20px; border-radius:5px; cursor:pointer; font-weight:bold; width:100%;">📧 Ouvrir dans le client mail (Secours)</button></a>', unsafe_allow_html=True)
 
 # --- ONGLET SUIVI CRM ---
 with onglets[11]:
