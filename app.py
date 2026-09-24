@@ -16,7 +16,6 @@ st.set_page_config(page_title="Gestionnaire de Devis - APEX", layout="wide")
 # --- GESTION DES FICHIERS ---
 COMPTEUR_FILE = "compteur_devis.json"
 CRM_FILE = "crm_devis.csv"
-# Nom exact de votre fichier Excel dans le dossier du projet
 CATALOGUE_FILE = "catalogue print et signalétique.xlsx"
 PDF_DIR = "devis_pdf"
 
@@ -81,7 +80,6 @@ def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
         row_cat = str(df_all.iloc[r, 0]).lower()
         row_ref = str(df_all.iloc[r, 2]).lower()
 
-        # Score de correspondance basé sur les mots-clés de la référence
         score = 0
         if cat_lower in row_cat or row_cat in cat_lower:
             score += 2
@@ -270,50 +268,61 @@ for i in range(10):
                 })
                 total_textile_brut += qte * prix_vetement_ht
         else:
-            # --- SELECTION PRINT & SIGNALETIQUE (UNIQUEMENT FLYERS COMME DEMANDÉ + CATALOGUE) ---
+            # --- SELECTION PRINT & SIGNALETIQUE + OPTION AUTRE (SAISIE LIBRE) ---
             cat_print = st.selectbox(
                 f"Catégorie Print & Signalétique {i+1}",
                 [
                     "Flyers", "Dépliants", "Blocs notes", "Chemises de présentation", 
                     "Banderoles", "Panneaux de chantier", "Roll-Up", "Sous bocks", 
-                    "Adhésifs", "Cartes de visite", "Calendriers", "Menus restaurants"
+                    "Adhésifs", "Cartes de visite", "Calendriers", "Menus restaurants",
+                    "➕ Autre / Produit hors catalogue (Saisie libre)"
                 ],
                 key=f"cat_print_{i}"
             )
             
-            options_articles = {
-                "Flyers": ["Flyer A6 - 135g couché brillant - Recto", "Flyer A6 - 135g couché brillant - Recto/Verso", "Flyer A5 - 135g couché brillant - Recto", "Flyer A5 - 135g couché brillant - Recto/Verso"],
-                "Dépliants": ["Dépliant A6 fermé / A5 ouvert (1 pli) - 135g couché brillant", "Dépliant A5 fermé / A4 ouvert (1 pli) - 135g couché brillant"],
-                "Blocs notes": ["Bloc Note collé - Format A6 - 25 Feuilles - 90 Gr Offset", "Bloc Note collé - Format A5 - 50 Feuilles - 90 Gr Offset"],
-                "Chemises de présentation": ["Chemise de présentation A4 - 300g - 2 rabats"],
-                "Banderoles": ["Banderole 200 x 80 cm - 510g M1 avec œillets", "Banderole 300 x 100 cm - 510g M1 avec œillets"],
-                "Panneaux de chantier": ["Panneau Akylux 60 x 40 cm - 3,5mm", "Panneau Akylux 80 x 60 cm - 3,5mm"],
-                "Roll-Up": ["Roll-Up Eco - Bâche PVC 510g M1 - 85x200cm"],
-                "Sous bocks": ["Sous bock carton 580g - 9,3x9,3 cm"],
-                "Adhésifs": ["Adhésif vinyl classique 10x10cm"],
-                "Cartes de visite": ["Carte de visite standard - 350g - Recto/Verso"],
-                "Calendriers": ["Calendrier A4 - 250g couché brillant"],
-                "Menus restaurants": ["Menu restaurant indéchirable 300g - A5"]
-            }
-            
-            choix_ref = st.selectbox(f"Modèle exact {i+1}", options_articles.get(cat_print, ["Article standard"]), key=f"ref_print_{i}")
-            
-            col1, col2 = st.columns(2)
-            with col1:
-                qte = st.number_input(f"Quantité (exemplaires) {i+1}", min_value=0, value=100 if i==0 else 0, key=f"qte_print_{i}")
+            if "Autre" in cat_print:
+                choix_ref = st.text_input(f"Nom / Désignation du produit libre {i+1}", value="Produit personnalisé", key=f"ref_libre_{i}")
+                col1, col2 = st.columns(2)
+                with col1:
+                    qte = st.number_input(f"Quantité (exemplaires) {i+1}", min_value=0, value=1 if i==0 else 0, key=f"qte_print_{i}")
+                    prix_vetement_ht = st.number_input(f"Prix unitaire HT (€) {i+1}", min_value=0.0, value=10.00, format="%.3f", key=f"px_libre_{i}")
+                with col2:
+                    st.info("💡 Saisie manuelle activée pour produit hors catalogue.")
+                    remise_fidelite = st.number_input(f"Remise commerciale (%) {i+1}", min_value=0.0, max_value=100.0, value=0.0, key=f"rem_print_{i}")
+            else:
+                options_articles = {
+                    "Flyers": ["Flyer A6 - 135g couché brillant - Recto", "Flyer A6 - 135g couché brillant - Recto/Verso", "Flyer A6 - 170g couché demi mat - Recto", "Flyer A6 - 170g couché demi mat - Recto/Verso", "Flyer A6 - 250g couché - Recto", "Flyer A6 - 250g couché - Recto/Verso", "Flyer A6 - 350g couché - Recto", "Flyer A6 - 350g couché - Recto/Verso", "Flyer A6 - 115g recyclé - Recto", "Flyer A6 - 115g recyclé - Recto/Verso", "Flyer A5 - 135g couché brillant - Recto", "Flyer A5 - 135g couché brillant - Recto/Verso", "Flyer A5 - 170g couché demi mat - Recto", "Flyer A5 - 170g couché demi mat - Recto/Verso"],
+                    "Dépliants": ["Dépliant A6 fermé / A5 ouvert (1 pli) - 135g couché brillant", "Dépliant A5 fermé / A4 ouvert (1 pli) - 135g couché brillant"],
+                    "Blocs notes": ["Bloc Note collé - Format A6 - 25 Feuilles - 90 Gr Offset", "Bloc Note collé - Format A5 - 50 Feuilles - 90 Gr Offset"],
+                    "Chemises de présentation": ["Chemise de présentation A4 - 300g - 2 rabats"],
+                    "Banderoles": ["Banderole 200 x 80 cm - 510g M1 avec œillets", "Banderole 300 x 100 cm - 510g M1 avec œillets"],
+                    "Panneaux de chantier": ["Panneau Akylux 60 x 40 cm - 3,5mm", "Panneau Akylux 80 x 60 cm - 3,5mm"],
+                    "Roll-Up": ["Roll-Up Eco - Bâche PVC 510g M1 - 85x200cm"],
+                    "Sous bocks": ["Sous bock carton 580g - 9,3x9,3 cm"],
+                    "Adhésifs": ["Adhésif vinyl classique 10x10cm"],
+                    "Cartes de visite": ["Carte de visite standard - 350g - Recto/Verso"],
+                    "Calendriers": ["Calendrier A4 - 250g couché brillant"],
+                    "Menus restaurants": ["Menu restaurant indéchirable 300g - A5"]
+                }
                 
-                # Calcul automatique du prix unitaire depuis le catalogue Excel via la fonction robuste
-                prix_unitaire_auto = obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte)
+                choix_ref = st.selectbox(f"Modèle exact {i+1}", options_articles.get(cat_print, ["Article standard"]), key=f"ref_print_{i}")
                 
-                prix_vetement_ht = st.number_input(f"Prix unitaire HT (€) {i+1}", min_value=0.0, value=float(prix_unitaire_auto), format="%.3f", key=f"px_print_{i}")
-            with col2:
-                st.success(f"✅ Prix unitaire calculé automatiquement par quantité ({qte} ex) : **{prix_unitaire_auto:.3f} € HT**")
-                remise_fidelite = st.number_input(f"Remise commerciale (%) {i+1}", min_value=0.0, max_value=100.0, value=0.0, key=f"rem_print_{i}")
+                col1, col2 = st.columns(2)
+                with col1:
+                    qte = st.number_input(f"Quantité (exemplaires) {i+1}", min_value=0, value=100 if i==0 else 0, key=f"qte_print_{i}")
+                    
+                    # Calcul automatique instantané du prix unitaire depuis le catalogue Excel
+                    prix_unitaire_auto = obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte)
+                    
+                    prix_vetement_ht = st.number_input(f"Prix unitaire HT (€) {i+1} (Calculé auto)", min_value=0.0, value=float(prix_unitaire_auto), format="%.3f", key=f"px_print_{i}")
+                with col2:
+                    st.success(f"✅ Prix unitaire calculé automatiquement ({qte} ex) : **{prix_unitaire_auto:.3f} € HT**")
+                    remise_fidelite = st.number_input(f"Remise commerciale (%) {i+1}", min_value=0.0, max_value=100.0, value=0.0, key=f"rem_print_{i}")
 
             if qte > 0:
                 articles_saisis.append({
                     "type_univers": "print",
-                    "nom_article": f"{cat_print} - {choix_ref}",
+                    "nom_article": f"{cat_print} - {choix_ref}" if "Autre" not in cat_print else choix_ref,
                     "quantite": qte,
                     "prix_vet_unit": prix_vetement_ht,
                     "sans_marquage": True,
@@ -325,7 +334,7 @@ for i in range(10):
                     "remise_fidelite": remise_fidelite
                 })
 
-# --- CALCUL DES QUANTITÉS CUMULÉES PAR MARQUAGE/BRODERIE IDENTIQUE ---
+# --- CALCUL DES QUANTITÉS CUMULÉES ---
 quantites_cumulees_marquages = {}
 for item in articles_saisis:
     if item["type_univers"] == "textile" and not item["sans_marquage"]:
@@ -470,14 +479,11 @@ with onglets[10]:
             style_right_bold = ParagraphStyle('RightBold', parent=styles['Normal'], fontSize=9, leading=11, fontName='Helvetica-Bold', alignment=2)
             style_right_normal = ParagraphStyle('RightNormal', parent=styles['Normal'], fontSize=9, leading=11, alignment=2)
 
-            # --- GESTION DU LOGO APEX ---
             logo_path = None
-            # Si un logo a été uploadé via la sidebar
             if logo_file is not None:
                 logo_path = "temp_logo.png"
                 with open(logo_path, "wb") as f:
                     f.write(logo_file.getbuffer())
-            # Sinon, recherche d'un fichier logo par défaut dans le dossier
             elif os.path.exists("logo.png"):
                 logo_path = "logo.png"
             elif os.path.exists("logo.jpg"):
@@ -485,13 +491,13 @@ with onglets[10]:
 
             header_text = Paragraph(
                 "<b>APEX - SOLUTIONS VISUELLES, PRINT & TEXTILE</b><br/>"
-                "70150 Marnay<br/>"
+                "Plasne (Jura)<br/>"
                 "Tél (Brice Geny) : 06 32 69 73 28 &nbsp;|&nbsp; Tél (Brice Bugna) : 06 29 92 94 74<br/>"
-                "Email : Brice.Geny@gmail.com / Brice.Bugna@gmail.com", 
+                "Email : contact@apex-visual.fr", 
                 style_sub
             )
             if logo_path and os.path.exists(logo_path):
-                img_logo = RLImage(logo_path, width=120, height=50) # Ajustez les dimensions si besoin
+                img_logo = RLImage(logo_path, width=120, height=50)
                 t_header = Table([[img_logo, header_text]], colWidths=[130, 410])
                 t_header.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'MIDDLE')]))
                 story.append(t_header)
@@ -591,7 +597,6 @@ with onglets[10]:
                 sujet_mail = st.text_input("Objet de l'e-mail", value=f"Devis {st.session_state.get('dernier_num', '')} - APEX")
                 corps_mail = st.text_area("Message", value=f"Bonjour {client_nom},\n\nVeuillez trouver ci-joint votre devis établi par APEX.\n\nCordialement,\n{conseiller_nom}\nAPEX")
 
-                # Bouton mailto de secours infaillible en un clic
                 mailto_link = f"mailto:{email_dest}?subject={urllib.parse.quote(sujet_mail)}&body={urllib.parse.quote(corps_mail)}"
                 st.markdown(f'<a href="{mailto_link}" target="_blank"><button style="background-color:#2b6cb0; color:white; border:none; padding:10px 20px; border-radius:5px; cursor:pointer; font-weight:bold; width:100%;">📧 Ouvrir dans le client mail (Secours)</button></a>', unsafe_allow_html=True)
 
