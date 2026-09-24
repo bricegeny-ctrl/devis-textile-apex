@@ -3,12 +3,6 @@ import pandas as pd
 from datetime import datetime
 import os
 import json
-import smtplib
-from email.message import EmailMessage
-from reportlab.lib.pagesizes import A4
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image as RLImage
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib import colors
 
 st.set_page_config(page_title="Gestionnaire de Devis Multi-Métiers", layout="wide")
 
@@ -53,6 +47,30 @@ def charger_catalogue():
 
 df_catalogue = charger_catalogue()
 
+def obtenir_prix_catalogue(df, designation, qte):
+    if df.empty or 'Designation' not in df.columns or 'Prix_HT' not in df.columns:
+        return 4.92
+    
+    df_art = df[df['Designation'] == designation]
+    if df_art.empty:
+        return 4.92
+        
+    # Recherche du palier de quantité optimal (le plus grand palier inférieur ou égal à la quantité demandée)
+    if 'Quantite' in df_art.columns:
+        quantites_dispo = sorted(df_art['Quantite'].dropna().unique().tolist())
+        if quantites_dispo:
+            q_choisie = quantites_dispo[0]
+            for q in quantites_dispo:
+                if q <= qte:
+                    q_choisie = q
+                else:
+                    break
+            match_row = df_art[df_art['Quantite'] == q_choisie]
+            if not match_row.empty:
+                return float(match_row.iloc[0]['Prix_HT'])
+                
+    return float(df_art.iloc[0]['Prix_HT'])
+
 # --- INITIALISATION ET CHARGEMENT DU CRM ---
 if not os.path.exists(CRM_FILE):
     df_init = pd.DataFrame(columns=[
@@ -91,7 +109,7 @@ frais_port_manuel = st.sidebar.number_input("Frais de port HT (€)", min_value=
 
 conseiller_choix = st.sidebar.selectbox(
     "Commercial / Conseiller",
-    ["Arnaud Brice (Direction)", "Équipe Commerciale ABCOM", "Autre"]
+    ["Brice Geny", "Brice Bugna", "Autre"]
 )
 
 mode_reglement = st.sidebar.selectbox(
@@ -129,8 +147,9 @@ for i in range(10):
         
         col1, col2 = st.columns(2)
         with col1:
+            qte = st.number_input(f"Quantité (pcs) {i+1}", min_value=0, value=10 if i==0 else 0, key=f"qte_{i}")
+
             if mode_selection == "Catalogue Excel" and not df_catalogue.empty:
-                # Récupération des désignations uniques du catalogue Excel
                 categories_dispo = df_catalogue['Categorie'].dropna().unique().tolist() if 'Categorie' in df_catalogue.columns else []
                 if categories_dispo:
                     cat_choisie = st.selectbox(f"Catégorie catalogue {i+1}", categories_dispo, key=f"cat_choix_{i}")
@@ -141,18 +160,13 @@ for i in range(10):
                 liste_designations = df_filtre['Designation'].dropna().unique().tolist() if 'Designation' in df_filtre.columns else []
                 nom_article = st.selectbox(f"Sélectionner l'article du catalogue {i+1}", liste_designations, key=f"nom_cat_{i}")
                 
-                # Récupération automatique du prix si correspondance
-                prix_defaut = 4.92
-                if 'Designation' in df_catalogue.columns and 'Prix_HT' in df_catalogue.columns:
-                    match_row = df_catalogue[df_catalogue['Designation'] == nom_article]
-                    if not match_row.empty:
-                        prix_defaut = float(match_row.iloc[0]['Prix_HT'])
+                # Calcul automatique du prix unitaire variable selon la quantité saisie
+                prix_defaut = obtenir_prix_catalogue(df_catalogue, nom_article, qte)
             else:
                 nom_article = st.text_input(f"Nom / Référence personnalisée {i+1}", value=f"T-Shirt 100% coton" if i==0 else f"Article {i+1}", key=f"nom_{i}")
                 prix_defaut = 4.92
 
-            qte = st.number_input(f"Quantité (pcs) {i+1}", min_value=0, value=10 if i==0 else 0, key=f"qte_{i}")
-            prix_vetement_ht = st.number_input(f"Prix unitaire HT du support (€) {i+1}", min_value=0.0, value=prix_defaut, key=f"px_vet_{i}")
+            prix_vetement_ht = st.number_input(f"Prix unitaire HT du support (€) {i+1}", min_value=0.0, value=float(prix_defaut), format="%.3f", key=f"px_vet_{i}")
             
         with col2:
             if not sans_marquage:
@@ -220,7 +234,6 @@ for art in articles_saisis:
     q = art["quantite"]
     px_base = art["prix_vet_unit"]
     
-    # Application de la remise fidélité sur le support
     px_support_remise = px_base * (1 - art["remise_fidelite"] / 100.0)
     total_support = q * px_support_remise
     
@@ -228,16 +241,14 @@ for art in articles_saisis:
     if not art["sans_marquage"]:
         for m_cfg in art["marquages_config"]:
             tech = m_cfg["technique"]
-            # Grille tarifaire indicative par marquage selon la quantité
             if "DTF" in tech:
                 unit_m = 2.50 if q < 50 else (1.80 if q < 200 else 1.20)
             elif "Broderie" in tech:
                 unit_m = 4.50 if q < 50 else (3.20 if q < 200 else 2.50)
             else:
-                unit_m = 5.00 # Print / Signalétique
+                unit_m = 5.00
             total_marquages_ligne += q * unit_m
 
-    # Options logistiques
     total_options = 0.0
     if art["option_ensachage"]:
         total_options += q * 0.35
@@ -249,7 +260,7 @@ for art in articles_saisis:
     total_ligne_ht = total_support + total_marquages_ligne + total_options
     
     if art["has_broderie"]:
-        frais_techniques_dossier += 35.0 # Frais de carte / digital
+        frais_techniques_dossier += 35.0
 
     lignes_devis_global.append({
         "nom_article": art["nom_article"],
@@ -269,7 +280,6 @@ with onglets[10]:
         sous_total_articles = sum([item["total_ligne_ht"] for item in lignes_devis_global])
         montant_base_port = sous_total_articles + frais_techniques_dossier
         
-        # Calcul frais de port
         frais_port = frais_port_manuel if frais_port_manuel > 0 else (15.0 if zone_livraison == "France Continentale" else 45.0)
         
         total_ht = sous_total_articles + frais_techniques_dossier + frais_port
