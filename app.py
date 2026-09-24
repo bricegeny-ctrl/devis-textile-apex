@@ -13,7 +13,7 @@ EXCEL_FILE = "tarifs print-panneaux-banderoles.xlsx"
 
 
 @st.cache_data
-funct load_data():
+def load_data():
   try:
     df = pd.read_excel(EXCEL_FILE, sheet_name="Feuil1")
     return df
@@ -74,7 +74,7 @@ if df is not None:
     st.markdown("---")
 
   if categorie == "Toutes les catégories" or categorie == "Banderoles":
-    st.header(" banner Banderoles")
+    st.header("🚩 Banderoles")
     st.markdown("*Banderole normée M1, 510 g/m2, avec œillet et ourlet.*")
     st.dataframe(df.iloc[28:34].reset_index(drop=True), use_container_width=True)
     st.markdown("---")
@@ -88,7 +88,7 @@ if df is not None:
     st.markdown("---")
 
   if categorie == "Toutes les catégories" or categorie == "Roll-Ups":
-    st.header(" roll Roll-Ups (Structures enroulables)")
+    st.header("📌 Roll-Ups (Structures enroulables)")
     st.dataframe(df.iloc[51:57].reset_index(drop=True), use_container_width=True)
     st.markdown("---")
 
@@ -113,7 +113,7 @@ if df is not None:
     st.markdown("---")
 
   if categorie == "Toutes les catégories" or categorie == "Sous-bocks":
-    st.header(" coasters Sous-bocks")
+    st.header("🍺 Sous-bocks")
     st.markdown("*Carton épais 580g.*")
     st.dataframe(
         df.iloc[119:123].reset_index(drop=True), use_container_width=True
@@ -121,7 +121,7 @@ if df is not None:
     st.markdown("---")
 
   if categorie == "Toutes les catégories" or categorie == "Adhésifs":
-    st.header(" adhesive Adhésifs")
+    st.header("🏷️ Adhésifs")
     st.dataframe(
         df.iloc[127:137].reset_index(drop=True), use_container_width=True
     )
