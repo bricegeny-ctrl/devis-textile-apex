@@ -293,9 +293,20 @@ for i in range(10):
             if "Autre" in cat_print:
                 choix_ref = st.selectbox(f"Modèle exact {i+1}", options_articles.get(cat_print, ["Article standard"]), key=f"ref_print_{i}")
                 
+                # Calcul automatique instantané du prix unitaire depuis le catalogue Excel
+                prix_unitaire_auto = obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte)
+
                 col1, col2 = st.columns(2)
                 with col1:
                     qte = st.number_input(f"Quantité (exemplaires) {i+1}", min_value=0, value=100 if i==0 else 0, key=f"qte_print_{i}")
+                    
+                    # On utilise directement la valeur calculée sans permettre une modification parasite qui bloque le state
+                    st.text_input(f"Prix unitaire HT (€) {i+1} (Catalogue)", value=f"{prix_unitaire_auto:.4f} €", disabled=True, key=f"px_print_display_{i}_{qte}_{choix_ref}")
+                    prix_vetement_ht = prix_unitaire_auto
+                    
+                with col2:
+                    st.success(f"✅ Tarif catalogue appliqué ({qte} ex) : **{prix_unitaire_auto:.4f} € HT**")
+                    remise_fidelite = st.number_input(f"Remise commerciale (%) {i+1}", min_value=0.0, max_value=100.0, value=0.0, key=f"rem_print_{i}")
                     
                     # --- CALCUL AUTOMATIQUE SYNCHRONISÉ ---
                     prix_unitaire_auto = obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte)
