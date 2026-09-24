@@ -3,6 +3,7 @@ import pandas as pd
 from datetime import datetime
 import os
 import json
+import io
 import smtplib
 from email.message import EmailMessage
 from reportlab.lib.pagesizes import A4
@@ -24,8 +25,10 @@ catalogue_file_uploaded = st.sidebar.file_uploader("Importer catalogue_standardi
 def charger_catalogue(uploaded_file):
     if uploaded_file is not None:
         try:
-            return pd.read_excel(uploaded_file)
-        except Exception:
+            bytes_data = uploaded_file.getvalue()
+            return pd.read_excel(io.BytesIO(bytes_data))
+        except Exception as e:
+            st.sidebar.error(f"Erreur lecture Excel : {e}")
             return pd.DataFrame(columns=["Categorie", "Reference", "Designation", "Quantite", "Prix_HT"])
     elif os.path.exists("catalogue_standardise.xlsx"):
         try:
