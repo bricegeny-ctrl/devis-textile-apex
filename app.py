@@ -67,13 +67,11 @@ def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
     if start_row == -1:
         return 0.15
 
-    # On cherche les en-têtes de quantités (ex: 100, 250, 500...) dans les lignes juste en dessous
+    # On cherche les en-têtes de quantités dans les lignes juste en dessous
     header_col_idx = -1
     qtes_paliers = []
     
     for r in range(start_row, min(start_row + 5, len(df_all))):
-        row_vals = [str(x) for x in df_all.iloc[r].values if pd.notna(x)]
-        # Vérifie si la ligne contient des paliers numériques
         paliers_trouves = []
         for c_idx, val in enumerate(df_all.iloc[r].values):
             if pd.notna(val):
@@ -86,18 +84,17 @@ def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
             break
 
     if header_col_idx == -1 or not qtes_paliers:
-        # Fallback de secours si la structure varie
         return 0.10
 
-    # Recherche de la ligne correspondant au modèle exact (ex: A6, 135g, Recto)
+    # Recherche de la ligne correspondant au modèle exact
     best_row = -1
     mots_cles = choix_ref.lower().split()
     max_match = 0
     
     for r in range(header_col_idx + 1, len(df_all)):
-        row_text = " ".join([str(df_all.iloc[r, c]) for c in range(df_all.shape[1]) if pd.notna(df_all.iloc[r, c)]).lower()
+        row_cells = [str(df_all.iloc[r, c]) for c in range(df_all.shape[1]) if pd.notna(df_all.iloc[r, c])]
+        row_text = " ".join(row_cells).lower()
         if not row_text.strip() or any(cat in row_text for cat in ["flyers", "dépliants", "blocs notes", "banderoles", "panneaux"]):
-            # Si on croise une nouvelle catégorie, on s'arrête
             if r > header_col_idx + 2:
                 break
         
@@ -107,9 +104,9 @@ def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
             best_row = r
 
     if best_row == -1:
-        best_row = header_col_idx + 1 # Première ligne par défaut
+        best_row = header_col_idx + 1
 
-    # Trouver la colonne de quantité la plus proche ou exacte
+    # Trouver la colonne de quantité la plus proche
     col_cible = qtes_paliers[0][0]
     best_diff = float('inf')
     for c_idx, q_palier in qtes_paliers:
@@ -118,14 +115,13 @@ def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
             best_diff = diff
             col_cible = c_idx
 
-    # Extraction du prix unitaire dans la cellule correspondante
+    # Extraction du prix unitaire
     try:
         prix_val = float(df_all.iloc[best_row, col_cible])
         if pd.isna(prix_val) or prix_val <= 0:
             raise ValueError()
         return round(prix_val, 4)
     except Exception:
-        # Valeur par défaut si cellule vide
         return 0.10
 
 # --- GRILLES TARIFAIRES OFFICIELLES (MARQUAGE & BRODERIE) ---
