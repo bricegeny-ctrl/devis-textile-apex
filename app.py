@@ -46,67 +46,92 @@ def obtenir_prochain_numero_devis():
         json.dump({"dernier_num": nouveau_num}, f)
     return nouveau_num
 
-# --- MOTEUR DE LECTURE INTELLIGENT ET FIDÈLE DU CATALOGUE EXCEL ---
+# --- MOTEUR DE LECTURE UNIVERSEL DU CATALOGUE EXCEL ---
 def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
     if not os.path.exists(CATALOGUE_FILE):
-        return 0.15
+        return 0.10
     
     try:
         df_all = pd.read_excel(CATALOGUE_FILE, sheet_name=0, header=None)
     except Exception:
-        return 0.15
+        return 0.10
 
-    # Recherche de la ligne de début de la catégorie dans le fichier Excel
+    # 1. Trouver la ligne correspondant à la catégorie demandée
     start_row = -1
     for r in range(len(df_all)):
-        row_str = str(df_all.iloc[r, 0])
-        if cat_print.lower() in row_str.lower():
+        row_text = " ".join([str(df_all.iloc[r, c]) for c in range(df_all.shape[1]) if pd.notna(df_all.iloc[r, c])]).lower()
+        if cat_print.lower() in row_text or any(m in row_text for m in cat_print.lower().split()):
             start_row = r
             break
             
     if start_row == -1:
-        return 0.15
+        # Recherche élargie par mot-clé fort si non trouvé exact
+        keyword = cat_print.split()[0].lower()
+        for r in range(len(df_all)):
+            row_text = " ".join([str(df_all.iloc[r, c]) for c in range(df_all.shape[1]) if pd.notna(df_all.iloc[r, c])]).lower()
+            if keyword in row_text:
+                start_row = r
+                break
 
-    # On cherche les en-têtes de quantités dans les lignes juste en dessous
+    if start_row == -1:
+        start_row = 0
+
+    # 2. Chercher les paliers de quantités dans les lignes proches
     header_col_idx = -1
     qtes_paliers = []
     
-    for r in range(start_row, min(start_row + 5, len(df_all))):
+    for r in range(start_row, min(start_row + 15, len(df_all))):
         paliers_trouves = []
         for c_idx, val in enumerate(df_all.iloc[r].values):
             if pd.notna(val):
-                val_str = str(val).replace('.0', '')
-                if val_str.isdigit() and int(val_str) in [25, 50, 100, 250, 500, 1000, 2500, 5000, 10000]:
-                    paliers_trouves.append((c_idx, int(val_str)))
-        if len(paliers_trouves) >= 2:
+                val_str = str(val).replace('.0', '').strip()
+                if val_str.isdigit():
+                    num = int(val_str)
+                    if num in [1, 2, 5, 10, 25, 50, 100, 200, 250, 500, 1000, 2500, 5000, 10000]:
+                        paliers_trouves.append((c_idx, num))
+        if len(paliers_trouves] >= 2:
             header_col_idx = r
             qtes_paliers = paliers_trouves
             break
 
     if header_col_idx == -1 or not qtes_paliers:
-        return 0.10
+        # Fallback de recherche globale des paliers dans tout le fichier si introuvable près de la catégorie
+        for r in range(len(df_all)):
+            paliers_trouves = []
+            for c_idx, val in enumerate(df_all.iloc[r].values):
+                if pd.notna(val):
+                    val_str = str(val).replace('.0', '').strip()
+                    if val_str.isdigit() and int(val_str) in [1, 2, 5, 10, 25, 50, 100, 200, 250, 500, 1000, 2500, 5000, 10000]:
+                        paliers_trouves.append((c_idx, int(val_str)))
+            if len(paliers_trouves] >= 2:
+                header_col_idx = r
+                qtes_paliers = paliers_trouves
+                break
 
-    # Recherche de la ligne correspondant au modèle exact
+    if not qtes_paliers:
+        return 0.15
+
+    # 3. Trouver la ligne du modèle exact (ex: A6, 135g, Banderole 200x80, etc.)
     best_row = -1
     mots_cles = choix_ref.lower().split()
     max_match = 0
+    search_start = header_col_idx + 1 if header_col_idx != -1 else 0
     
-    for r in range(header_col_idx + 1, len(df_all)):
+    for r in range(search_start, len(df_all)):
         row_cells = [str(df_all.iloc[r, c]) for c in range(df_all.shape[1]) if pd.notna(df_all.iloc[r, c])]
         row_text = " ".join(row_cells).lower()
-        if not row_text.strip() or any(cat in row_text for cat in ["flyers", "dépliants", "blocs notes", "banderoles", "panneaux"]):
-            if r > header_col_idx + 2:
-                break
-        
+        if not row_text.strip():
+            continue
+            
         match_count = sum(1 for mot in mots_cles if mot in row_text)
         if match_count > max_match:
             max_match = match_count
             best_row = r
 
     if best_row == -1:
-        best_row = header_col_idx + 1
+        best_row = search_start
 
-    # Trouver la colonne de quantité la plus proche
+    # 4. Trouver la colonne de quantité la plus proche
     col_cible = qtes_paliers[0][0]
     best_diff = float('inf')
     for c_idx, q_palier in qtes_paliers:
@@ -115,15 +140,23 @@ def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
             best_diff = diff
             col_cible = c_idx
 
-    # Extraction du prix unitaire
+    # 5. Extraction du prix unitaire
     try:
         prix_val = float(df_all.iloc[best_row, col_cible])
         if pd.isna(prix_val) or prix_val <= 0:
-            raise ValueError()
+            # Chercher dans la ligne juste en dessous ou au dessus si vide
+            for offset in [1, -1, 2, -2]:
+                alt_row = best_row + offset
+                if 0 <= alt_row < len(df_all):
+                    alt_val = float(df_all.iloc[alt_row, col_cible])
+                    if not pd.isna(alt_val) and alt_val > 0:
+                        prix_val = alt_val
+                        break
+        if pd.isna(prix_val) or prix_val <= 0:
+            return 0.15
         return round(prix_val, 4)
     except Exception:
-        return 0.10
-
+        return 0.15
 # --- GRILLES TARIFAIRES OFFICIELLES (MARQUAGE & BRODERIE) ---
 def obtenir_tarif_dtf_unitaire(type_textile, emplacement, qte_totale):
     grille_fin = {
