@@ -3,7 +3,6 @@ import pandas as pd
 from datetime import datetime
 import os
 import json
-import io
 import smtplib
 from email.message import EmailMessage
 from reportlab.lib.pagesizes import A4
@@ -17,27 +16,23 @@ st.set_page_config(page_title="Gestionnaire de Devis", layout="wide")
 COMPTEUR_FILE = "compteur_devis.json"
 CRM_FILE = "crm_devis.csv"
 
-# --- INTERFACE : CHARGEMENT DU CATALOGUE VIA UPLOADER ---
-st.sidebar.header("📁 Catalogue & Configuration")
-catalogue_file_uploaded = st.sidebar.file_uploader("Importer catalogue_standardise.xlsx", type=["xlsx"])
-
-@st.cache_data
-def charger_catalogue(uploaded_file):
-    if uploaded_file is not None:
-        try:
-            bytes_data = uploaded_file.getvalue()
-            return pd.read_excel(io.BytesIO(bytes_data))
-        except Exception as e:
-            st.sidebar.error(f"Erreur lecture Excel : {e}")
-            return pd.DataFrame(columns=["Categorie", "Reference", "Designation", "Quantite", "Prix_HT"])
-    elif os.path.exists("catalogue_standardise.xlsx"):
-        try:
-            return pd.read_excel("catalogue_standardise.xlsx")
-        except Exception:
-            return pd.DataFrame(columns=["Categorie", "Reference", "Designation", "Quantite", "Prix_HT"])
-    return pd.DataFrame(columns=["Categorie", "Reference", "Designation", "Quantite", "Prix_HT"])
-
-df_catalogue = charger_catalogue(catalogue_file_uploaded)
+# --- CATALOGUE INTÉGRÉ EN DUR ---
+data_catalogue = [
+    {"Categorie": "Papeterie / Impression", "Reference": "FLY-A5-135", "Designation": "Flyers A5 - 135g Couché Brillant", "Quantite": 250, "Prix_HT": 45.00},
+    {"Categorie": "Papeterie / Impression", "Reference": "FLY-A5-135", "Designation": "Flyers A5 - 135g Couché Brillant", "Quantite": 500, "Prix_HT": 65.00},
+    {"Categorie": "Papeterie / Impression", "Reference": "FLY-A5-135", "Designation": "Flyers A5 - 135g Couché Brillant", "Quantite": 1000, "Prix_HT": 95.00},
+    {"Categorie": "Papeterie / Impression", "Reference": "FLY-A5-135", "Designation": "Flyers A5 - 135g Couché Brillant", "Quantite": 5000, "Prix_HT": 250.00},
+    {"Categorie": "Papeterie / Impression", "Reference": "CAR-VIS-350", "Designation": "Cartes de Visite 85x54 - 350g Mat + Pelliculage", "Quantite": 250, "Prix_HT": 35.00},
+    {"Categorie": "Papeterie / Impression", "Reference": "CAR-VIS-350", "Designation": "Cartes de Visite 85x54 - 350g Mat + Pelliculage", "Quantite": 500, "Prix_HT": 50.00},
+    {"Categorie": "Papeterie / Impression", "Reference": "CAR-VIS-350", "Designation": "Cartes de Visite 85x54 - 350g Mat + Pelliculage", "Quantite": 1000, "Prix_HT": 75.00},
+    {"Categorie": "Signalétique", "Reference": "ROLL-UP-85", "Designation": "Roll-up Stand 85x200 cm (Structure + Impression)", "Quantite": 1, "Prix_HT": 59.00},
+    {"Categorie": "Signalétique", "Reference": "ROLL-UP-85", "Designation": "Roll-up Stand 85x200 cm (Structure + Impression)", "Quantite": 5, "Prix_HT": 245.00},
+    {"Categorie": "Goodies & Objets", "Reference": "MUG-BLANC", "Designation": "Mug Céramique Blanc Personnalisé Sublimation", "Quantite": 10, "Prix_HT": 6.50},
+    {"Categorie": "Goodies & Objets", "Reference": "MUG-BLANC", "Designation": "Mug Céramique Blanc Personnalisé Sublimation", "Quantite": 50, "Prix_HT": 4.50},
+    {"Categorie": "Goodies & Objets", "Reference": "STYLO-ECO", "Designation": "Stylo Bille Écologique Marquage 1 Couleur", "Quantite": 100, "Prix_HT": 0.85},
+    {"Categorie": "Goodies & Objets", "Reference": "STYLO-ECO", "Designation": "Stylo Bille Écologique Marquage 1 Couleur", "Quantite": 250, "Prix_HT": 0.65},
+]
+df_catalogue = pd.DataFrame(data_catalogue)
 
 def obtenir_prochain_numero_devis():
     annee_courante = datetime.now().strftime("%Y")
@@ -306,54 +301,50 @@ for i in range(10):
         )
         
         if type_article_choix == "Catalogue Standardisé (Flyers, Goodies, Impression...)":
-            if df_catalogue.empty:
-                st.warning("⚠️ Veuillez importer votre fichier `catalogue_standardise.xlsx` dans la barre latérale à gauche.")
-                qte = 0
+            st.markdown("🔍 **Sélection depuis le catalogue standardisé intégré**")
+            
+            categories = sorted(df_catalogue["Categorie"].unique())
+            cat_choisie = st.selectbox(f"Catégorie {i+1}", categories, key=f"cat_std_{i}")
+            
+            df_cat_filtre = df_catalogue[df_catalogue["Categorie"] == cat_choisie]
+            
+            designations = sorted(df_cat_filtre["Designation"].unique())
+            des_choisie = st.selectbox(f"Désignation / Produit {i+1}", designations, key=f"des_std_{i}")
+            
+            df_prod_filtre = df_cat_filtre[df_cat_filtre["Designation"] == des_choisie]
+            
+            quantites_dispo = sorted(df_prod_filtre["Quantite"].unique())
+            qte = st.selectbox(f"Quantité (paliers catalogue) {i+1}", quantites_dispo, key=f"qte_std_{i}")
+            
+            ligne_tarif = df_prod_filtre[df_prod_filtre["Quantite"] == qte]
+            if not ligne_tarif.empty:
+                prix_unitaire = float(ligne_tarif.iloc[0]["Prix_HT"])
+                reference = str(ligne_tarif.iloc[0]["Reference"]) if pd.notna(ligne_tarif.iloc[0]["Reference"]) else ""
             else:
-                st.markdown("🔍 **Sélection depuis le catalogue standardisé**")
-                
-                categories = sorted(df_catalogue["Categorie"].unique())
-                cat_choisie = st.selectbox(f"Catégorie {i+1}", categories, key=f"cat_std_{i}")
-                
-                df_cat_filtre = df_catalogue[df_catalogue["Categorie"] == cat_choisie]
-                
-                designations = sorted(df_cat_filtre["Designation"].unique())
-                des_choisie = st.selectbox(f"Désignation / Produit {i+1}", designations, key=f"des_std_{i}")
-                
-                df_prod_filtre = df_cat_filtre[df_cat_filtre["Designation"] == des_choisie]
-                
-                quantites_dispo = sorted(df_prod_filtre["Quantite"].unique())
-                qte = st.selectbox(f"Quantité (paliers catalogue) {i+1}", quantites_dispo, key=f"qte_std_{i}")
-                
-                ligne_tarif = df_prod_filtre[df_prod_filtre["Quantite"] == qte]
-                if not ligne_tarif.empty:
-                    prix_unitaire = float(ligne_tarif.iloc[0]["Prix_HT"])
-                    reference = str(ligne_tarif.iloc[0]["Reference"]) if pd.notna(ligne_tarif.iloc[0]["Reference"]) else ""
-                else:
-                    prix_unitaire = 0.0
-                    reference = ""
-                
-                nom_article = f"[{cat_choisie}] {des_choisie} (Réf: {reference})"
-                
-                col_p1, col_p2 = st.columns(2)
-                col_p1.metric(f"Prix unitaire HT {i+1}", f"{prix_unitaire:.4f} €")
-                col_p2.metric(f"Total ligne HT {i+1}", f"{prix_unitaire * qte:.2f} €")
-                
-                articles_saisis.append({
-                    "nom_article": nom_article,
-                    "quantite": qte,
-                    "prix_vet_unit": prix_unitaire,
-                    "sans_marquage": True,
-                    "marquages_config": [],
-                    "has_broderie": False,
-                    "option_ensachage": False,
-                    "type_sachet": "",
-                    "option_assurance": False,
-                    "option_stockage": False,
-                    "remise_fidelite": 0.0,
-                    "is_catalogue": True,
-                    "total_ligne_direct": prix_unitaire * qte
-                })
+                prix_unitaire = 0.0
+                reference = ""
+            
+            nom_article = f"[{cat_choisie}] {des_choisie} (Réf: {reference})"
+            
+            col_p1, col_p2 = st.columns(2)
+            col_p1.metric(f"Prix unitaire HT {i+1}", f"{prix_unitaire:.4f} €")
+            col_p2.metric(f"Total ligne HT {i+1}", f"{prix_unitaire * qte:.2f} €")
+            
+            articles_saisis.append({
+                "nom_article": nom_article,
+                "quantite": qte,
+                "prix_vet_unit": prix_unitaire,
+                "sans_marquage": True,
+                "marquages_config": [],
+                "has_broderie": False,
+                "option_ensachage": False,
+                "type_sachet": "",
+                "option_assurance": False,
+                "option_stockage": False,
+                "remise_fidelite": 0.0,
+                "is_catalogue": True,
+                "total_ligne_direct": prix_unitaire * qte
+            })
         else:
             sans_marquage = st.checkbox(f"Vêtement sans marquage (fourniture seule) {i+1}", key=f"sans_marq_{i}")
             
