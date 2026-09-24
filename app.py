@@ -26,33 +26,21 @@ if not os.path.exists(PDF_DIR):
     os.makedirs(PDF_DIR)
 
 def charger_secrets_smtp():
-    # 1. Tentative via st.secrets natif de Streamlit Cloud
     try:
         if "smtp" in st.secrets:
             return st.secrets["smtp"]["email"], st.secrets["smtp"]["password"]
     except Exception:
         pass
     
-    # 2. Tentative via le chemin local spécifique
     chemin_local = r"C:\Users\setup\OneDrive\OneDrive - IRIS - AB Com\Bureau\reprise\site et appli\.streamlit\secrets.toml"
-    if os.path.exists(chemin_local):
-        try:
-            data = toml.load(chemin_local)
-            if "smtp" in data:
-                return data["smtp"]["email"], data["smtp"]["password"]
-        except Exception:
-            pass
-            
-    # 3. Tentative dans le répertoire courant
-    for chemin_relatif in [".streamlit/secrets.toml", "secrets.toml"]:
-        if os.path.exists(chemin_relatif):
+    for path in [chemin_local, ".streamlit/secrets.toml", "secrets.toml"]:
+        if os.path.exists(path):
             try:
-                data = toml.load(chemin_relatif)
+                data = toml.load(path)
                 if "smtp" in data:
                     return data["smtp"]["email"], data["smtp"]["password"]
             except Exception:
                 pass
-                
     return None, None
 
 def obtenir_prochain_numero_devis():
@@ -83,7 +71,7 @@ def charger_catalogue():
     if os.path.exists(CATALOGUE_FILE):
         try:
             return pd.read_excel(CATALOGUE_FILE)
-        except Exception as e:
+        except Exception:
             return pd.DataFrame()
     return pd.DataFrame()
 
@@ -98,19 +86,64 @@ def obtenir_prix_catalogue(df, designation, qte):
         return 0.0
         
     if 'Quantite' in df_art.columns:
-        paliers = sorted(df_art['Quantite'].dropna().unique().tolist())
+        paliers = sorted([p for p in df_art['Quantite'].dropna().unique().tolist() if p <= qte])
         if paliers:
-            palier_choisi = paliers[0]
-            for p in paliers:
-                if p <= qte:
-                    palier_choisi = p
-                else:
-                    break
+            palier_choisi = max(paliers)
             match_row = df_art[df_art['Quantite'] == palier_choisi]
             if not match_row.empty:
                 return float(match_row.iloc[0]['Prix_HT'])
+        else:
+            paliers_tous = sorted(df_art['Quantite'].dropna().unique().tolist())
+            if paliers_tous:
+                match_row = df_art[df_art['Quantite'] == paliers_tous[0]]
+                if not match_row.empty:
+                    return float(match_row.iloc[0]['Prix_HT'])
                 
     return float(df_art.iloc[0]['Prix_HT'])
+
+# --- GRILLES TARIFAIRES OFFICIELLES (MARQUAGE & BRODERIE) ---
+def obtenir_tarif_dtf(type_textile, emplacement, qte):
+    # Grille DTF Fin (Textile Fin)
+    grille_fin = {
+        "Cœur (13x9 cm)": [(5, 6.00), (9, 4.50), (19, 3.60), (29, 2.81), (39, 2.50), (49, 2.40), (99, 2.00), (249, 1.80), (499, 1.60), (999, 1.40), (5000, 1.20), (float('inf'), 0.70)],
+        "Dos D10 (20x13 cm)": [(5, 7.92), (9, 6.50), (19, 5.50), (29, 5.00), (39, 4.20), (49, 4.00), (99, 3.50), (249, 3.00), (499, 2.70), (999, 2.50), (5000, 2.00), (float('inf'), 1.00)],
+        "Dos D20 (28x20 cm)": [(5, 13.67), (9, 10.00), (19, 9.00), (29, 6.90), (39, 6.30), (49, 6.00), (99, 5.50), (249, 4.60), (499, 4.00), (999, 3.50), (5000, 2.50), (float('inf'), 1.50)],
+        "Format P (37x27 cm)": [(5, 17.00), (9, 13.00), (19, 12.00), (29, 10.00), (39, 9.00), (49, 8.00), (99, 7.50), (249, 6.50), (499, 6.00), (999, 5.00), (5000, 4.00), (float('inf'), 2.50)],
+        "Manche (9x8 cm)": [(5, 7.20), (9, 5.40), (19, 4.32), (29, 3.37), (39, 3.00), (49, 2.88), (99, 2.40), (249, 2.16), (499, 1.92), (999, 1.68), (5000, 1.44), (float('inf'), 0.84)],
+        "+ Personnalisation Nom": [(5, 4.39), (9, 3.50), (19, 2.50), (29, 2.20), (39, 1.90), (49, 1.80), (99, 1.70), (249, 1.50), (499, 1.30), (999, 0.80), (5000, 0.30), (float('inf'), 0.20)]
+    }
+    
+    cle = emplacement if emplacement in grille_fin else "Cœur (13x9 cm)"
+    paliers = grille_fin[cle]
+    prix = paliers[-1][1]
+    for limite, p in paliers:
+        if qte <= limite:
+            prix = p
+            break
+            
+    if "Épais" in type_textile:
+        prix = round(prix * 1.10, 2)
+    return prix
+
+def obtenir_tarif_broderie(emplacement, qte):
+    grille_brod = {
+        "Poitrine (9x8 cm)": [(3, 15.90), (11, 12.13), (23, 9.20), (47, 6.90), (95, 5.30), (251, 4.80), (503, 4.50), (1007, 4.20), (1511, 3.90), (float('inf'), 3.50)],
+        "Dos D10 (25x10 cm)": [(3, 18.50), (11, 14.60), (23, 11.30), (47, 9.10), (95, 7.60), (251, 7.10), (503, 6.70), (1007, 6.30), (1511, 5.90), (float('inf'), 5.40)],
+        "Dos Large D20 (25x20 cm)": [(3, 23.20), (11, 18.25), (23, 14.20), (47, 11.90), (95, 9.90), (251, 9.30), (503, 8.80), (1007, 8.30), (1511, 7.80), (float('inf'), 7.20)],
+        "Col / Signature (7x2 cm)": [(3, 10.90), (11, 8.37), (23, 6.20), (47, 4.40), (95, 3.10), (251, 2.85), (503, 2.65), (1007, 2.45), (1511, 2.25), (float('inf'), 2.00)],
+        "Casquettes / Bonnets": [(3, 16.10), (11, 12.27), (23, 9.30), (47, 7.10), (95, 5.50), (251, 5.05), (503, 4.75), (1007, 4.45), (1511, 4.15), (float('inf'), 3.75)],
+        "Manche (8x5 cm)": [(3, 16.10), (11, 12.27), (23, 9.30), (47, 7.10), (95, 5.50), (251, 5.05), (503, 4.75), (1007, 4.45), (1511, 4.15), (float('inf'), 3.75)],
+        "Pantalon / Poche": [(3, 18.30), (11, 13.97), (23, 10.90), (47, 8.60), (95, 7.10), (251, 6.60), (503, 6.20), (1007, 5.80), (1511, 5.45), (float('inf'), 4.95)],
+        "+ Perso. Nom (Cœur)": [(3, 6.00), (11, 4.00), (23, 4.00), (47, 3.50), (95, 3.00), (251, 2.80), (503, 2.60), (1007, 2.40), (1511, 2.20), (float('inf'), 2.00)]
+    }
+    cle = emplacement if emplacement in grille_brod else "Poitrine (9x8 cm)"
+    paliers = grille_brod[cle]
+    prix = paliers[-1][1]
+    for limite, p in paliers:
+        if qte <= limite:
+            prix = p
+            break
+    return prix
 
 def calculer_frais_port(montant_base, zone):
     if zone == "France Continentale":
@@ -131,11 +164,10 @@ def calculer_frais_port(montant_base, zone):
         else: return 0.0
 
 if not os.path.exists(CRM_FILE):
-    df_init = pd.DataFrame(columns=[
+    pd.DataFrame(columns=[
         "Numero_Devis", "Date", "Client", "Contact", "Email", "Telephone", 
         "Total_HT", "Total_TTC", "Statut", "Commercial", "Mode_Reglement", "PDF_Path"
-    ])
-    df_init.to_csv(CRM_FILE, index=False)
+    ]).to_csv(CRM_FILE, index=False)
 
 def enregistrer_dans_crm(devis_data):
     df_crm = pd.read_csv(CRM_FILE) if os.path.exists(CRM_FILE) else pd.DataFrame(columns=list(devis_data.keys()))
@@ -224,32 +256,57 @@ for i in range(10):
                 nb_marquages = st.selectbox(f"Nombre de marquages {i+1}", [1, 2, 3, 4], key=f"nb_m_textile_{i}") if not sans_marquage else 0
 
             marquages = []
+            has_broderie = False
             if not sans_marquage:
                 for m in range(nb_marquages):
                     mc1, mc2 = st.columns(2)
                     with mc1:
                         t_marq = st.selectbox(f"Technique M{m+1}", ["DTF Textile Fin", "DTF Textile Épais", "Broderie HD"], key=f"t_marq_{i}_{m}")
                     with mc2:
-                        emp = st.selectbox(f"Emplacement M{m+1}", ["Cœur", "Dos", "Manche", "Poitrine"], key=f"emp_{i}_{m}")
-                    
-                    # Tarif dynamique selon technique et quantité
-                    if "Broderie" in t_marq:
-                        tarif_m = 6.50 if qte < 20 else (5.00 if qte < 50 else 3.80)
-                    else:
-                        tarif_m = 2.50 if qte < 50 else (1.80 if qte < 200 else 1.20)
-                        
+                        if "Broderie" in t_marq:
+                            emp = st.selectbox(f"Emplacement M{m+1}", ["Poitrine (9x8 cm)", "Dos D10 (25x10 cm)", "Dos Large D20 (25x20 cm)", "Col / Signature (7x2 cm)", "Casquettes / Bonnets", "Manche (8x5 cm)", "Pantalon / Poche", "+ Perso. Nom (Cœur)"], key=f"emp_{i}_{m}")
+                            has_broderie = True
+                            tarif_m = obtenir_tarif_broderie(emp, qte)
+                        else:
+                            emp = st.selectbox(f"Emplacement M{m+1}", ["Cœur (13x9 cm)", "Dos D10 (20x13 cm)", "Dos D20 (28x20 cm)", "Format P (37x27 cm)", "Manche (9x8 cm)", "+ Personnalisation Nom"], key=f"emp_{i}_{m}")
+                            tarif_m = obtenir_tarif_dtf(t_marq, emp, qte)
+                            
                     marquages.append({"nom": f"{t_marq} ({emp})", "tarif": tarif_m})
 
-            frais_prog_broderie = 35.0 if any("Broderie" in m["nom"] for m in marquages) else 0.0
+            # Frais techniques programme broderie selon règles officielles
+            if has_broderie:
+                if qte <= 3:
+                    frais_prog_broderie = 41.0
+                elif qte <= 11:
+                    frais_prog_broderie = 23.0
+                else:
+                    frais_prog_broderie = 0.0
+            else:
+                frais_prog_broderie = 0.0
+
             option_ensachage = st.checkbox(f"Option ensachage individuel {i+1}", key=f"ens_{i}")
-            coût_ensachage_unit = 0.35 if option_ensachage else 0.0
-            type_sachet = "Sachet individuel transparent" if option_ensachage else ""
+            type_sachet = st.selectbox(f"Type de sachet {i+1}", ["Sachet (T-shirt/Polo)", "Sachet (Veste/Sweat)"], key=f"tsach_{i}") if option_ensachage else ""
             
+            # Grille ensachage officielle
+            if option_ensachage:
+                if "T-shirt" in type_sachet:
+                    coût_ensachage_unit = 1.38 if qte<=11 else (1.24 if qte<=24 else (1.17 if qte<=49 else (1.11 if qte<=99 else (1.08 if qte<=249 else (1.06 if qte<=499 else 1.00)))))
+                else:
+                    coût_ensachage_unit = 1.75 if qte<=11 else (1.65 if qte<=24 else (1.53 if qte<=49 else (1.43 if qte<=99 else (1.39 if qte<=249 else (1.36 if qte<=499 else 1.34)))))
+            else:
+                coût_ensachage_unit = 0.0
+
             option_assurance = st.checkbox(f"Option assurance garantie textile {i+1}", key=f"ass_{i}")
-            coût_assurance_unit = 0.15 if option_assurance else 0.0
+            if option_assurance:
+                coût_assurance_unit = 3.08 if qte<=11 else (2.38 if qte<=24 else (1.83 if qte<=49 else (1.25 if qte<=99 else (0.98 if qte<=249 else (0.70 if qte<=499 else (0.64 if qte<=999 else 0.61))))))
+            else:
+                coût_assurance_unit = 0.0
             
             option_stockage = st.checkbox(f"Option stockage + picking {i+1}", key=f"stock_{i}")
-            coût_stockage_unit = 0.50 if option_stockage else 0.0
+            if option_stockage:
+                coût_stockage_unit = 1.00 if qte<=99 else (0.56 if qte<=249 else (0.50 if qte<=499 else (0.43 if qte<=999 else 0.30)))
+            else:
+                coût_stockage_unit = 0.0
             
             remise_fidelite = st.number_input(f"Réduction fidélité (%) {i+1}", min_value=0.0, max_value=100.0, value=0.0, key=f"rem_{i}")
 
@@ -285,7 +342,6 @@ for i in range(10):
                     liste_designations = df_filtre['Designation'].dropna().unique().tolist() if 'Designation' in df_filtre.columns else []
                     nom_article = st.selectbox(f"Article du catalogue {i+1}", liste_designations, key=f"nom_print_{i}")
                     
-                    # Récupération automatique du prix selon la catégorie, désignation et quantité
                     prix_defaut = obtenir_prix_catalogue(df_filtre, nom_article, qte)
                 else:
                     nom_article = st.text_input(f"Désignation article print {i+1}", value="Flyer A5", key=f"nom_print_libre_{i}")
@@ -293,7 +349,7 @@ for i in range(10):
 
                 prix_vetement_ht = st.number_input(f"Prix unitaire HT (€) {i+1}", min_value=0.0, value=float(prix_defaut), format="%.3f", key=f"px_print_{i}")
             with col2:
-                st.info("ℹ️ Prix unitaire calculé dynamiquement depuis la grille de tarifs du catalogue Excel par catégorie.")
+                st.info("ℹ️ Prix unitaire récupéré et ajusté automatiquement depuis le catalogue officiel par catégorie et quantité.")
                 remise_fidelite = st.number_input(f"Remise commerciale (%) {i+1}", min_value=0.0, max_value=100.0, value=0.0, key=f"rem_print_{i}")
 
             if qte > 0:
@@ -315,8 +371,8 @@ for i in range(10):
                     "remise_fidelite": remise_fidelite
                 })
 
-# --- CALCUL DES FRAIS TECHNIQUES ---
-frais_tech_auto = 24.90 if (total_textile_brut > 0 and total_textile_brut < 800.0) else 0.0
+# --- FRAIS TECHNIQUES DE DOSSIER OFFICIELS (19.80 €) ---
+frais_tech_auto = 19.80 if total_textile_brut > 0 else 0.0
 
 # --- ONGLET 10 : GÉNÉRAL & DEVIS ---
 with onglets[10]:
@@ -349,10 +405,7 @@ with onglets[10]:
         sous_total_articles = sum([item["total_ligne_ht"] for item in lignes_devis_global])
         montant_base_port = sous_total_articles + frais_techniques_dossier
         
-        if offrir_port:
-            frais_port = 0.0
-        else:
-            frais_port = calculer_frais_port(montant_base_port, zone_livraison)
+        frais_port = 0.0 if offrir_port else calculer_frais_port(montant_base_port, zone_livraison)
         
         total_general_ht = montant_base_port + frais_port
         tva = total_general_ht * 0.20
@@ -363,7 +416,7 @@ with onglets[10]:
 
         st.write(f"**Quantité globale pièces :** {quantite_globale_totale}")
         st.write(f"**Sous-Total Articles HT :** {sous_total_articles:.2f} €")
-        st.write(f"**Frais techniques :** {frais_techniques_dossier:.2f} € HT")
+        st.write(f"**Frais techniques de dossier :** {frais_techniques_dossier:.2f} € HT")
         st.write(f"**Frais de port ({zone_livraison}) :** {frais_port:.2f} € HT" if not offrir_port else "**Frais de port :** Offerts (0.00 €)")
         st.markdown(f"### **Total Général HT : {total_general_ht:.2f} €** | **TOTAL TTC (20%) : {total_ttc:.2f} €**")
 
@@ -372,8 +425,6 @@ with onglets[10]:
             pdf_filename = os.path.join(PDF_DIR, f"Devis_{num_devis.replace('/', '_')}.pdf")
             st.session_state['dernier_pdf'] = pdf_filename
             st.session_state['dernier_num'] = num_devis
-            st.session_state['total_ttc_cache'] = total_ttc
-            st.session_state['total_ht_cache'] = total_general_ht
 
             data_crm = {
                 "Date": datetime.now().strftime("%Y-%m-%d %H:%M"),
@@ -393,7 +444,7 @@ with onglets[10]:
             enregistrer_dans_crm(data_crm)
             st.success("✅ Données enregistrées dans le CRM avec succès !")
 
-            # --- GÉNÉRATION DU PDF PROFESSIONNEL ---
+            # --- GÉNÉRATION DU PDF PROFESSIONNEL AVEC LOGO APEX ---
             doc = SimpleDocTemplate(pdf_filename, pagesize=A4, rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)
             story = []
             styles = getSampleStyleSheet()
