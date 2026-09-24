@@ -3,6 +3,8 @@ import pandas as pd
 from datetime import datetime
 import os
 import json
+import smtplib
+from email.message import EmailMessage
 from reportlab.lib.pagesizes import A4
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image as RLImage
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
@@ -63,7 +65,6 @@ def obtenir_prix_catalogue(df, designation, qte):
         
     if 'Quantite' in df_art.columns:
         paliers_dispos = df_art['Quantite'].dropna().unique().tolist()
-        # Si le catalogue indique une quantité unitaire de 1 (ex: Banderoles, Roll-ups), on multiplie le prix unitaire par qte
         if len(paliers_dispos) == 1 and paliers_dispos[0] == 1:
             prix_base = float(df_art.iloc[0]['Prix_HT'])
             return prix_base * qte
@@ -93,7 +94,6 @@ def obtenir_tarif_dtf_unitaire(type_textile, emplacement, qte_totale):
         "Manche (9x8 cm)": [(5, 7.20), (9, 5.40), (19, 4.32), (29, 3.37), (39, 3.00), (49, 2.88), (99, 2.40), (249, 2.16), (499, 1.92), (999, 1.68), (5000, 1.44), (float('inf'), 0.84)],
         "+ Personnalisation Nom": [(5, 4.39), (9, 3.50), (19, 2.50), (29, 2.20), (39, 1.90), (49, 1.80), (99, 1.70), (249, 1.50), (499, 1.30), (999, 0.80), (5000, 0.30), (float('inf'), 0.20)]
     }
-    
     cle = emplacement if emplacement in grille_fin else "Cœur (13x9 cm)"
     paliers = grille_fin[cle]
     prix = paliers[-1][1]
@@ -101,7 +101,6 @@ def obtenir_tarif_dtf_unitaire(type_textile, emplacement, qte_totale):
         if qte_totale <= limite:
             prix = p
             break
-            
     if "Épais" in type_textile:
         prix = round(prix * 1.10, 2)
     return prix
@@ -215,7 +214,6 @@ for i in range(10):
                             emp = st.selectbox(f"Emplacement M{m+1}", ["Poitrine (9x8 cm)", "Dos D10 (25x10 cm)", "Dos Large D20 (25x20 cm)", "Col / Signature (7x2 cm)", "Casquettes / Bonnets", "Manche (8x5 cm)", "Pantalon / Poche", "+ Perso. Nom (Cœur)"], key=f"emp_{i}_{m}")
                         else:
                             emp = st.selectbox(f"Emplacement M{m+1}", ["Cœur (13x9 cm)", "Dos D10 (20x13 cm)", "Dos D20 (28x20 cm)", "Format P (37x27 cm)", "Manche (9x8 cm)", "+ Personnalisation Nom"], key=f"emp_{i}_{m}")
-                            
                     marquages.append({"technique": t_marq, "emplacement": emp})
 
             option_ensachage = st.checkbox(f"Option ensachage individuel {i+1}", key=f"ens_{i}")
@@ -279,7 +277,7 @@ for i in range(10):
                     "remise_fidelite": remise_fidelite
                 })
 
-# --- CALCUL DES QUANTITÉS CUMULÉES PAR MARQUAGE/BRODERIE POUR LES PALIERS ---
+# --- CALCUL DES QUANTITÉS CUMULÉES PAR MARQUAGE/BRODERIE ---
 quantites_cumulees_marquages = {}
 for item in articles_saisis:
     if item["type_univers"] == "textile" and not item["sans_marquage"]:
@@ -288,10 +286,9 @@ for item in articles_saisis:
             cle = (m["technique"], m["emplacement"])
             quantites_cumulees_marquages[cle] = quantites_cumulees_marquages.get(cle, 0) + q
 
-# --- FRAIS TECHNIQUES DE DOSSIER OFFICIELS (19.80 €) ---
 frais_tech_auto = 19.80 if total_textile_brut > 0 else 0.0
 
-# --- ONGLET 10 : GÉNÉRAL & DEVIS ---
+# --- ONGLET GÉNÉRAL & DEVIS ---
 with onglets[10]:
     st.subheader("📊 Récapitulatif Général & Génération du Devis Professionnel")
 
@@ -328,14 +325,14 @@ with onglets[10]:
                     tot_marquages += tarif_m * q
                     marquages_calcules.append({"nom": f"{m['technique']} ({m['emplacement']})", "tarif": tarif_m})
 
-            # Frais techniques programme broderie selon quantité globale cumulée de broderie
+            # --- FRAIS TECHNIQUES & PROGRAMME BRODERIE CORRIGÉS EXACTS ---
             if has_broderie_global:
-                if quantite_totale_broderie <= 3:
+                if 2 <= quantite_totale_broderie <= 3:
                     frais_prog_broderie = 41.0
-                elif quantite_totale_broderie <= 11:
+                elif 4 <= quantite_totale_broderie <= 11:
                     frais_prog_broderie = 23.0
                 else:
-                    frais_prog_broderie = 0.0
+                    frais_prog_broderie = 0.0  # Offerts à partir de 12 pièces ou 1 pièce
             else:
                 frais_prog_broderie = 0.0
 
@@ -421,7 +418,7 @@ with onglets[10]:
             enregistrer_dans_crm(data_crm)
             st.success("✅ Données enregistrées dans le CRM avec succès !")
 
-            # --- GÉNÉRATION DU PDF PROFESSIONNEL ---
+            # --- GÉNÉRATION DU PDF ---
             doc = SimpleDocTemplate(pdf_filename, pagesize=A4, rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)
             story = []
             styles = getSampleStyleSheet()
@@ -447,7 +444,6 @@ with onglets[10]:
                 "Email : brice.geny@gmail.com", 
                 style_sub
             )
-            
             if logo_path and os.path.exists(logo_path):
                 img_logo = RLImage(logo_path, width=110, height=45)
                 t_header = Table([[img_logo, header_text]], colWidths=[120, 420])
@@ -485,40 +481,15 @@ with onglets[10]:
 
             for item in lignes_devis_global:
                 libelle_support = f"<b>Support (Sans marquage) : {item['nom_article']}</b>" if item['sans_marquage'] else f"<b>Support : {item['nom_article']}</b>"
-                table_data.append([
-                    Paragraph(libelle_support, style_cell), 
-                    str(item['quantite']), 
-                    f"{item['prix_vet_unit']:.2f} €", 
-                    f"{item['prix_vet_unit']*item['quantite']:.2f} €"
-                ])
+                table_data.append([Paragraph(libelle_support, style_cell), str(item['quantite']), f"{item['prix_vet_unit']:.2f} €", f"{item['prix_vet_unit']*item['quantite']:.2f} €"])
                 for m in item['marquages_calcules']:
-                    table_data.append([
-                        Paragraph(f"&nbsp;&nbsp;&bull; Marquage : {m['nom']}", style_cell), 
-                        str(item['quantite']), 
-                        f"{m['tarif']:.2f} €", 
-                        f"{m['tarif']*item['quantite']:.2f} €"
-                    ])
+                    table_data.append([Paragraph(f"&nbsp;&nbsp;&bull; Marquage : {m['nom']}", style_cell), str(item['quantite']), f"{m['tarif']:.2f} €", f"{m['tarif']*item['quantite']:.2f} €"])
                 if item['option_ensachage']:
-                    table_data.append([
-                        Paragraph(f"&nbsp;&nbsp;&bull; Option : {item['type_sachet']}", style_cell), 
-                        str(item['quantite']), 
-                        f"{item['coût_ensachage_unit']:.2f} €", 
-                        f"{item['coût_ensachage_unit']*item['quantite']:.2f} €"
-                    ])
+                    table_data.append([Paragraph(f"&nbsp;&nbsp;&bull; Option : {item['type_sachet']}", style_cell), str(item['quantite']), f"{item['coût_ensachage_unit']:.2f} €", f"{item['coût_ensachage_unit']*item['quantite']:.2f} €"])
                 if item['option_assurance']:
-                    table_data.append([
-                        Paragraph("&nbsp;&nbsp;&bull; Option : Assurance MHC (Garantie textile)", style_cell), 
-                        str(item['quantite']), 
-                        f"{item['coût_assurance_unit']:.2f} €", 
-                        f"{item['coût_assurance_unit']*item['quantite']:.2f} €"
-                    ])
+                    table_data.append([Paragraph("&nbsp;&nbsp;&bull; Option : Assurance MHC (Garantie textile)", style_cell), str(item['quantite']), f"{item['coût_assurance_unit']:.2f} €", f"{item['coût_assurance_unit']*item['quantite']:.2f} €"])
                 if item['option_stockage']:
-                    table_data.append([
-                        Paragraph("&nbsp;&nbsp;&bull; Option : Mise en stockage + picking", style_cell), 
-                        str(item['quantite']), 
-                        f"{item['coût_stockage_unit']:.2f} €", 
-                        f"{item['coût_stockage_unit']*item['quantite']:.2f} €"
-                    ])
+                    table_data.append([Paragraph("&nbsp;&nbsp;&bull; Option : Mise en stockage + picking", style_cell), str(item['quantite']), f"{item['coût_stockage_unit']:.2f} €", f"{item['coût_stockage_unit']*item['quantite']:.2f} €"])
 
             if frais_prog_total > 0:
                 table_data.append([Paragraph("Frais de technique & programme Broderie", style_cell), "1", f"{frais_prog_total:.2f} €", f"{frais_prog_total:.2f} €"])
@@ -560,25 +531,55 @@ with onglets[10]:
             story.append(Paragraph(conditions_text, style_sub))
 
             doc.build(story)
-            st.success(f"Devis PDF professionnel généré sous le numéro : **{num_devis}** (`{pdf_filename}`)")
+            st.success(f"Devis PDF professionnel généré sous le numéro : **{num_devis}**")
 
         if 'dernier_pdf' in st.session_state:
             pdf_filename = st.session_state['dernier_pdf']
             if os.path.exists(pdf_filename):
                 with open(pdf_filename, "rb") as f:
                     st.download_button("📥 Télécharger le PDF du devis", f, file_name=os.path.basename(pdf_filename), mime="application/pdf")
+                
+                st.markdown("---")
+                st.subheader("✉️ Envoi direct du devis par e-mail")
+                email_dest = st.text_input("Destinataire de l'e-mail", value=client_email)
+                sujet_mail = st.text_input("Objet de l'e-mail", value=f"Devis {st.session_state.get('dernier_num', '')} - SAS ABCOM")
+                corps_mail = st.text_area("Message", value=f"Bonjour {client_nom},\n\nVeuillez trouver ci-joint votre devis.\n\nCordialement,\n{conseiller_nom}\nSAS ABCOM")
 
-# --- ONGLET 11 : SUIVI CRM ---
+                if st.button("📤 Envoyer le devis par e-mail maintenant"):
+                    try:
+                        # Lecture configuration SMTP depuis secrets.toml ou valeurs par défaut
+                        smtp_server = st.secrets["email"]["smtp_server"]
+                        smtp_port = st.secrets["email"]["smtp_port"]
+                        smtp_user = st.secrets["email"]["smtp_user"]
+                        smtp_password = st.secrets["email"]["smtp_password"]
+
+                        msg = EmailMessage()
+                        msg["Subject"] = sujet_mail
+                        msg["From"] = smtp_user
+                        msg["To"] = email_dest
+                        msg.set_content(corps_mail)
+
+                        with open(pdf_filename, "rb") as f:
+                            file_data = f.read()
+                            file_name = os.path.basename(pdf_filename)
+                        msg.add_attachment(file_data, maintype="application", subtype="pdf", filename=file_name)
+
+                        with smtplib.SMTP_SSL(smtp_server, smtp_port) as server:
+                            server.login(smtp_user, smtp_password)
+                            server.send_message(msg)
+                        st.success(f"E-mail envoyé avec succès à {email_dest} !")
+                    except Exception as e:
+                        st.error(f"Erreur lors de l'envoi SMTP : {e}. Vérifie ton fichier secrets.toml.")
+
+# --- ONGLET SUIVI CRM ---
 with onglets[11]:
     st.header("📈 Suivi CRM & Historique des Devis")
     if os.path.exists(CRM_FILE):
         df_crm = pd.read_csv(CRM_FILE)
         if not df_crm.empty:
             st.dataframe(df_crm, use_container_width=True)
-            
             devis_selectionne = st.selectbox("Sélectionner un devis", df_crm["Numero_Devis"].tolist(), key="select_crm")
             ligne_dev = df_crm[df_crm["Numero_Devis"] == devis_selectionne].iloc[0]
-            
             if pd.notna(ligne_dev.get("PDF_Path")) and os.path.exists(str(ligne_dev["PDF_Path"])):
                 with open(ligne_dev["PDF_Path"], "rb") as pdf_file:
                     st.download_button("📥 Télécharger le PDF de ce devis", pdf_file, file_name=os.path.basename(ligne_dev["PDF_Path"]), mime="application/pdf")
