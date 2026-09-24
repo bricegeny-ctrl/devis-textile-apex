@@ -15,7 +15,6 @@ st.set_page_config(page_title="Gestionnaire de Devis - Marquage Textile", layout
 # --- GESTION DU COMPTEUR DE DEVIS & CRM ---
 COMPTEUR_FILE = "compteur_devis.json"
 CRM_FILE = "crm_devis.csv"
-CATALOGUE_FILE = "catalogue_standardise.xlsx"
 
 def obtenir_prochain_numero_devis():
     annee_courante = datetime.now().strftime("%Y")
@@ -61,21 +60,8 @@ def mettre_a_jour_statut_crm(numero_devis, nouveau_statut):
             df.loc[df["Numero_Devis"] == numero_devis, "Statut"] = nouveau_statut
             df.to_csv(CRM_FILE, index=False)
 
-# --- CHARGEMENT DU CATALOGUE EXCEL ---
-@st.cache_data
-def charger_catalogue():
-    if os.path.exists(CATALOGUE_FILE):
-        try:
-            df_cat = pd.read_excel(CATALOGUE_FILE)
-            return df_cat
-        except Exception as e:
-            st.error(f"Erreur lors du chargement du catalogue Excel : {e}")
-            return pd.DataFrame()
-    return pd.DataFrame()
+# --- FONCTIONS DE CALCUL DES TARIFS & TRANCHES (ISSUES DU CATALOGUE EXCEL) ---
 
-df_catalogue = charger_catalogue()
-
-# --- FONCTIONS DE CALCUL DES TARIFS & TRANCHES ---
 def get_tarif_dtf_fin(qte_globale, emplacement):
     if qte_globale <= 5: idx = 0
     elif qte_globale <= 9: idx = 1
@@ -214,6 +200,26 @@ def calculer_frais_port(montant_ht, zone):
         else: return 90.00
     else: return 0.0
 
+# --- CHARGEMENT DU CATALOGUE PRODUITS (EXCEL) ---
+CATALOGUE_FILE = "catalogue_standardise_2.xlsx"
+catalogue_df = pd.DataFrame()
+categories_produits = []
+produits_par_cat = {}
+
+if os.path.exists(CATALOGUE_FILE):
+    try:
+        # Lecture de toutes les feuilles ou de la feuille principale du catalogue
+        catalogue_df = pd.read_excel(CATALOGUE_FILE, sheet_name=0)
+        # Supposons des colonnes standards type "Categorie", "Nom", "Prix_HT" si structuré ainsi,
+        # ou adaptation dynamique selon le contenu du fichier fourni.
+        if "Categorie" in catalogue_df.columns and "Nom" in catalogue_df.columns and "Prix_HT" in catalogue_df.columns:
+            categories_produits = catalogue_df["Categorie"].unique().tolist()
+            for cat in categories_produits:
+                prods = catalogue_df[catalogue_df["Categorie"] == cat].to_dict(orient="records")
+                produits_par_cat[cat] = prods
+    except Exception as e:
+        st.warning(f"Impossible de charger automatiquement le catalogue Excel : {e}")
+
 # --- CHARGEMENT DU CRM POUR L'AUTO-COMPLÉTION ---
 clients_connus = []
 entreprises_connues = []
@@ -263,21 +269,21 @@ st.sidebar.markdown("---")
 st.sidebar.header("👤 Conseiller émetteur")
 conseiller_choix = st.sidebar.selectbox(
     "Envoyer en tant que :", 
-    ["Brice Geny (brice.geny@gmail.com)", "Brice Bugna (brice.bugna@gmail.com)"]
+    ["Conseiller 1", "Conseiller 2"]
 )
 
-if "Brice Geny" in conseiller_choix:
-    conseiller_nom = "Brice Geny"
-    conseiller_email = "brice.geny@gmail.com"
-    conseiller_tel = "06 32 69 73 28"
-    autre_email = "brice.bugna@gmail.com"
-    gmail_password = st.secrets.get("EMAIL_PASSWORD_GENY", st.secrets.get("EMAIL_PASSWORD", ""))
+if "Conseiller 1" in conseiller_choix:
+    conseiller_nom = "Conseiller 1"
+    conseiller_email = "conseiller1@example.com"
+    conseiller_tel = "06 00 00 00 00"
+    autre_email = "conseiller2@example.com"
+    gmail_password = st.secrets.get("EMAIL_PASSWORD_1", st.secrets.get("EMAIL_PASSWORD", ""))
 else:
-    conseiller_nom = "Brice Bugna"
-    conseiller_email = "brice.bugna@gmail.com"
-    conseiller_tel = "06 29 92 94 74"
-    autre_email = "brice.geny@gmail.com"
-    gmail_password = st.secrets.get("EMAIL_PASSWORD_BUGNA", st.secrets.get("EMAIL_PASSWORD", ""))
+    conseiller_nom = "Conseiller 2"
+    conseiller_email = "conseiller2@example.com"
+    conseiller_tel = "06 00 00 00 00"
+    autre_email = "conseiller1@example.com"
+    gmail_password = st.secrets.get("EMAIL_PASSWORD_2", st.secrets.get("EMAIL_PASSWORD", ""))
 
 st.sidebar.markdown("---")
 st.sidebar.header("🖼️ Logo de l'entreprise")
@@ -285,107 +291,104 @@ logo_file = st.sidebar.file_uploader("Importer un autre logo (PNG/JPG)", type=["
 
 logo_defaut_github = "Gemini_Generated_Image_mxbmbrmxbmbrmxbm.jpeg"
 if logo_file is None and os.path.exists(logo_defaut_github):
-    st.sidebar.image(logo_defaut_github, width=150, caption="Logo actif (GitHub)")
+    st.sidebar.image(logo_defaut_github, width=150, caption="Logo actif")
 
-# --- CONFIGURATION DES ARTICLES DEPUIS LE CATALOGUE EXCEL ---
-st.header("🛍️ Sélection des Articles (Catalogue par Catégories)")
-
-if df_catalogue.empty:
-    st.warning(f"⚠️ Le fichier `{CATALOGUE_FILE}` est introuvable ou vide. Veuillez vérifier sa présence dans le dossier.")
-    categories_disponibles = []
-else:
-    # On détecte automatiquement les noms de colonnes (ajustez si besoin selon vos en-têtes exacts dans Excel)
-    cols = df_catalogue.columns.tolist()
-    col_cat = cols[0] if len(cols) > 0 else "Catégorie"
-    col_nom = cols[1] if len(cols) > 1 else "Article"
-    col_prix = cols[2] if len(cols) > 2 else "Prix HT"
-    
-    categories_disponibles = df_catalogue[col_cat].dropna().unique().tolist()
-
-nb_articles_config = st.number_input("Nombre d'articles différents à ajouter au devis", min_value=1, max_value=20, value=3)
+noms_onglets = [f"Article {i+1}" for i in range(10)] + ["📊 Général & Devis", "📈 Suivi CRM"]
+onglets = st.tabs(noms_onglets)
 
 articles_saisis = []
 
-for i in range(int(nb_articles_config)):
-    st.markdown(markdown_text := f"### Article {i+1}")
-    
-    col_sel1, col_sel2 = st.columns(2)
-    with col_sel1:
-        if categories_disponibles:
-            cat_choisie = st.selectbox(f"Catégorie {i+1}", categories_disponibles, key=f"cat_{i}")
-            # Filtrer les articles de cette catégorie
-            articles_cat = df_catalogue[df_catalogue[col_cat] == cat_choisie][col_nom].dropna().unique().tolist()
-            article_choisi = st.selectbox(f"Référence / Article {i+1}", articles_cat, key=f"art_ref_{i}")
+for i in range(10):
+    with onglets[i]:
+        st.subheader(f"Configuration de l'Article {i+1}")
+        
+        # Option d'ajout manuel ou sélection depuis le catalogue Excel
+        mode_saisie = st.radio(f"Mode de sélection pour l'Article {i+1}", ["Catalogue Excel", "Saisie Manuelle / Libre"], key=f"mode_saisie_{i}")
+        
+        sans_marquage = st.checkbox(f"Vêtement sans marquage (fourniture seule) {i+1}", key=f"sans_marq_{i}")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            if mode_saisie == "Catalogue Excel" and categories_produits:
+                cat_choisie = st.selectbox(f"Catégorie {i+1}", categories_produits, key=f"cat_{i}")
+                prods_dispos = produits_par_cat.get(cat_choisie, [])
+                noms_prods = [p.get("Nom", "Produit") for p in prods_dispos]
+                prod_choisi = st.selectbox(f"Référence Produit {i+1}", noms_prods, key=f"prod_sel_{i}")
+                
+                # Récupération automatique du prix si présent dans le catalogue
+                prix_defaut = 4.92
+                for p in prods_dispos:
+                    if p.get("Nom") == prod_choisi:
+                        prix_defaut = float(p.get("Prix_HT", 4.92))
+                
+                nom_article = st.text_input(f"Nom / Référence modifiable {i+1}", value=prod_choisi, key=f"nom_{i}")
+                qte = st.number_input(f"Quantité (pcs) {i+1}", min_value=0, value=10 if i==0 else 0, key=f"qte_{i}")
+                prix_vetement_ht = st.number_input(f"Prix unitaire HT du vêtement (€) {i+1}", min_value=0.0, value=prix_defaut, key=f"px_vet_{i}")
+            else:
+                # Mode Saisie Manuelle (pour produits non déterminés d'avance)
+                nom_article = st.text_input(f"Nom / Référence personnalisée du vêtement {i+1}", value=f"Article libre {i+1}" if i==0 else f"Article {i+1}", key=f"nom_{i}")
+                qte = st.number_input(f"Quantité (pcs) {i+1}", min_value=0, value=10 if i==0 else 0, key=f"qte_{i}")
+                prix_vetement_ht = st.number_input(f"Prix unitaire HT du vêtement (€) {i+1}", min_value=0.0, value=4.92, key=f"px_vet_{i}")
             
-            # Récupérer le prix unitaire par défaut depuis le catalogue si disponible
-            ligne_art = df_catalogue[(df_catalogue[col_cat] == cat_choisie) & (df_catalogue[col_nom] == article_choisi)]
-            prix_defaut = float(ligne_art[col_prix].values[0]) if not ligne_art.empty and col_prix in ligne_art.columns else 4.92
-        else:
-            cat_choisie = "Standard"
-            article_choisi = st.text_input(f"Nom de l'article {i+1}", value=f"Article {i+1}", key=f"art_txt_{i}")
-            prix_defaut = 4.92
+        with col2:
+            if not sans_marquage:
+                st.markdown("**Gestion des Marquages (jusqu'à 4)**")
+                nb_marquages = st.selectbox(f"Nombre de marquages pour l'article {i+1}", [1, 2, 3, 4], key=f"nb_m_{i}")
+            else:
+                nb_marquages = 0
+                st.info("ℹ️ Article sans marquage (fourniture seule sélectionnée).")
 
-    with col_sel2:
-        nom_article_final = f"{cat_choisie} - {article_choisi}" if categories_disponibles else article_choisi
-        nom_article = st.text_input(f"Libellé personnalisé sur devis {i+1}", value=nom_article_final, key=f"nom_perso_{i}")
-        qte = st.number_input(f"Quantité (pcs) {i+1}", min_value=0, value=10 if i==0 else 0, key=f"qte_{i}")
-        prix_vetement_ht = st.number_input(f"Prix unitaire HT (€) {i+1}", min_value=0.0, value=float(prix_defaut), key=f"px_vet_{i}")
+        marquages_config = []
+        has_broderie = False
+        
+        if not sans_marquage:
+            for m in range(nb_marquages):
+                st.markdown(f"--- *Marquage {m+1}*")
+                mc1, mc2 = st.columns(2)
+                with mc1:
+                    t_marq = st.selectbox(f"Technique M{m+1} (Art {i+1})", ["DTF Textile Fin", "DTF Textile Épais", "Broderie HD"], key=f"t_marq_{i}_{m}")
+                with mc2:
+                    if t_marq == "DTF Textile Fin":
+                        emp = st.selectbox(f"Emplacement M{m+1}", ["Cœur (13x9 cm)", "Dos D10 (20x13 cm)", "Dos D20 (28x20 cm)", "Format P (37x27 cm)", "Manche (9x8 cm)", "+ Perso. Nom"], key=f"emp_f_{i}_{m}")
+                    elif t_marq == "DTF Textile Épais":
+                        emp = st.selectbox(f"Emplacement M{m+1}", ["Cœur (13x9 cm)", "Dos D10 (20x13 cm)", "Dos D20 (28x20 cm)", "Format P (37x27 cm)", "Manche (9x8 cm)", "+ Perso. Nom"], key=f"emp_e_{i}_{m}")
+                    else:
+                        emp = st.selectbox(f"Emplacement M{m+1}", ["Poitrine (9x8 cm)", "Dos D10 (25x10 cm)", "Dos Large D20 (25x20)", "Col/Signature (7x2)", "Casquettes / Bonnets", "Manche (8x5 cm)", "Pantalon / Poche", "+ Perso. Nom (Cœur)"], key=f"emp_b_{i}_{m}")
+                
+                if t_marq == "Broderie HD":
+                    has_broderie = True
 
-    sans_marquage = st.checkbox(f"Vêtement sans marquage (fourniture seule) {i+1}", key=f"sans_marq_{i}")
-    
-    nb_marquages = 0
-    marquages_config = []
-    has_broderie = False
-    
-    if not sans_marquage:
-        nb_marquages = st.selectbox(f"Nombre de marquages pour l'article {i+1}", [1, 2, 3, 4], key=f"nb_m_{i}")
-        for m in range(nb_marquages):
-            st.markdown(f"--- *Marquage {m+1} pour Article {i+1}*")
-            mc1, mc2 = st.columns(2)
-            with mc1:
-                t_marq = st.selectbox(f"Technique M{m+1} (Art {i+1})", ["DTF Textile Fin", "DTF Textile Épais", "Broderie HD"], key=f"t_marq_{i}_{m}")
-            with mc2:
-                if t_marq == "DTF Textile Fin":
-                    emp = st.selectbox(f"Emplacement M{m+1}", ["Cœur (13x9 cm)", "Dos D10 (20x13 cm)", "Dos D20 (28x20 cm)", "Format P (37x27 cm)", "Manche (9x8 cm)", "+ Perso. Nom"], key=f"emp_f_{i}_{m}")
-                elif t_marq == "DTF Textile Épais":
-                    emp = st.selectbox(f"Emplacement M{m+1}", ["Cœur (13x9 cm)", "Dos D10 (20x13 cm)", "Dos D20 (28x20 cm)", "Format P (37x27 cm)", "Manche (9x8 cm)", "+ Perso. Nom"], key=f"emp_e_{i}_{m}")
-                else:
-                    emp = st.selectbox(f"Emplacement M{m+1}", ["Poitrine (9x8 cm)", "Dos D10 (25x10 cm)", "Dos Large D20 (25x20)", "Col/Signature (7x2)", "Casquettes / Bonnets", "Manche (8x5 cm)", "Pantalon / Poche", "+ Perso. Nom (Cœur)"], key=f"emp_b_{i}_{m}")
-            
-            if t_marq == "Broderie HD":
-                has_broderie = True
+                marquages_config.append({"technique": t_marq, "emplacement": emp})
 
-            marquages_config.append({"technique": t_marq, "emplacement": emp})
+        st.markdown("---")
+        st.markdown("**Options & Logistique spécifiques à l'article**")
+        oc1, oc2, oc3, oc4 = st.columns(4)
+        with oc1:
+            option_ensachage = st.checkbox(f"Ensachage individuel {i+1}", key=f"ens_{i}")
+            type_sachet = st.selectbox(f"Type de sachet {i+1}", ["Sachet (T-shirt/Polo)", "Sachet (Veste/Sweat)"], key=f"tsach_{i}") if option_ensachage else ""
+        with oc2:
+            option_assurance = st.checkbox(f"Assurance MHC (Garantie) {i+1}", key=f"ass_{i}")
+        with oc3:
+            option_stockage = st.checkbox(f"Mise en stockage + picking {i+1}", key=f"stock_{i}")
+        with oc4:
+            remise_fidelite = st.number_input(f"Réduction fidélité (%) {i+1}", min_value=0.0, max_value=100.0, value=0.0, step=1.0, key=f"rem_{i}")
 
-    st.markdown("**Options & Logistique spécifiques à l'article**")
-    oc1, oc2, oc3, oc4 = st.columns(4)
-    with oc1:
-        option_ensachage = st.checkbox(f"Ensachage individuel {i+1}", key=f"ens_{i}")
-        type_sachet = st.selectbox(f"Type de sachet {i+1}", ["Sachet (T-shirt/Polo)", "Sachet (Veste/Sweat)"], key=f"tsach_{i}") if option_ensachage else ""
-    with oc2:
-        option_assurance = st.checkbox(f"Assurance MHC (Garantie) {i+1}", key=f"ass_{i}")
-    with oc3:
-        option_stockage = st.checkbox(f"Mise en stockage + picking {i+1}", key=f"stock_{i}")
-    with oc4:
-        remise_fidelite = st.number_input(f"Réduction fidélité (%) {i+1}", min_value=0.0, max_value=100.0, value=0.0, step=1.0, key=f"rem_{i}")
+        if qte > 0:
+            articles_saisis.append({
+                "nom_article": nom_article,
+                "quantite": qte,
+                "prix_vet_unit": prix_vetement_ht,
+                "sans_marquage": sans_marquage,
+                "marquages_config": marquages_config,
+                "has_broderie": has_broderie,
+                "option_ensachage": option_ensachage,
+                "type_sachet": type_sachet,
+                "option_assurance": option_assurance,
+                "option_stockage": option_stockage,
+                "remise_fidelite": remise_fidelite
+            })
 
-    if qte > 0:
-        articles_saisis.append({
-            "nom_article": nom_article,
-            "quantite": qte,
-            "prix_vet_unit": prix_vetement_ht,
-            "sans_marquage": sans_marquage,
-            "marquages_config": marquages_config,
-            "has_broderie": has_broderie,
-            "option_ensachage": option_ensachage,
-            "type_sachet": type_sachet,
-            "option_assurance": option_assurance,
-            "option_stockage": option_stockage,
-            "remise_fidelite": remise_fidelite
-        })
-    st.markdown("---")
-
-# --- ÉTAPE 2 : CALCUL DES QUANTITÉS GLOBALES PAR MARQUAGE ---
+# --- ÉTAPE 2 : CALCUL DES QUANTITÉS GLOBALES PAR MARQUAGE POUR TARIFICATION DÉGRESSIVE ---
 compteur_global_marquages = {}
 for art in articles_saisis:
     if not art["sans_marquage"]:
@@ -417,11 +420,13 @@ for art in articles_saisis:
             marquages_calcules.append({"nom": f"{m['technique']} - {m['emplacement']}", "tarif": tarif_m})
 
     frais_prog_broderie = get_frais_prog_broderie(qte) if art["has_broderie"] else 0.0
+
     coût_ensachage_unit = get_tarif_ensachage(qte, art["type_sachet"]) if art["option_ensachage"] else 0.0
     coût_assurance_unit = get_tarif_assurance(qte) if art["option_assurance"] else 0.0
     coût_stockage_unit = get_tarif_stockage(qte) if art["option_stockage"] else 0.0
 
     total_unit_ht = art["prix_vet_unit"] + total_marquage_unit + coût_ensachage_unit + coût_assurance_unit + coût_stockage_unit
+    
     total_ligne_brut = (total_unit_ht * qte) + frais_prog_broderie
     montant_remise = total_ligne_brut * (art["remise_fidelite"] / 100.0)
     total_ligne_ht = total_ligne_brut - montant_remise
@@ -444,232 +449,237 @@ for art in articles_saisis:
         "total_ligne_ht": total_ligne_ht
     })
 
-# --- SECTION RÉCAPITULATIF & DEVIS ---
-st.subheader("📊 Récapitulatif Général & Génération du Devis Professionnel")
+    if qte > 0:
+        with onglets[articles_saisis.index(art) if art in articles_saisis else 0]:
+            st.markdown(f"### **Sous-total Article HT : {total_ligne_ht:.2f} €**")
 
-if not lignes_devis_global:
-    st.warning("Veuillez renseigner au moins un article avec une quantité supérieure à 0.")
-else:
-    sous_total_articles = sum([item["total_ligne_ht"] for item in lignes_devis_global])
-    montant_base_port = sous_total_articles + frais_techniques_dossier
-    
-    if offrir_port:
-        frais_port = 0.0
+# --- ONGLET 10 : GÉNÉRAL & DEVIS ---
+with onglets[10]:
+    st.subheader("📊 Récapitulatif Général & Génération du Devis Professionnel")
+
+    if not lignes_devis_global:
+        st.warning("Veuillez renseigner au moins un article avec une quantité supérieure à 0.")
     else:
-        frais_port = calculer_frais_port(montant_base_port, zone_livraison)
-    
-    total_general_ht = montant_base_port + frais_port
-    tva = total_general_ht * 0.20
-    total_ttc = total_general_ht + tva
-    
-    quantite_globale_totale = sum([item["quantite"] for item in lignes_devis_global])
-    cout_unitaire_moyen = total_general_ht / quantite_globale_totale if quantite_globale_totale > 0 else 0
-
-    st.write(f"**Quantité globale pièces :** {quantite_globale_totale}")
-    st.write(f"**Sous-Total Articles HT :** {sous_total_articles:.2f} €")
-    st.write(f"**Frais techniques :** {frais_techniques_dossier:.2f} € HT")
-    st.write(f"**Frais de port ({zone_livraison}) :** {frais_port:.2f} € HT" if not offrir_port else "**Frais de port :** Offerts (0.00 €)")
-    st.markdown(f"### **Total Général HT : {total_general_ht:.2f} €** | **TOTAL TTC (20%) : {total_ttc:.2f} €**")
-
-    if st.button("📄 Générer le numéro de devis et le PDF"):
-        num_devis = obtenir_prochain_numero_devis()
-        pdf_filename = f"Devis_{num_devis.replace('/', '_')}.pdf"
-        st.session_state['dernier_pdf'] = pdf_filename
-        st.session_state['dernier_num'] = num_devis
-        st.session_state['total_ttc_cache'] = total_ttc
-        st.session_state['total_ht_cache'] = total_general_ht
-
-        data_crm = {
-            "Date": datetime.now().strftime("%Y-%m-%d %H:%M"),
-            "Numero_Devis": num_devis,
-            "Conseiller": conseiller_nom,
-            "Client": client_nom,
-            "Entreprise": client_entreprise,
-            "Email": client_email,
-            "Telephone": client_contact,
-            "Quantite_Totale": quantite_globale_totale,
-            "Total_HT": round(total_general_ht, 2),
-            "Total_TTC": round(total_ttc, 2),
-            "Statut": "En cours"
-        }
-        enregistrer_dans_crm(data_crm)
-        st.success("✅ Données enregistrées dans le CRM avec succès !")
-
-    if 'dernier_pdf' in st.session_state:
-        pdf_filename = st.session_state['dernier_pdf']
-        num_devis = st.session_state['dernier_num']
-        total_ttc = st.session_state['total_ttc_cache']
-        total_general_ht = st.session_state['total_ht_cache']
-
-        # --- GÉNÉRATION DU PDF PROFESSIONNEL ---
-        doc = SimpleDocTemplate(pdf_filename, pagesize=A4, rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)
-        story = []
-        styles = getSampleStyleSheet()
-
-        style_sub = ParagraphStyle('SubStyle', parent=styles['Normal'], fontSize=8.5, leading=11, textColor=colors.HexColor('#4a5568'))
-        style_cell = ParagraphStyle('Cell', parent=styles['Normal'], fontSize=9, leading=11)
-        style_cell_bold = ParagraphStyle('CellBold', parent=styles['Normal'], fontSize=9, leading=11, fontName='Helvetica-Bold')
-        style_right_bold = ParagraphStyle('RightBold', parent=styles['Normal'], fontSize=9, leading=11, fontName='Helvetica-Bold', alignment=2)
-        style_right_normal = ParagraphStyle('RightNormal', parent=styles['Normal'], fontSize=9, leading=11, alignment=2)
-
-        logo_path = None
-        if logo_file is not None:
-            logo_path = "temp_logo.png"
-            with open(logo_path, "wb") as f:
-                f.write(logo_file.getbuffer())
-        elif os.path.exists(logo_defaut_github):
-            logo_path = logo_defaut_github
-
-        header_text = Paragraph(
-            "<b>APEX BUSINESS & COM - SOLUTIONS TEXTILE & MARQUAGE</b><br/>"
-            "70 - Marnay<br/>"
-            "Tél (Brice Geny) : 06 32 69 73 28 &nbsp;|&nbsp; Tél (Brice Bugna) : 06 29 92 94 74<br/>"
-            "Email : brice.geny@gmail.com", 
-            style_sub
-        )
+        sous_total_articles = sum([item["total_ligne_ht"] for item in lignes_devis_global])
+        montant_base_port = sous_total_articles + frais_techniques_dossier
         
-        if logo_path and os.path.exists(logo_path):
-            img_logo = RLImage(logo_path, width=110, height=45)
-            t_header = Table([[img_logo, header_text]], colWidths=[120, 420])
-            t_header.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'MIDDLE')]))
-            story.append(t_header)
+        if offrir_port:
+            frais_port = 0.0
         else:
-            story.append(header_text)
-
-        story.append(Spacer(1, 10))
-        story.append(Paragraph(f"<b>N° Devis :</b> {num_devis} &nbsp;&nbsp;|&nbsp;&nbsp; <b>Date :</b> {datetime.now().strftime('%d/%m/%Y')} &nbsp;&nbsp;|&nbsp;&nbsp; <b>Validité :</b> 30 Jours", style_sub))
-        story.append(Spacer(1, 10))
-
-        siret_txt = f"<br/>SIRET : {client_siret}" if client_siret else ""
-        contact_txt = f"<br/>Contact : {client_contact}" if client_contact else ""
-        nom_aff_client = f"<b>{client_entreprise}</b><br/>À l'attention de : {client_nom}" if client_entreprise else f"<b>{client_nom or 'Client'}</b>"
-        client_info_text = f"<b>CLIENT / DESTINATAIRE :</b><br/>{nom_aff_client}<br/>{client_adresse.replace(chr(10), '<br/>')}{siret_txt}{contact_txt}<br/>Email : {client_email}"
-        order_info_text = f"<b>DÉTAILS DE LA COMMANDE :</b><br/>Quantité globale : {quantite_globale_totale} pièces<br/>Délai estimé : 8 à 10 jours ouvrés<br/>Conseiller : {conseiller_nom}"
+            frais_port = calculer_frais_port(montant_base_port, zone_livraison)
         
-        t_info = Table([[Paragraph(client_info_text, style_cell), Paragraph(order_info_text, style_cell)]], colWidths=[270, 270])
-        t_info.setStyle(TableStyle([
-            ('BACKGROUND', (0,0), (-1,-1), colors.HexColor('#f7fafc')),
-            ('BOX', (0,0), (-1,-1), 0.5, colors.HexColor('#cbd5e0')),
-            ('VALIGN', (0,0), (-1,-1), 'TOP'),
-            ('PADDING', (0,0), (-1,-1), 8),
-        ]))
-        story.append(t_info)
-        story.append(Spacer(1, 15))
-
-        table_data = [[
-            Paragraph("<b>DÉSIGNATION & CARACTÉRISTIQUES</b>", style_cell_bold), 
-            Paragraph("<b>QTÉ</b>", style_cell_bold), 
-            Paragraph("<b>PRIX UNIT. HT</b>", style_cell_bold), 
-            Paragraph("<b>TOTAL HT</b>", style_cell_bold)
-        ]]
-
-        for item in lignes_devis_global:
-            libelle_support = f"<b>Support (Sans marquage) : {item['nom_article']}</b>" if item['sans_marquage'] else f"<b>Support : {item['nom_article']}</b>"
-            table_data.append([
-                Paragraph(libelle_support, style_cell), 
-                str(item['quantite']), 
-                f"{item['prix_vet_unit']:.2f} €", 
-                f"{item['prix_vet_unit']*item['quantite']:.2f} €"
-            ])
-            for m in item['marquages']:
-                table_data.append([
-                    Paragraph(f"&nbsp;&nbsp;&bull; Marquage : {m['nom']}", style_cell), 
-                    str(item['quantite']), 
-                    f"{m['tarif']:.2f} €", 
-                    f"{m['tarif']*item['quantite']:.2f} €"
-                ])
-            if item['frais_prog_broderie'] > 0:
-                table_data.append([
-                    Paragraph("&nbsp;&nbsp;&bull; Frais de technique & programme Broderie", style_cell), 
-                    "1", 
-                    f"{item['frais_prog_broderie']:.2f} €", 
-                    f"{item['frais_prog_broderie']:.2f} €"
-                ])
-            if item['option_ensachage']:
-                table_data.append([
-                    Paragraph(f"&nbsp;&nbsp;&bull; Option : {item['type_sachet']}", style_cell), 
-                    str(item['quantite']), 
-                    f"{item['coût_ensachage_unit']:.2f} €", 
-                    f"{item['coût_ensachage_unit']*item['quantite']:.2f} €"
-                ])
-            if item['option_assurance']:
-                table_data.append([
-                    Paragraph("&nbsp;&nbsp;&bull; Option : Assurance MHC (Garantie textile)", style_cell), 
-                    str(item['quantite']), 
-                    f"{item['coût_assurance_unit']:.2f} €", 
-                    f"{item['coût_assurance_unit']*item['quantite']:.2f} €"
-                ])
-            if item['option_stockage']:
-                table_data.append([
-                    Paragraph("&nbsp;&nbsp;&bull; Option : Mise en stockage + picking", style_cell), 
-                    str(item['quantite']), 
-                    f"{item['coût_stockage_unit']:.2f} €", 
-                    f"{item['coût_stockage_unit']*item['quantite']:.2f} €"
-                ])
-            if item['remise_fidelite'] > 0:
-                brut_calc = (item['prix_vet_unit']*item['quantite']) + sum([m['tarif']*item['quantite'] for m in item['marquages']]) + item['frais_prog_broderie'] + (item['coût_ensachage_unit']*item['quantite'] if item['option_ensachage'] else 0) + (item['coût_assurance_unit']*item['quantite'] if item['option_assurance'] else 0) + (item['coût_stockage_unit']*item['quantite'] if item['option_stockage'] else 0)
-                montant_remise_ligne = brut_calc * (item['remise_fidelite']/100.0)
-                table_data.append([
-                    Paragraph(f"&nbsp;&nbsp;&bull; <b>Réduction fidélité ({item['remise_fidelite']}%)</b>", style_cell), 
-                    "1", 
-                    "-", 
-                    f"-{montant_remise_ligne:.2f} €"
-                ])
-
-        table_data.append([Paragraph("Frais techniques de dossier", style_cell), "1", f"{frais_techniques_dossier:.2f} €", f"{frais_techniques_dossier:.2f} €"])
-        if frais_port > 0 or offrir_port:
-            port_libelle = f"Frais d'envoi ({zone_livraison})" if not offrir_port else f"Frais d'envoi ({zone_livraison}) - Offerts"
-            port_val = f"{frais_port:.2f} €"
-            table_data.append([Paragraph(port_libelle, style_cell), "1", port_val, port_val])
-
-        t_main = Table(table_data, colWidths=[260, 45, 115, 120])
-        t_main.setStyle(TableStyle([
-            ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#edf2f7')),
-            ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#e2e8f0')),
-            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-            ('PADDING', (0,0), (-1,-1), 6),
-        ]))
-        story.append(t_main)
-        story.append(Spacer(1, 10))
-
-        totaux_data = [
-            ["", Paragraph("Sous-Total HT :", style_right_normal), Paragraph(f"{total_general_ht:.2f} €", style_right_normal)],
-            ["", Paragraph("TVA (20%) :", style_right_normal), Paragraph(f"{tva:.2f} €", style_right_normal)],
-            ["", Paragraph("TOTAL TTC :", style_right_bold), Paragraph(f"{total_ttc:.2f} €", style_right_bold)],
-            ["", Paragraph("Coût unitaire HT / pièce :", style_right_normal), Paragraph(f"{cout_unitaire_moyen:.2f} €", style_right_normal)]
-        ]
-        t_totaux = Table(totaux_data, colWidths=[240, 160, 140])
-        t_totaux.setStyle(TableStyle([
-            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-            ('LINEABOVE', (1, 2), (-1, 2), 1, colors.black),
-            ('PADDING', (0,0), (-1,-1), 4),
-        ]))
-        story.append(t_totaux)
-        story.append(Spacer(1, 15))
-
-        conditions_text = "<b>Conditions de règlement & Bon pour accord :</b><br/>• Acompte de 50% à la commande, solde à la livraison.<br/>• Fichiers vectoriels fournis (.AI, .EPS, .PDF).<br/>• Bon pour accord daté et signé requis."
-        story.append(Paragraph(conditions_text, style_sub))
-
-        doc.build(story)
-        st.success(f"Devis PDF professionnel généré sous le numéro : **{num_devis}** (`{pdf_filename}`)")
-
-        # --- ENVOI DIRECT GMAIL ---
-        st.markdown(f"### ✉️ Envoi direct par E-mail (via {conseiller_email})")
+        total_general_ht = montant_base_port + frais_port
+        tva = total_general_ht * 0.20
+        total_ttc = total_general_ht + tva
         
-        if st.button("🚀 Envoyer le devis par e-mail maintenant"):
-            if not client_email:
-                st.error("Veuillez renseigner l'e-mail du client dans la barre latérale.")
-            elif not gmail_password:
-                st.error(f"Veuillez renseigner le mot de passe d'application Gmail pour {conseiller_email} dans les secrets Streamlit Cloud.")
+        quantite_globale_totale = sum([item["quantite"] for item in lignes_devis_global])
+        cout_unitaire_moyen = total_general_ht / quantite_globale_totale if quantite_globale_totale > 0 else 0
+
+        st.write(f"**Quantité globale pièces :** {quantite_globale_totale}")
+        st.write(f"**Sous-Total Articles HT :** {sous_total_articles:.2f} €")
+        st.write(f"**Frais techniques :** {frais_techniques_dossier:.2f} € HT")
+        st.write(f"**Frais de port ({zone_livraison}) :** {frais_port:.2f} € HT" if not offrir_port else "**Frais de port :** Offerts (0.00 €)")
+        st.markdown(f"### **Total Général HT : {total_general_ht:.2f} €** | **TOTAL TTC (20%) : {total_ttc:.2f} €**")
+
+        if st.button("📄 Générer le numéro de devis et le PDF"):
+            num_devis = obtenir_prochain_numero_devis()
+            pdf_filename = f"Devis_{num_devis.replace('/', '_')}.pdf"
+            st.session_state['dernier_pdf'] = pdf_filename
+            st.session_state['dernier_num'] = num_devis
+            st.session_state['total_ttc_cache'] = total_ttc
+            st.session_state['total_ht_cache'] = total_general_ht
+
+            data_crm = {
+                "Date": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                "Numero_Devis": num_devis,
+                "Conseiller": conseiller_nom,
+                "Client": client_nom,
+                "Entreprise": client_entreprise,
+                "Email": client_email,
+                "Telephone": client_contact,
+                "Quantite_Totale": quantite_globale_totale,
+                "Total_HT": round(total_general_ht, 2),
+                "Total_TTC": round(total_ttc, 2),
+                "Statut": "En cours"
+            }
+            enregistrer_dans_crm(data_crm)
+            st.success("✅ Données enregistrées dans le CRM avec succès !")
+
+        if 'dernier_pdf' in st.session_state:
+            pdf_filename = st.session_state['dernier_pdf']
+            num_devis = st.session_state['dernier_num']
+            total_ttc = st.session_state['total_ttc_cache']
+            total_general_ht = st.session_state['total_ht_cache']
+
+            # --- GÉNÉRATION DU PDF PROFESSIONNEL ---
+            doc = SimpleDocTemplate(pdf_filename, pagesize=A4, rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)
+            story = []
+            styles = getSampleStyleSheet()
+
+            style_sub = ParagraphStyle('SubStyle', parent=styles['Normal'], fontSize=8.5, leading=11, textColor=colors.HexColor('#4a5568'))
+            style_cell = ParagraphStyle('Cell', parent=styles['Normal'], fontSize=9, leading=11)
+            style_cell_bold = ParagraphStyle('CellBold', parent=styles['Normal'], fontSize=9, leading=11, fontName='Helvetica-Bold')
+            style_right_bold = ParagraphStyle('RightBold', parent=styles['Normal'], fontSize=9, leading=11, fontName='Helvetica-Bold', alignment=2)
+            style_right_normal = ParagraphStyle('RightNormal', parent=styles['Normal'], fontSize=9, leading=11, alignment=2)
+
+            logo_path = None
+            if logo_file is not None:
+                logo_path = "temp_logo.png"
+                with open(logo_path, "wb") as f:
+                    f.write(logo_file.getbuffer())
+            elif os.path.exists(logo_defaut_github):
+                logo_path = logo_defaut_github
+
+            header_text = Paragraph(
+                "<b>SOLUTIONS TEXTILE & MARQUAGE</b><br/>"
+                "Jura & Région<br/>"
+                f"Tél : {conseiller_tel}<br/>"
+                f"Email : {conseiller_email}", 
+                style_sub
+            )
+            
+            if logo_path and os.path.exists(logo_path):
+                img_logo = RLImage(logo_path, width=110, height=45)
+                t_header = Table([[img_logo, header_text]], colWidths=[120, 420])
+                t_header.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'MIDDLE')]))
+                story.append(t_header)
             else:
-                try:
-                    msg = EmailMessage()
-                    msg['Subject'] = f"Devis {num_devis} - Marquage Textile"
-                    msg['From'] = conseiller_email
-                    msg['To'] = client_email
-                    msg['Cc'] = autre_email
-                    
-                    corps_mail = f"""Bonjour {client_nom or 'Client'},
+                story.append(header_text)
+
+            story.append(Spacer(1, 10))
+            story.append(Paragraph(f"<b>N° Devis :</b> {num_devis} &nbsp;&nbsp;|&nbsp;&nbsp; <b>Date :</b> {datetime.now().strftime('%d/%m/%Y')} &nbsp;&nbsp;|&nbsp;&nbsp; <b>Validité :</b> 30 Jours", style_sub))
+            story.append(Spacer(1, 10))
+
+            siret_txt = f"<br/>SIRET : {client_siret}" if client_siret else ""
+            contact_txt = f"<br/>Contact : {client_contact}" if client_contact else ""
+            nom_aff_client = f"<b>{client_entreprise}</b><br/>À l'attention de : {client_nom}" if client_entreprise else f"<b>{client_nom or 'Client'}</b>"
+            client_info_text = f"<b>CLIENT / DESTINATAIRE :</b><br/>{nom_aff_client}<br/>{client_adresse.replace(chr(10), '<br/>')}{siret_txt}{contact_txt}<br/>Email : {client_email}"
+            order_info_text = f"<b>DÉTAILS DE LA COMMANDE :</b><br/>Quantité globale : {quantite_globale_totale} pièces<br/>Délai estimé : 8 à 10 jours ouvrés<br/>Conseiller : {conseiller_nom}"
+            
+            t_info = Table([[Paragraph(client_info_text, style_cell), Paragraph(order_info_text, style_cell)]], colWidths=[270, 270])
+            t_info.setStyle(TableStyle([
+                ('BACKGROUND', (0,0), (-1,-1), colors.HexColor('#f7fafc')),
+                ('BOX', (0,0), (-1,-1), 0.5, colors.HexColor('#cbd5e0')),
+                ('VALIGN', (0,0), (-1,-1), 'TOP'),
+                ('PADDING', (0,0), (-1,-1), 8),
+            ]))
+            story.append(t_info)
+            story.append(Spacer(1, 15))
+
+            table_data = [[
+                Paragraph("<b>DÉSIGNATION & CARACTÉRISTIQUES</b>", style_cell_bold), 
+                Paragraph("<b>QTÉ</b>", style_cell_bold), 
+                Paragraph("<b>PRIX UNIT. HT</b>", style_cell_bold), 
+                Paragraph("<b>TOTAL HT</b>", style_cell_bold)
+            ]]
+
+            for item in lignes_devis_global:
+                libelle_support = f"<b>Support (Sans marquage) : {item['nom_article']}</b>" if item['sans_marquage'] else f"<b>Support : {item['nom_article']}</b>"
+                table_data.append([
+                    Paragraph(libelle_support, style_cell), 
+                    str(item['quantite']), 
+                    f"{item['prix_vet_unit']:.2f} €", 
+                    f"{item['prix_vet_unit']*item['quantite']:.2f} €"
+                ])
+                for m in item['marquages']:
+                    table_data.append([
+                        Paragraph(f"&nbsp;&nbsp;&bull; Marquage : {m['nom']}", style_cell), 
+                        str(item['quantite']), 
+                        f"{m['tarif']:.2f} €", 
+                        f"{m['tarif']*item['quantite']:.2f} €"
+                    ])
+                if item['frais_prog_broderie'] > 0:
+                    table_data.append([
+                        Paragraph("&nbsp;&nbsp;&bull; Frais de technique & programme Broderie", style_cell), 
+                        "1", 
+                        f"{item['frais_prog_broderie']:.2f} €", 
+                        f"{item['frais_prog_broderie']:.2f} €"
+                    ])
+                if item['option_ensachage']:
+                    table_data.append([
+                        Paragraph(f"&nbsp;&nbsp;&bull; Option : {item['type_sachet']}", style_cell), 
+                        str(item['quantite']), 
+                        f"{item['coût_ensachage_unit']:.2f} €", 
+                        f"{item['coût_ensachage_unit']*item['quantite']:.2f} €"
+                    ])
+                if item['option_assurance']:
+                    table_data.append([
+                        Paragraph("&nbsp;&nbsp;&bull; Option : Assurance MHC (Garantie textile)", style_cell), 
+                        str(item['quantite']), 
+                        f"{item['coût_assurance_unit']:.2f} €", 
+                        f"{item['coût_assurance_unit']*item['quantite']:.2f} €"
+                    ])
+                if item['option_stockage']:
+                    table_data.append([
+                        Paragraph("&nbsp;&nbsp;&bull; Option : Mise en stockage + picking", style_cell), 
+                        str(item['quantite']), 
+                        f"{item['coût_stockage_unit']:.2f} €", 
+                        f"{item['coût_stockage_unit']*item['quantite']:.2f} €"
+                    ])
+                if item['remise_fidelite'] > 0:
+                    brut_calc = (item['prix_vet_unit']*item['quantite']) + sum([m['tarif']*item['quantite'] for m in item['marquages']]) + item['frais_prog_broderie'] + (item['coût_ensachage_unit']*item['quantite'] if item['option_ensachage'] else 0) + (item['coût_assurance_unit']*item['quantite'] if item['option_assurance'] else 0) + (item['coût_stockage_unit']*item['quantite'] if item['option_stockage'] else 0)
+                    montant_remise_ligne = brut_calc * (item['remise_fidelite']/100.0)
+                    table_data.append([
+                        Paragraph(f"&nbsp;&nbsp;&bull; <b>Réduction fidélité ({item['remise_fidelite']}%)</b>", style_cell), 
+                        "1", 
+                        "-", 
+                        f"-{montant_remise_ligne:.2f} €"
+                    ])
+
+            table_data.append([Paragraph("Frais techniques de dossier", style_cell), "1", f"{frais_techniques_dossier:.2f} €", f"{frais_techniques_dossier:.2f} €"])
+            if frais_port > 0 or offrir_port:
+                port_libelle = f"Frais d'envoi ({zone_livraison})" if not offrir_port else f"Frais d'envoi ({zone_livraison}) - Offerts"
+                port_val = f"{frais_port:.2f} €"
+                table_data.append([Paragraph(port_libelle, style_cell), "1", port_val, port_val])
+
+            t_main = Table(table_data, colWidths=[260, 45, 115, 120])
+            t_main.setStyle(TableStyle([
+                ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#edf2f7')),
+                ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#e2e8f0')),
+                ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+                ('PADDING', (0,0), (-1,-1), 6),
+            ]))
+            story.append(t_main)
+            story.append(Spacer(1, 10))
+
+            totaux_data = [
+                ["", Paragraph("Sous-Total HT :", style_right_normal), Paragraph(f"{total_general_ht:.2f} €", style_right_normal)],
+                ["", Paragraph("TVA (20%) :", style_right_normal), Paragraph(f"{tva:.2f} €", style_right_normal)],
+                ["", Paragraph("TOTAL TTC :", style_right_bold), Paragraph(f"{total_ttc:.2f} €", style_right_bold)],
+                ["", Paragraph("Coût unitaire HT / pièce :", style_right_normal), Paragraph(f"{cout_unitaire_moyen:.2f} €", style_right_normal)]
+            ]
+            t_totaux = Table(totaux_data, colWidths=[240, 160, 140])
+            t_totaux.setStyle(TableStyle([
+                ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+                ('LINEABOVE', (1, 2), (-1, 2), 1, colors.black),
+                ('PADDING', (0,0), (-1,-1), 4),
+            ]))
+            story.append(t_totaux)
+            story.append(Spacer(1, 15))
+
+            conditions_text = "<b>Conditions de règlement & Bon pour accord :</b><br/>• Acompte de 50% à la commande, solde à la livraison.<br/>• Fichiers vectoriels fournis (.AI, .EPS, .PDF).<br/>• Bon pour accord daté et signé requis."
+            story.append(Paragraph(conditions_text, style_sub))
+
+            doc.build(story)
+            st.success(f"Devis PDF professionnel généré sous le numéro : **{num_devis}** (`{pdf_filename}`)")
+
+            # --- ENVOI DIRECT GMAIL ---
+            st.markdown(f"### ✉️ Envoi direct par E-mail (via {conseiller_email})")
+            
+            if st.button("🚀 Envoyer le devis par e-mail maintenant"):
+                if not client_email:
+                    st.error("Veuillez renseigner l'e-mail du client dans la barre latérale.")
+                elif not gmail_password:
+                    st.error(f"Veuillez renseigner le mot de passe d'application Gmail pour {conseiller_email} dans les secrets Streamlit Cloud.")
+                else:
+                    try:
+                        msg = EmailMessage()
+                        msg['Subject'] = f"Devis {num_devis} - Marquage Textile"
+                        msg['From'] = conseiller_email
+                        msg['To'] = client_email
+                        msg['Cc'] = autre_email
+                        
+                        corps_mail = f"""Bonjour {client_nom or 'Client'},
 
 Veuillez trouver ci-joint votre devis n° {num_devis} d'un montant total de {total_ttc:.2f} € TTC.
 
@@ -677,54 +687,97 @@ Restant à votre disposition pour toute information complémentaire.
 
 Cordialement,
 {conseiller_nom}
-APEX BUSINESS & COM
 Tél : {conseiller_tel}
 Email : {conseiller_email}
-
----
-Application créée par APEX - Tous droits réservés
 """
-                    msg.set_content(corps_mail)
+                        msg.set_content(corps_mail)
 
-                    with open(pdf_filename, 'rb') as f:
-                        file_data = f.read()
-                        file_name = os.path.basename(pdf_filename)
-                    msg.add_attachment(file_data, maintype='application', subtype='pdf', filename=file_name)
+                        with open(pdf_filename, 'rb') as f:
+                            file_data = f.read()
+                            file_name = os.path.basename(pdf_filename)
+                        msg.add_attachment(file_data, maintype='application', subtype='pdf', filename=file_name)
 
-                    with smtplib.SMTP_SSL('smtp.gmail.com', 465) as smtp:
-                        smtp.login(conseiller_email, gmail_password)
-                        smtp.send_message(msg)
-                    
-                    st.success(f"✅ E-mail envoyé avec succès à {client_email} depuis la boîte de {conseiller_nom} (avec copie à {autre_email}) !")
-                except Exception as e:
-                    st.error(f"❌ Erreur lors de l'envoi de l'e-mail : {e}")
+                        with smtplib.SMTP_SSL('smtp.gmail.com', 465) as smtp:
+                            smtp.login(conseiller_email, gmail_password)
+                            smtp.send_message(msg)
+                        
+                        st.success(f"✅ E-mail envoyé avec succès à {client_email} depuis la boîte de {conseiller_nom} (avec copie à {autre_email}) !")
+                    except Exception as e:
+                        st.error(f"❌ Erreur lors de l'envoi de l'e-mail : {e}")
 
-# --- SECTION SUIVI CRM ---
-st.markdown("---")
-st.subheader("📈 Tableau de Suivi CRM & Historique des Devis")
+# --- ONGLET 11 : SUIVI CRM INTERACTIF ---
+with onglets[11]:
+    st.subheader("📈 Tableau de Suivi CRM & Historique des Devis")
+    
+    if os.path.exists(CRM_FILE):
+        df_crm = pd.read_csv(CRM_FILE)
 
-if os.path.exists(CRM_FILE):
-    df_crm = pd.read_csv(CRM_FILE)
-    if not df_crm.empty:
-        edited_df = st.data_editor(
-            df_crm,
-            column_config={
-                "Statut": st.column_config.SelectboxColumn(
-                    "Statut du Devis",
-                    options=["En cours", "Accepté", "Refusé", "Sans suite"],
-                    required=True
-                ),
-                "Total_HT": st.column_config.NumberColumn("Total HT (€)", format="%.2f €"),
-                "Total_TTC": st.column_config.NumberColumn("Total TTC (€)", format="%.2f €"),
-            },
-            disabled=["Date", "Numero_Devis", "Conseiller", "Client", "Entreprise", "Email", "Telephone", "Quantite_Totale"],
-            use_container_width=True,
-            key="crm_editor"
-        )
-        if not edited_df.equals(df_crm):
-            edited_df.to_csv(CRM_FILE, index=False)
-            st.toast("✅ Statuts mis à jour avec succès !", icon="💾")
+        if not df_crm.empty:
+            st.markdown("### 🗂️ Liste des devis et gestion des statuts")
+            
+            edited_df = st.data_editor(
+                df_crm,
+                column_config={
+                    "Statut": st.column_config.SelectboxColumn(
+                        "Statut du Devis",
+                        help="Modifier le statut du devis",
+                        options=["En cours", "Accepté", "Refusé", "Sans suite"],
+                        required=True
+                    ),
+                    "Total_HT": st.column_config.NumberColumn("Total HT (€)", format="%.2f €"),
+                    "Total_TTC": st.column_config.NumberColumn("Total TTC (€)", format="%.2f €"),
+                },
+                disabled=["Date", "Numero_Devis", "Conseiller", "Client", "Entreprise", "Email", "Telephone", "Quantite_Totale"],
+                use_container_width=True,
+                key="crm_editor"
+            )
+
+            if not edited_df.equals(df_crm):
+                edited_df.to_csv(CRM_FILE, index=False)
+                st.toast("✅ Statuts mis à jour avec succès !", icon="💾")
+
+            st.markdown("---")
+            st.markdown("### ⚡ Actions rapides sur un devis")
+            col_act1, col_act2, col_act3 = st.columns(3)
+            
+            with col_act1:
+                devis_selectionne = st.selectbox("Sélectionner un devis", df_crm["Numero_Devis"].tolist(), key="select_devis_action")
+            
+            if devis_selectionne:
+                pdf_cible = f"Devis_{devis_selectionne.replace('/', '_')}.pdf"
+                with col_act2:
+                    st.write("")
+                    st.write("")
+                    if os.path.exists(pdf_cible):
+                        with open(pdf_cible, "rb") as pdf_file:
+                            st.download_button(
+                                label="📥 Télécharger le PDF",
+                                data=pdf_file,
+                                file_name=pdf_cible,
+                                mime="application/pdf"
+                            )
+                    else:
+                        st.warning("PDF archivé non trouvé localement.")
+                
+                with col_act3:
+                    st.write("")
+                    st.write("")
+                    if st.button("📋 Dupliquer ce devis pour un autre client"):
+                        ligne_source = df_crm[df_crm["Numero_Devis"] == devis_selectionne].iloc[0]
+                        st.session_state['duplique_client'] = ligne_source.get("Client", "")
+                        st.session_state['duplique_entreprise'] = ligne_source.get("Entreprise", "")
+                        st.session_state['duplique_email'] = ligne_source.get("Email", "")
+                        st.success("✨ Devis dupliqué ! Remontez sur les onglets articles pour ajuster.")
+
+            st.markdown("---")
+            csv_data = df_crm.to_csv(index=False).encode('utf-8')
+            st.download_button(
+                label="📥 Exporter tout le CRM au format CSV",
+                data=csv_data,
+                file_name=f"crm_devis_{datetime.now().strftime('%Y_%m_%d')}.csv",
+                mime="text/csv"
+            )
+        else:
+            st.info("Aucun devis trouvé.")
     else:
-        st.info("Aucun devis enregistré pour le moment.")
-else:
-    st.info("Aucun historique CRM disponible.")
+        st.info("Aucun devis n'a encore été généré.")
