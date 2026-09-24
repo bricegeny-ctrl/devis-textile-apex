@@ -46,7 +46,7 @@ def obtenir_prochain_numero_devis():
         json.dump({"dernier_num": nouveau_num}, f)
     return nouveau_num
 
-# --- MOTEUR DE LECTURE UNIVERSEL DU CATALOGUE EXCEL ---
+# --- MOTEUR DE LECTURE EXCEL ULTRA-PRÉCIS POUR TOUT LE CATALOGUE ---
 def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
     if not os.path.exists(CATALOGUE_FILE):
         return 0.10
@@ -56,30 +56,43 @@ def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
     except Exception:
         return 0.10
 
-    # 1. Trouver la ligne correspondant à la catégorie demandée
+    # 1. Trouver la zone / catégorie principale
     start_row = -1
     for r in range(len(df_all)):
         row_text = " ".join([str(df_all.iloc[r, c]) for c in range(df_all.shape[1]) if pd.notna(df_all.iloc[r, c])]).lower()
-        if cat_print.lower() in row_text or any(m in row_text for m in cat_print.lower().split()):
+        if cat_print.lower() in row_text:
             start_row = r
             break
             
     if start_row == -1:
-        keyword = cat_print.split()[0].lower()
-        for r in range(len(df_all)):
-            row_text = " ".join([str(df_all.iloc[r, c]) for c in range(df_all.shape[1]) if pd.notna(df_all.iloc[r, c])]).lower()
-            if keyword in row_text:
-                start_row = r
-                break
-
-    if start_row == -1:
         start_row = 0
 
-    # 2. Chercher les paliers de quantités dans les lignes proches
-    header_col_idx = -1
-    qtes_paliers = []
+    # 2. Chercher dans toute la feuille la ligne qui correspond le MIEUX à la référence exacte (choix_ref)
+    best_row = -1
+    mots_cles = [m.lower() for m in choix_ref.split() if len(m) > 1]
+    max_match = -1
     
-    for r in range(start_row, min(start_row + 15, len(df_all))):
+    for r in range(len(df_all)):
+        row_cells = [str(df_all.iloc[r, c]) for c in range(df_all.shape[1]) if pd.notna(df_all.iloc[r, c])]
+        row_text = " ".join(row_cells).lower()
+        if not row_text.strip():
+            continue
+        
+        # Compter combien de mots clés du choix exact apparaissent dans cette ligne
+        match_count = sum(1 for mot in mots_cles if mot in row_text)
+        if match_count > max_match:
+            max_match = match_count
+            best_row = r
+
+    if best_row == -1:
+        best_row = start_row
+
+    # 3. Pour cette ligne (best_row), remonter ou regarder sur la même ligne/au-dessus pour trouver les en-têtes de quantité (paliers)
+    qtes_paliers = []
+    header_row = -1
+    
+    # Chercher les paliers dans les 5 lignes au-dessus de la ligne du produit
+    for r in range(max(0, best_row - 6), best_row + 1):
         paliers_trouves = []
         for c_idx, val in enumerate(df_all.iloc[r].values):
             if pd.notna(val):
@@ -89,11 +102,12 @@ def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
                     if num in [1, 2, 5, 10, 25, 50, 100, 200, 250, 500, 1000, 2500, 5000, 10000]:
                         paliers_trouves.append((c_idx, num))
         if len(paliers_trouves) >= 2:
-            header_col_idx = r
+            header_row = r
             qtes_paliers = paliers_trouves
-            break
+            # Ne pas break tout de suite pour prendre le header le plus proche du produit
 
-    if header_col_idx == -1 or not qtes_paliers:
+    # Si aucun palier trouvé près du produit, chercher globalement
+    if not qtes_paliers:
         for r in range(len(df_all)):
             paliers_trouves = []
             for c_idx, val in enumerate(df_all.iloc[r].values):
@@ -102,34 +116,13 @@ def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
                     if val_str.isdigit() and int(val_str) in [1, 2, 5, 10, 25, 50, 100, 200, 250, 500, 1000, 2500, 5000, 10000]:
                         paliers_trouves.append((c_idx, int(val_str)))
             if len(paliers_trouves) >= 2:
-                header_col_idx = r
                 qtes_paliers = paliers_trouves
                 break
 
     if not qtes_paliers:
         return 0.15
 
-    # 3. Trouver la ligne du modèle exact
-    best_row = -1
-    mots_cles = choix_ref.lower().split()
-    max_match = 0
-    search_start = header_col_idx + 1 if header_col_idx != -1 else 0
-    
-    for r in range(search_start, len(df_all)):
-        row_cells = [str(df_all.iloc[r, c]) for c in range(df_all.shape[1]) if pd.notna(df_all.iloc[r, c])]
-        row_text = " ".join(row_cells).lower()
-        if not row_text.strip():
-            continue
-            
-        match_count = sum(1 for mot in mots_cles if mot in row_text)
-        if match_count > max_match:
-            max_match = match_count
-            best_row = r
-
-    if best_row == -1:
-        best_row = search_start
-
-    # 4. Trouver la colonne de quantité la plus proche
+    # 4. Trouver la colonne de quantité la plus proche dans les paliers détectés
     col_cible = qtes_paliers[0][0]
     best_diff = float('inf')
     for c_idx, q_palier in qtes_paliers:
@@ -138,17 +131,9 @@ def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
             best_diff = diff
             col_cible = c_idx
 
-    # 5. Extraction du prix unitaire
+    # 5. Extraction exacte du prix unitaire
     try:
         prix_val = float(df_all.iloc[best_row, col_cible])
-        if pd.isna(prix_val) or prix_val <= 0:
-            for offset in [1, -1, 2, -2]:
-                alt_row = best_row + offset
-                if 0 <= alt_row < len(df_all):
-                    alt_val = float(df_all.iloc[alt_row, col_cible])
-                    if not pd.isna(alt_val) and alt_val > 0:
-                        prix_val = alt_val
-                        break
         if pd.isna(prix_val) or prix_val <= 0:
             return 0.15
         return round(prix_val, 4)
