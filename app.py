@@ -10,11 +10,12 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, Tabl
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 
-st.set_page_config(page_title="Gestionnaire de Devis - Marquage Textile", layout="wide")
+st.set_page_config(page_title="Gestionnaire de Devis - APEX BUSINESS & COM", layout="wide")
 
 # --- GESTION DU COMPTEUR DE DEVIS & CRM ---
 COMPTEUR_FILE = "compteur_devis.json"
 CRM_FILE = "crm_devis.csv"
+CATALOGUE_FILE = "catalogue_standardise.xlsx"
 
 def obtenir_prochain_numero_devis():
     annee_courante = datetime.now().strftime("%Y")
@@ -53,15 +54,20 @@ def enregistrer_dans_crm(data_devis):
         df_final = df_new
     df_final.to_csv(CRM_FILE, index=False)
 
-def mettre_a_jour_statut_crm(numero_devis, nouveau_statut):
-    if os.path.exists(CRM_FILE):
-        df = pd.read_csv(CRM_FILE)
-        if "Numero_Devis" in df.columns:
-            df.loc[df["Numero_Devis"] == numero_devis, "Statut"] = nouveau_statut
-            df.to_csv(CRM_FILE, index=False)
+# --- CHARGEMENT DU CATALOGUE STANDARDISÉ ---
+@st.cache_data
+def charger_catalogue():
+    if os.path.exists(CATALOGUE_FILE):
+        try:
+            return pd.read_excel(CATALOGUE_FILE)
+        except Exception as e:
+            st.error(f"Erreur lors du chargement du catalogue : {e}")
+            return pd.DataFrame(columns=["Categorie", "Reference", "Designation", "Quantite", "Prix_HT"])
+    return pd.DataFrame(columns=["Categorie", "Reference", "Designation", "Quantite", "Prix_HT"])
 
-# --- FONCTIONS DE CALCUL DES TARIFS & TRANCHES ---
+df_catalogue = charger_catalogue()
 
+# --- FONCTIONS DE CALCUL TEXTILE & TRANCHES ---
 def get_tarif_dtf_fin(qte_globale, emplacement):
     if qte_globale <= 5: idx = 0
     elif qte_globale <= 9: idx = 1
@@ -200,9 +206,27 @@ def calculer_frais_port(montant_ht, zone):
         else: return 90.00
     else: return 0.0
 
+# Fonction pour trouver le prix unitaire le plus proche dans le catalogue en fonction de la quantité souhaitée
+def get_prix_catalogue(designation_choisie, qte_demandee):
+    df_item = df_catalogue[df_catalogue['Designation'] == designation_choisie]
+    if df_item.empty:
+        return 0.0
+    
+    # Trouver la quantité la plus proche inférieure ou égale, ou la plus proche disponible
+    paliers = sorted(df_item['Quantite'].unique())
+    qte_effective = paliers[0]
+    for p in paliers:
+        if qte_demandee >= p:
+            qte_effective = p
+        else:
+            break
+            
+    prix_ligne = df_item[df_item['Quantite'] == qte_effective]
+    if not prix_ligne.empty:
+        return float(prix_ligne['Prix_HT'].values[0])
+    return float(df_item.iloc[0]['Prix_HT'])
+
 # --- CHARGEMENT DU CRM POUR L'AUTO-COMPLÉTION ---
-clients_connus = []
-entreprises_connues = []
 dict_clients = {}
 if os.path.exists(CRM_FILE):
     try:
@@ -210,8 +234,6 @@ if os.path.exists(CRM_FILE):
         for _, row in df_crm_load.drop_duplicates(subset=["Client"]).iterrows():
             c_nom = str(row.get("Client", ""))
             c_ent = str(row.get("Entreprise", ""))
-            if c_nom and c_nom != "nan": clients_connus.append(c_nom)
-            if c_ent and c_ent != "nan": entreprises_connues.append(c_ent)
             dict_clients[c_nom] = {
                 "entreprise": c_ent,
                 "email": row.get("Email", ""),
@@ -221,15 +243,12 @@ if os.path.exists(CRM_FILE):
         pass
 
 # --- INTERFACE ---
-st.title("🖨️ Gestionnaire de Devis - Marquage Textile")
+st.title("🖨️ Gestionnaire de Devis - Textile & Goodies Publicitaires")
 
 st.sidebar.header("📋 Infos Client & Expédition")
-
-# Recherche / Auto-complétion par nom ou entreprise
 client_entreprise = st.sidebar.text_input("Nom de l'Entreprise / Société", value="")
 client_nom = st.sidebar.text_input("Nom de la personne contact (ex: Jean Dupont)", value="")
 
-# Autocomplétion intelligente si le client existe déjà
 if client_nom in dict_clients and client_nom != "":
     infos = dict_clients[client_nom]
     if not client_entreprise: client_entreprise = infos["entreprise"]
@@ -270,25 +289,25 @@ else:
 st.sidebar.markdown("---")
 st.sidebar.header("🖼️ Logo de l'entreprise")
 logo_file = st.sidebar.file_uploader("Importer un autre logo (PNG/JPG)", type=["png", "jpg", "jpeg"])
-
 logo_defaut_github = "Gemini_Generated_Image_mxbmbrmxbmbrmxbm.jpeg"
 if logo_file is None and os.path.exists(logo_defaut_github):
-    st.sidebar.image(logo_defaut_github, width=150, caption="Logo actif (GitHub)")
+    st.sidebar.image(logo_defaut_github, width=150, caption="Logo actif")
 
-noms_onglets = [f"Article {i+1}" for i in range(10)] + ["📊 Général & Devis", "📈 Suivi CRM"]
+# Structure des onglets : 8 onglets Textiles, 2 onglets Catalogue Standardisé (Goodies/Imprimés), 1 Général, 1 CRM
+noms_onglets = [f"Textile {i+1}" for i in range(8)] + ["🎁 Goodies 1", "🎁 Goodies 2", "📊 Général & Devis", "📈 Suivi CRM"]
 onglets = st.tabs(noms_onglets)
 
 articles_saisis = []
 
-for i in range(10):
+# --- CONFIGURATION DES 8 ARTICLES TEXTILES ---
+for i in range(8):
     with onglets[i]:
-        st.subheader(f"Configuration de l'Article {i+1}")
-        
+        st.subheader(f"Configuration Textile - Article {i+1}")
         sans_marquage = st.checkbox(f"Vêtement sans marquage (fourniture seule) {i+1}", key=f"sans_marq_{i}")
         
         col1, col2 = st.columns(2)
         with col1:
-            nom_article = st.text_input(f"Nom / Référence du vêtement {i+1}", value=f"T-Shirt 100% coton" if i==0 else f"Article {i+1}", key=f"nom_{i}")
+            nom_article = st.text_input(f"Nom / Référence du vêtement {i+1}", value=f"T-Shirt 100% coton" if i==0 else f"Textile {i+1}", key=f"nom_{i}")
             qte = st.number_input(f"Quantité (pcs) {i+1}", min_value=0, value=10 if i==0 else 0, key=f"qte_{i}")
             prix_vetement_ht = st.number_input(f"Prix unitaire HT du vêtement (€) {i+1}", min_value=0.0, value=4.92, key=f"px_vet_{i}")
             
@@ -298,7 +317,7 @@ for i in range(10):
                 nb_marquages = st.selectbox(f"Nombre de marquages pour l'article {i+1}", [1, 2, 3, 4], key=f"nb_m_{i}")
             else:
                 nb_marquages = 0
-                st.info("ℹ️ Article sans marquage (fourniture seule sélectionnée).")
+                st.info("ℹ️ Article sans marquage (fourniture seule).")
 
         marquages_config = []
         has_broderie = False
@@ -323,13 +342,13 @@ for i in range(10):
                 marquages_config.append({"technique": t_marq, "emplacement": emp})
 
         st.markdown("---")
-        st.markdown("**Options & Logistique spécifiques à l'article**")
+        st.markdown("**Options & Logistique**")
         oc1, oc2, oc3, oc4 = st.columns(4)
         with oc1:
             option_ensachage = st.checkbox(f"Ensachage individuel {i+1}", key=f"ens_{i}")
             type_sachet = st.selectbox(f"Type de sachet {i+1}", ["Sachet (T-shirt/Polo)", "Sachet (Veste/Sweat)"], key=f"tsach_{i}") if option_ensachage else ""
         with oc2:
-            option_assurance = st.checkbox(f"Assurance MHC (Garantie) {i+1}", key=f"ass_{i}")
+            option_assurance = st.checkbox(f"Assurance MHC {i+1}", key=f"ass_{i}")
         with oc3:
             option_stockage = st.checkbox(f"Mise en stockage + picking {i+1}", key=f"stock_{i}")
         with oc4:
@@ -337,6 +356,7 @@ for i in range(10):
 
         if qte > 0:
             articles_saisis.append({
+                "type_item": "textile",
                 "nom_article": nom_article,
                 "quantite": qte,
                 "prix_vet_unit": prix_vetement_ht,
@@ -347,73 +367,133 @@ for i in range(10):
                 "type_sachet": type_sachet,
                 "option_assurance": option_assurance,
                 "option_stockage": option_stockage,
-                "remise_fidelite": remise_fidelite
+                "remise_fidelite": remise_fidelite,
+                "total_ligne_ht": 0.0 # calculé après
             })
 
-# --- ÉTAPE 2 : CALCUL DES QUANTITÉS GLOBALES PAR MARQUAGE POUR TARIFICATION DÉGRESSIVE ---
+# --- CONFIGURATION DES 2 ONGLETS GOODIES / CATALOGUE STANDARDISÉ ---
+for idx_g, g_tab_idx in enumerate([8, 9]):
+    with onglets[g_tab_idx]:
+        st.subheader(f"🎁 Goodies & Imprimés Publicitaires - Article {idx_g+1}")
+        
+        if not df_catalogue.empty:
+            categories_dispo = df_catalogue['Categorie'].unique().tolist()
+            cat_choisie = st.selectbox(f"Catégorie de produit {idx_g+1}", categories_dispo, key=f"cat_g_{idx_g}")
+            
+            df_filtre_cat = df_catalogue[df_catalogue['Categorie'] == cat_choisie]
+            designations_dispo = df_filtre_cat['Designation'].unique().tolist()
+            des_choisie = st.selectbox(f"Désignation exacte {idx_g+1}", designations_dispo, key=f"des_g_{idx_g}")
+            
+            qte_g = st.number_input(f"Quantité demandée {idx_g+1}", min_value=0, value=100 if idx_g==0 else 0, key=f"qte_g_{idx_g}")
+            
+            # Récupération automatique du prix unitaire selon la quantité dans le catalogue
+            prix_unit_catalogue = get_prix_catalogue(des_choisie, qte_g)
+            st.info(f"💡 Prix unitaire HT appliqué selon le catalogue (quantité ≥ {qte_g}) : **{prix_unit_catalogue:.4f} €**")
+            
+            remise_g = st.number_input(f"Réduction spécifique (%) Goodies {idx_g+1}", min_value=0.0, max_value=100.0, value=0.0, step=1.0, key=f"rem_g_{idx_g}")
+            
+            if qte_g > 0:
+                articles_saisis.append({
+                    "type_item": "catalogue",
+                    "nom_article": f"[{cat_choisie}] {des_choisie}",
+                    "quantite": qte_g,
+                    "prix_vet_unit": prix_unit_catalogue,
+                    "sans_marquage": True,
+                    "marquages_config": [],
+                    "has_broderie": False,
+                    "option_ensachage": False,
+                    "type_sachet": "",
+                    "option_assurance": False,
+                    "option_stockage": False,
+                    "remise_fidelite": remise_g,
+                    "total_ligne_ht": 0.0
+                })
+        else:
+            st.warning("⚠️ Catalogue standardisé non disponible ou vide.")
+
+# --- CALCUL DES QUANTITÉS GLOBALES TEXTILE POUR DÉGRESSIVITÉ ---
 compteur_global_marquages = {}
 for art in articles_saisis:
-    if not art["sans_marquage"]:
+    if art["type_item"] == "textile" and not art["sans_marquage"]:
         qte_art = art["quantite"]
         for m in art["marquages_config"]:
             cle = (m["technique"], m["emplacement"])
             compteur_global_marquages[cle] = compteur_global_marquages.get(cle, 0) + qte_art
 
-# --- ÉTAPE 3 : CONSOLIDATION DU DEVIS ---
+# --- CONSOLIDATION FINALE DES LIGNES DE DEVIS ---
 lignes_devis_global = []
 for art in articles_saisis:
     qte = art["quantite"]
-    marquages_calcules = []
-    total_marquage_unit = 0.0
     
-    if not art["sans_marquage"]:
-        for m in art["marquages_config"]:
-            cle = (m["technique"], m["emplacement"])
-            qte_globale_marq = compteur_global_marquages.get(cle, qte)
-            
-            if m["technique"] == "DTF Textile Fin":
-                tarif_m = get_tarif_dtf_fin(qte_globale_marq, m["emplacement"])
-            elif m["technique"] == "DTF Textile Épais":
-                tarif_m = get_tarif_dtf_epais(qte_globale_marq, m["emplacement"])
-            else:
-                tarif_m = get_tarif_broderie(qte_globale_marq, m["emplacement"])
+    if art["type_item"] == "textile":
+        marquages_calcules = []
+        total_marquage_unit = 0.0
+        
+        if not art["sans_marquage"]:
+            for m in art["marquages_config"]:
+                cle = (m["technique"], m["emplacement"])
+                qte_globale_marq = compteur_global_marquages.get(cle, qte)
                 
-            total_marquage_unit += tarif_m
-            marquages_calcules.append({"nom": f"{m['technique']} - {m['emplacement']}", "tarif": tarif_m})
+                if m["technique"] == "DTF Textile Fin":
+                    tarif_m = get_tarif_dtf_fin(qte_globale_marq, m["emplacement"])
+                elif m["technique"] == "DTF Textile Épais":
+                    tarif_m = get_tarif_dtf_epais(qte_globale_marq, m["emplacement"])
+                else:
+                    tarif_m = get_tarif_broderie(qte_globale_marq, m["emplacement"])
+                    
+                total_marquage_unit += tarif_m
+                marquages_calcules.append({"nom": f"{m['technique']} - {m['emplacement']}", "tarif": tarif_m})
 
-    frais_prog_broderie = get_frais_prog_broderie(qte) if art["has_broderie"] else 0.0
+        frais_prog_broderie = get_frais_prog_broderie(qte) if art["has_broderie"] else 0.0
+        coût_ensachage_unit = get_tarif_ensachage(qte, art["type_sachet"]) if art["option_ensachage"] else 0.0
+        coût_assurance_unit = get_tarif_assurance(qte) if art["option_assurance"] else 0.0
+        coût_stockage_unit = get_tarif_stockage(qte) if art["option_stockage"] else 0.0
 
-    coût_ensachage_unit = get_tarif_ensachage(qte, art["type_sachet"]) if art["option_ensachage"] else 0.0
-    coût_assurance_unit = get_tarif_assurance(qte) if art["option_assurance"] else 0.0
-    coût_stockage_unit = get_tarif_stockage(qte) if art["option_stockage"] else 0.0
-
-    total_unit_ht = art["prix_vet_unit"] + total_marquage_unit + coût_ensachage_unit + coût_assurance_unit + coût_stockage_unit
-    
-    total_ligne_brut = (total_unit_ht * qte) + frais_prog_broderie
-    montant_remise = total_ligne_brut * (art["remise_fidelite"] / 100.0)
-    total_ligne_ht = total_ligne_brut - montant_remise
-    
-    lignes_devis_global.append({
-        "nom_article": art["nom_article"],
-        "quantite": qte,
-        "prix_vet_unit": art["prix_vet_unit"],
-        "sans_marquage": art["sans_marquage"],
-        "marquages": marquages_calcules,
-        "frais_prog_broderie": frais_prog_broderie,
-        "option_ensachage": art["option_ensachage"],
-        "type_sachet": art["type_sachet"],
-        "coût_ensachage_unit": coût_ensachage_unit,
-        "option_assurance": art["option_assurance"],
-        "coût_assurance_unit": coût_assurance_unit,
-        "option_stockage": art["option_stockage"],
-        "coût_stockage_unit": coût_stockage_unit,
-        "remise_fidelite": art["remise_fidelite"],
-        "total_ligne_ht": total_ligne_ht
-    })
-
-    if qte > 0:
-        with onglets[articles_saisis.index(art) if art in articles_saisis else 0]:
-            st.markdown(f"### **Sous-total Article HT : {total_ligne_ht:.2f} €**")
+        total_unit_ht = art["prix_vet_unit"] + total_marquage_unit + coût_ensachage_unit + coût_assurance_unit + coût_stockage_unit
+        total_ligne_brut = (total_unit_ht * qte) + frais_prog_broderie
+        montant_remise = total_ligne_brut * (art["remise_fidelite"] / 100.0)
+        total_ligne_ht = total_ligne_brut - montant_remise
+        
+        lignes_devis_global.append({
+            "nom_article": art["nom_article"],
+            "quantite": qte,
+            "prix_vet_unit": art["prix_vet_unit"],
+            "sans_marquage": art["sans_marquage"],
+            "marquages": marquages_calcules,
+            "frais_prog_broderie": frais_prog_broderie,
+            "option_ensachage": art["option_ensachage"],
+            "type_sachet": art["type_sachet"],
+            "coût_ensachage_unit": coût_ensachage_unit,
+            "option_assurance": art["option_assurance"],
+            "coût_assurance_unit": coût_assurance_unit,
+            "option_stockage": art["option_stockage"],
+            "coût_stockage_unit": coût_stockage_unit,
+            "remise_fidelite": art["remise_fidelite"],
+            "total_ligne_ht": total_ligne_ht
+        })
+    else:
+        # Article catalogue goodies
+        total_ligne_brut = art["prix_vet_unit"] * qte
+        montant_remise = total_ligne_brut * (art["remise_fidelite"] / 100.0)
+        total_ligne_ht = total_ligne_brut - montant_remise
+        
+        lignes_devis_global.append({
+            "nom_article": art["nom_article"],
+            "quantite": qte,
+            "prix_vet_unit": art["prix_vet_unit"],
+            "sans_marquage": True,
+            "marquages": [],
+            "frais_prog_broderie": 0.0,
+            "option_ensachage": False,
+            "type_sachet": "",
+            "coût_ensachage_unit": 0.0,
+            "option_assurance": False,
+            "coût_assurance_unit": 0.0,
+            "option_stockage": False,
+            "coût_stockage_unit": 0.0,
+            "remise_fidelite": art["remise_fidelite"],
+            "total_ligne_ht": total_ligne_ht
+        })
 
 # --- ONGLET 10 : GÉNÉRAL & DEVIS ---
 with onglets[10]:
@@ -493,7 +573,7 @@ with onglets[10]:
                 logo_path = logo_defaut_github
 
             header_text = Paragraph(
-                "<b>APEX BUSINESS & COM - SOLUTIONS TEXTILE & MARQUAGE</b><br/>"
+                "<b>APEX BUSINESS & COM - SOLUTIONS TEXTILE & IMPRESSION</b><br/>"
                 "70 - Marnay<br/>"
                 "Tél (Brice Geny) : 06 32 69 73 28 &nbsp;|&nbsp; Tél (Brice Bugna) : 06 29 92 94 74<br/>"
                 "Email : brice.geny@gmail.com", 
@@ -536,11 +616,11 @@ with onglets[10]:
             ]]
 
             for item in lignes_devis_global:
-                libelle_support = f"<b>Support (Sans marquage) : {item['nom_article']}</b>" if item['sans_marquage'] else f"<b>Support : {item['nom_article']}</b>"
+                libelle_support = f"<b>{item['nom_article']}</b>"
                 table_data.append([
                     Paragraph(libelle_support, style_cell), 
                     str(item['quantite']), 
-                    f"{item['prix_vet_unit']:.2f} €", 
+                    f"{item['prix_vet_unit']:.4f} €", 
                     f"{item['prix_vet_unit']*item['quantite']:.2f} €"
                 ])
                 for m in item['marquages']:
@@ -582,7 +662,7 @@ with onglets[10]:
                     brut_calc = (item['prix_vet_unit']*item['quantite']) + sum([m['tarif']*item['quantite'] for m in item['marquages']]) + item['frais_prog_broderie'] + (item['coût_ensachage_unit']*item['quantite'] if item['option_ensachage'] else 0) + (item['coût_assurance_unit']*item['quantite'] if item['option_assurance'] else 0) + (item['coût_stockage_unit']*item['quantite'] if item['option_stockage'] else 0)
                     montant_remise_ligne = brut_calc * (item['remise_fidelite']/100.0)
                     table_data.append([
-                        Paragraph(f"&nbsp;&nbsp;&bull; <b>Réduction fidélité ({item['remise_fidelite']}%)</b>", style_cell), 
+                        Paragraph(f"&nbsp;&nbsp;&bull; <b>Réduction / Remise ({item['remise_fidelite']}%)</b>", style_cell), 
                         "1", 
                         "-", 
                         f"-{montant_remise_ligne:.2f} €"
@@ -636,7 +716,7 @@ with onglets[10]:
                 else:
                     try:
                         msg = EmailMessage()
-                        msg['Subject'] = f"Devis {num_devis} - Marquage Textile"
+                        msg['Subject'] = f"Devis {num_devis} - Marquage Textile & Goodies"
                         msg['From'] = conseiller_email
                         msg['To'] = client_email
                         msg['Cc'] = autre_email
@@ -678,18 +758,9 @@ with onglets[11]:
     if os.path.exists(CRM_FILE):
         df_crm = pd.read_csv(CRM_FILE)
         
-        # Filtrage des rôles
-        if conseiller_email not in ["brice.geny@gmail.com", "brice.bugna@gmail.com"]:
-            if "Conseiller" in df_crm.columns:
-                df_crm = df_crm[df_crm["Conseiller"] == conseiller_nom]
-                st.info(f"🔒 Vue restreinte aux devis émis par {conseiller_nom}.")
-        else:
-            st.success("👑 Accès administrateur global activé (Vue de tous les devis de l'agence).")
-
         if not df_crm.empty:
             st.markdown("### 🗂️ Liste des devis et gestion des statuts")
             
-            # Affichage interactif avec mise en forme
             edited_df = st.data_editor(
                 df_crm,
                 column_config={
@@ -707,7 +778,6 @@ with onglets[11]:
                 key="crm_editor"
             )
 
-            # Sauvegarde automatique si les statuts ont été modifiés dans le tableau
             if not edited_df.equals(df_crm):
                 edited_df.to_csv(CRM_FILE, index=False)
                 st.toast("✅ Statuts mis à jour avec succès !", icon="💾")
@@ -739,22 +809,21 @@ with onglets[11]:
                     st.write("")
                     st.write("")
                     if st.button("📋 Dupliquer ce devis pour un autre client"):
-                        # Récupération des données du devis sélectionné pour pré-remplissage rapide
                         ligne_source = df_crm[df_crm["Numero_Devis"] == devis_selectionne].iloc[0]
                         st.session_state['duplique_client'] = ligne_source.get("Client", "")
                         st.session_state['duplique_entreprise'] = ligne_source.get("Entreprise", "")
                         st.session_state['duplique_email'] = ligne_source.get("Email", "")
-                        st.success("✨ Devis dupliqué ! Remontez sur les onglets articles pour ajuster et générer le nouveau devis.")
+                        st.success("✨ Devis dupliqué !")
 
             st.markdown("---")
             csv_data = df_crm.to_csv(index=False).encode('utf-8')
             st.download_button(
-                label="📥 Exporter tout le CRM au format CSV (compatible Excel / Google Sheets)",
+                label="📥 Exporter tout le CRM au format CSV",
                 data=csv_data,
                 file_name=f"crm_apex_devis_{datetime.now().strftime('%Y_%m_%d')}.csv",
                 mime="text/csv"
             )
         else:
-            st.info("Aucun devis trouvé pour ce profil.")
+            st.info("Aucun devis trouvé.")
     else:
-        st.info("Aucun devis n'a encore été généré pour l'instant. Les données apparaîtront ici dès que vous créerez votre premier devis.")
+        st.info("Aucun devis n'a encore été généré.")
