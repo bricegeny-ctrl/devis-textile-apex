@@ -1,3 +1,4 @@
+import os
 import pandas as pd
 import streamlit as st
 
@@ -6,20 +7,20 @@ st.set_page_config(
     page_title="SAS ABCOM - Configurateur de Tarifs", page_icon="🖨️", layout="wide"
 )
 
-# Chargement du fichier Excel
-EXCEL_FILE = "tarifs print-panneaux-banderoles.xlsx"
+# Chemin complet de votre fichier Excel
+EXCEL_FILE = r"C:\Users\setup\OneDrive\OneDrive - IRIS - AB Com\Bureau\reprise\site et appli\tarifs print-panneaux-banderoles.xlsx"
 
 
 @st.cache_data
 def load_data():
   try:
+    if not os.path.exists(EXCEL_FILE):
+      st.error(f"Fichier introuvable au chemin : {EXCEL_FILE}")
+      return None
     df = pd.read_excel(EXCEL_FILE, sheet_name="Feuil1")
     return df
   except Exception as e:
-    st.error(
-        f"Erreur lors du chargement du fichier Excel : {e}. Vérifiez que le"
-        f" fichier '{EXCEL_FILE}' est bien présent dans le dossier du projet."
-    )
+    st.error(f"Erreur lors du chargement du fichier Excel : {e}")
     return None
 
 
@@ -28,34 +29,26 @@ df = load_data()
 # Titre principal
 st.title("🖨️ SAS ABCOM - Devis & Tarifs Interactifs")
 st.markdown(
-    "Sélectionnez une catégorie de produits puis affinez votre choix via le"
-    " menu déroulant pour consulter les caractéristiques et tarifs."
+    "Naviguez entre les onglets ci-dessous et utilisez les menus déroulants pour"
+    " sélectionner vos produits."
 )
 
 if df is not None:
-  # Menu de sélection de la catégorie principale
-  categorie = st.selectbox(
-      "📌 Choisissez une catégorie de produits :",
-      [
-          "Blocs-Notes",
-          "Chemises de présentation",
-          "Banderoles",
-          "Panneaux de chantier",
-          "Roll-Ups",
-          "Flyers",
-          "Dépliants",
-          "Menus restaurants",
-          "Sous-bocks",
-          "Adhésifs",
-          "Cartes de visite",
-          "Calendriers & Magnétiques",
-      ],
-  )
+  # Création des onglets principaux (onglets à la place d'une liste latérale)
+  onglets = st.tabs([
+      "Blocs-Notes",
+      "Chemises",
+      "Banderoles",
+      "Panneaux",
+      "Roll-Ups",
+      "Flyers & Dépliants",
+      "Menus & Sous-bocks",
+      "Adhésifs",
+      "Cartes & Calendriers",
+  ])
 
-  st.markdown("---")
-
-  # Affichage dynamique selon la catégorie sélectionnée avec menu déroulant de produit
-  if categorie == "Blocs-Notes":
+  # --- ONGLET 1 : BLOCS-NOTES ---
+  with onglets[0]:
     st.subheader("📝 Blocs-Notes (Papier 90g Offset)")
     sous_df = df.iloc[3:9].copy()
     sous_df.columns = [
@@ -67,33 +60,30 @@ if df is not None:
         "200 ex",
         "500 ex",
         "1000 ex",
-        "Col8",
-        "Col9",
-        "Col10",
-        "Col11",
+        "C8",
+        "C9",
+        "C10",
+        "C11",
     ]
     produit_choisi = st.selectbox(
-        "Sélectionnez le bloc-note :", sous_df["Désignation"].tolist()
+        "Sélectionnez votre bloc-note :",
+        sous_df["Désignation"].tolist(),
+        key="sel_bloc",
     )
     ligne = sous_df[sous_df["Désignation"] == produit_choisi].iloc[0]
 
-    col1, col2 = st.columns(2)
-    with col1:
-      st.info(f"**Référence :** {ligne['Réf']}")
-      st.write(f"**Description :** {ligne['Désignation']}")
-    with col2:
-      st.success(
-          "Tarifs unitaires dégressifs disponibles dans la grille complète."
-      )
-      st.dataframe(
-          sous_df[sous_df["Désignation"] == produit_choisi].dropna(
-              axis=1, how="all"
-          ),
-          use_container_width=True,
-      )
+    st.info(f"**Référence :** {ligne['Réf']} | **Produit :** {ligne['Désignation']}")
+    st.write("Grille tarifaire détaillée pour ce produit :")
+    st.dataframe(
+        sous_df[sous_df["Désignation"] == produit_choisi].dropna(
+            axis=1, how="all"
+        ),
+        use_container_width=True,
+    )
 
-  elif categorie == "Chemises de présentation":
-    st.subheader("📂 Chemises de présentation (300g)")
+  # --- ONGLET 2 : CHEMISES ---
+  with onglets[1]:
+    st.subheader("📂 Chemises de présentation")
     sous_df = df.iloc[16:20].copy()
     sous_df.columns = [
         "Réf",
@@ -105,12 +95,14 @@ if df is not None:
         "1000 ex",
         "2500 ex",
         "5000 ex",
-        "Col9",
-        "Col10",
-        "Col11",
+        "C9",
+        "C10",
+        "C11",
     ]
     produit_choisi = st.selectbox(
-        "Sélectionnez le modèle de chemise :", sous_df["Désignation"].tolist()
+        "Sélectionnez votre modèle de chemise :",
+        sous_df["Désignation"].tolist(),
+        key="sel_chemise",
     )
     ligne = sous_df[sous_df["Désignation"] == produit_choisi].iloc[0]
 
@@ -122,76 +114,94 @@ if df is not None:
         use_container_width=True,
     )
 
-  elif categorie == "Banderoles":
-    st.subheader("🚩 Banderoles (M1 510g/m² avec œillets)")
+  # --- ONGLET 3 : BANDEROLES ---
+  with onglets[2]:
+    st.subheader("🚩 Banderoles (M1 510g/m²)")
     sous_df = df.iloc[29:34].dropna(how="all").copy()
     sous_df.columns = ["Format / Finition", "Prix HT (€)", "C2", "C3", "C4"]
     format_choisi = st.selectbox(
         "Sélectionnez le format de banderole :",
         sous_df["Format / Finition"].tolist(),
+        key="sel_banderole",
     )
     ligne = sous_df[sous_df["Format / Finition"] == format_choisi].iloc[0]
 
     st.metric(
-        label=f"Tarif pour : {format_choisi}", value=f"{ligne['Prix HT (€)']} €"
+        label=f"Tarif - {format_choisi}", value=f"{ligne['Prix HT (€, d)'] } €"
+        if "Prix HT (€, d)" in ligne
+        else f"{ligne['Prix HT (€)']} €"
     )
 
-  elif categorie == "Panneaux de chantier":
+  # --- ONGLET 4 : PANNEAUX ---
+  with onglets[3]:
     st.subheader("🚧 Panneaux de chantier (Akylux)")
     sous_df = df.iloc[39:45].dropna(how="all").copy()
     sous_df.columns = ["Réf", "Désignation", "Prix"]
     produit_choisi = st.selectbox(
-        "Sélectionnez le panneau :", sous_df["Désignation"].tolist()
+        "Sélectionnez votre panneau :",
+        sous_df["Désignation"].tolist(),
+        key="sel_panneau",
     )
     st.dataframe(
         sous_df[sous_df["Désignation"] == produit_choisi],
         use_container_width=True,
     )
 
-  elif categorie == "Roll-Ups":
+  # --- ONGLET 5 : ROLL-UPS ---
+  with onglets[4]:
     st.subheader("📌 Roll-Ups (Structures enroulables)")
     sous_df = df.iloc[53:57].dropna(how="all").copy()
     sous_df.columns = ["Réf", "Désignation"]
     produit_choisi = st.selectbox(
-        "Sélectionnez le type de Roll-Up :", sous_df["Désignation"].tolist()
+        "Sélectionnez votre Roll-Up :",
+        sous_df["Désignation"].tolist(),
+        key="sel_rollup",
     )
-    st.write(f"**Modèle :** {produit_choisi}")
+    ligne = sous_df[sous_df["Désignation"] == produit_choisi].iloc[0]
+    st.success(f"**Référence :** {ligne['Réf']} — **Modèle :** {produit_choisi}")
 
-  elif categorie == "Flyers":
-    st.subheader("📄 Flyers")
-    st.info(
-        "Gamme complète de flyers disponible. Sélectionnez un format ou un"
-        " grammage :"
+  # --- ONGLET 6 : FLYERS & DÉPLIANTS ---
+  with onglets[5]:
+    st.subheader("📄 Flyers & Dépliants")
+    type_choix = st.radio(
+        "Choisissez la gamme :", ["Flyers", "Dépliants"], horizontal=True
     )
-    sous_df = df.iloc[59:84].dropna(how="all").copy()
+    if type_choix == "Flyers":
+      sous_df = df.iloc[59:84].dropna(how="all").copy()
+    else:
+      sous_df = df.iloc[86:111].dropna(how="all").copy()
     st.dataframe(sous_df.dropna(axis=1, how="all"), use_container_width=True)
 
-  elif categorie == "Dépliants":
-    st.subheader("📑 Dépliants")
-    sous_df = df.iloc[86:111].dropna(how="all").copy()
+  # --- ONGLET 7 : MENUS & SOUS-BOCKS ---
+  with onglets[6]:
+    st.subheader("🍽️ Menus restaurants & Sous-bocks")
+    produit_type = st.selectbox(
+        "Sélectionnez le produit :",
+        ["Menus restaurants (300g indéchirable)", "Sous-bocks (Carton 580g)"],
+        key="sel_menu_bock",
+    )
+    if "Menus" in produit_type:
+      sous_df = df.iloc[113:117].dropna(how="all").copy()
+    else:
+      sous_df = df.iloc[119:123].dropna(how="all").copy()
     st.dataframe(sous_df.dropna(axis=1, how="all"), use_container_width=True)
 
-  elif categorie == "Menus restaurants":
-    st.subheader("🍽️ Menus restaurants indéchirables")
-    sous_df = df.iloc[113:117].dropna(how="all").copy()
-    st.dataframe(sous_df.dropna(axis=1, how="all"), use_container_width=True)
-
-  elif categorie == "Sous-bocks":
-    st.subheader("🍺 Sous-bocks (Carton 580g)")
-    sous_df = df.iloc[119:123].dropna(how="all").copy()
-    st.dataframe(sous_df.dropna(axis=1, how="all"), use_container_width=True)
-
-  elif categorie == "Adhésifs":
+  # --- ONGLET 8 : ADHÉSIFS ---
+  with onglets[7]:
     st.subheader("🏷️ Adhésifs")
     sous_df = df.iloc[127:137].dropna(how="all").copy()
     st.dataframe(sous_df.dropna(axis=1, how="all"), use_container_width=True)
 
-  elif categorie == "Cartes de visite":
-    st.subheader("📇 Cartes de visite")
-    sous_df = df.iloc[141:150].dropna(how="all").copy()
-    st.dataframe(sous_df.dropna(axis=1, how="all"), use_container_width=True)
-
-  elif categorie == "Calendriers & Magnétiques":
-    st.subheader("📅 Calendriers & Magnétiques")
-    sous_df = df.iloc[151:182].dropna(how="all").copy()
+  # --- ONGLET 9 : CARTES & CALENDRIERS ---
+  with onglets[8]:
+    st.subheader("📇 Cartes de visite & Calendriers")
+    choix_cc = st.selectbox(
+        "Sélectionnez la catégorie :",
+        ["Cartes de visite", "Calendriers & Magnétiques"],
+        key="sel_cc",
+    )
+    if "Cartes" in choix_cc:
+      sous_df = df.iloc[141:150].dropna(how="all").copy()
+    else:
+      sous_df = df.iloc[151:182].dropna(how="all").copy()
     st.dataframe(sous_df.dropna(axis=1, how="all"), use_container_width=True)
