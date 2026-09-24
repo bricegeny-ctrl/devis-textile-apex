@@ -46,7 +46,7 @@ def obtenir_prochain_numero_devis():
         json.dump({"dernier_num": nouveau_num}, f)
     return nouveau_num
 
-# --- MOTEUR DE LECTURE EXCEL ROBUSTE ET INSTANTANÉ ---
+# --- MOTEUR DE LECTURE EXCEL AVEC INDEX DE COLONNES PRÉCIS (4 à 15) ---
 def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
     if not os.path.exists(CATALOGUE_FILE):
         return 0.15
@@ -59,26 +59,44 @@ def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
     cat_lower = str(cat_print).lower().strip()
     ref_lower = str(choix_ref).lower().strip()
 
-    # 1. Scanner toutes les lignes du haut pour trouver les colonnes de paliers (100, 250, 500, 1000, etc.)
-    paliers_cols = {}
-    for r in range(0, min(5, len(df_all))):
-        for c in range(df_all.shape[1]):
-            val = df_all.iloc[r, c]
-            if pd.notna(val):
-                val_str = str(val).replace('.0', '').strip()
-                if val_str.isdigit():
-                    num = int(val_str)
-                    if num in [1, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000]:
-                        paliers_cols[num] = c
+    # Mapping exact des colonnes 4 à 15 (index 3 à 14) selon votre ligne d'en-tête Excel :
+    # Col 4 (index 3)  = 1 ex
+    # Col 5 (index 4)  = 5 ex
+    # Col 6 (index 5)  = 10 ex
+    # Col 7 (index 6)  = 25 ex
+    # Col 8 (index 7)  = 50 ex
+    # Col 9 (index 8)  = 100 ex ("100 (ou palier)")
+    # Col 10 (index 9) = 250 ex
+    # Col 11 (index 10) = 500 ex
+    # Col 12 (index 11) = 1000 ex
+    # Col 13 (index 12) = 2500 ex
+    # Col 14 (index 13) = 5000 ex
+    # Col 15 (index 14) = 10000 ex
 
-    # Si aucun palier standard détecté dans l'en-tête, on définit un mapping par défaut basé sur votre fichier
-    if not paliers_cols:
-        paliers_cols = {100: 9, 250: 10, 500: 11, 1000: 12, 2500: 13, 5000: 14, 10000: 15}
-
-    # Trouver le palier le plus proche de la quantité demandée
-    dispos = list(paliers_cols.keys())
-    q_proche = min(dispos, key=lambda x: abs(x - qte))
-    col_cible = paliers_cols[q_proche]
+    if qte <= 1:
+        col_cible = 3
+    elif qte <= 5:
+        col_cible = 4
+    elif qte <= 10:
+        col_cible = 5
+    elif qte <= 25:
+        col_cible = 6
+    elif qte <= 50:
+        col_cible = 7
+    elif qte <= 100:
+        col_cible = 8
+    elif qte <= 250:
+        col_cible = 9
+    elif qte <= 500:
+        col_cible = 10
+    elif qte <= 1000:
+        col_cible = 11
+    elif qte <= 2500:
+        col_cible = 12
+    elif qte <= 5000:
+        col_cible = 13
+    else:
+        col_cible = 14
 
     # 2. Trouver la meilleure ligne correspondant au produit
     best_row = -1
@@ -103,16 +121,14 @@ def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
     if best_row == -1 or max_match <= 0:
         return 0.15
 
-    # 3. Extraire le prix à l'intersection de la ligne du produit et de la colonne de quantité
+    # 3. Extraire le prix exact à l'intersection de la ligne et de la colonne ciblée
     try:
-        # Essayer d'abord la colonne exacte du palier
         prix_val = float(df_all.iloc[best_row, col_cible])
         
-        # Si vide, chercher dans les colonnes adjacentes (gauche/droite)
+        # Si la cellule est vide, recherche de sécurité dans la colonne adjacente
         if pd.isna(prix_val) or prix_val <= 0:
-            for offset in [1, -1, 2, -2]:
-                alt_col = col_cible + offset
-                if 0 <= alt_col < df_all.shape[1]:
+            for alt_col in [col_cible + 1, col_cible - 1]:
+                if 3 <= alt_col < df_all.shape[1]:
                     alt_val = float(df_all.iloc[best_row, alt_col])
                     if not pd.isna(alt_val) and alt_val > 0:
                         prix_val = alt_val
@@ -123,6 +139,7 @@ def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
         return round(prix_val, 4)
     except Exception:
         return 0.15
+
 # --- GRILLES TARIFAIRES OFFICIELLES (MARQUAGE & BRODERIE) ---
 def obtenir_tarif_dtf_unitaire(type_textile, emplacement, qte_totale):
     grille_fin = {
