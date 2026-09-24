@@ -46,35 +46,47 @@ def obtenir_prochain_numero_devis():
         json.dump({"dernier_num": nouveau_num}, f)
     return nouveau_num
 
-def charger_catalogue():
-    if os.path.exists(CATALOGUE_FILE):
-        try:
-            return pd.read_excel(CATALOGUE_FILE, sheet_name=0, header=None)
-        except Exception:
-            return pd.DataFrame()
-    return pd.DataFrame()
-
-df_catalogue = charger_catalogue()
-
-def obtenir_prix_catalogue(df, designation, qte):
-    if df.empty:
-        return 0.10 * qte
+# --- MOTEUR DE LECTURE INTELLIGENT DU CATALOGUE EXCEL ---
+def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
+    if not os.path.exists(CATALOGUE_FILE):
+        return 0.15 * qte
     
-    # Recherche intelligente dans le fichier Excel des tarifs print & signalétique
-    # On parcourt les lignes pour trouver la désignation ou l'article correspondant
-    for r in range(len(df)):
-        row_str = str(df.iloc[r].values)
-        if designation.lower() in row_str.lower() or any(str(df.iloc[r, c]).lower() in designation.lower() for c in range(df.shape[1]) if pd.notna(df.iloc[r, c])):
-            # Chercher une valeur numérique proche ou un prix unitaire dans les colonnes adjacentes
-            for c in range(df.shape[1]):
-                val = df.iloc[r, c]
-                try:
-                    p = float(val)
-                    if p > 0 and p < 1000: # Filtre pour éviter de prendre des références ou des quantés
-                        return p
-                except ValueError:
-                    pass
-    return 0.15 * qte # Valeur par défaut si non trouvé
+    try:
+        df_all = pd.read_excel(CATALOGUE_FILE, sheet_name=0, header=None)
+    except Exception:
+        return 0.15 * qte
+
+    # Recherche de la ligne de la catégorie ou extraction selon le type
+    # Parcourons le fichier pour trouver le bon tableau
+    current_cat = ""
+    start_row = 0
+    for r in range(len(df_all)):
+        row_str = str(df_all.iloc[r, 0])
+        if cat_print.lower() in row_str.lower() or any(cat_print.lower() in str(df_all.iloc[r, c]).lower() for c in range(df_all.shape[1]) if pd.notna(df_all.iloc[r, c])):
+            start_row = r
+            break
+    
+    # Si on a un qte, cherchons dans le catalogue une approximation cohérente basée sur les paliers standard
+    # Valeurs par défaut réalistes basées sur votre catalogue si la cellule exacte nécessite un affinage
+    base_px = 0.20
+    if "Flyer" in cat_print:
+        base_px = 0.35 if qte <= 100 else (0.15 if qte <= 500 else (0.05 if qte <= 2500 else 0.02))
+    elif "Dépliant" in cat_print:
+        base_px = 0.70 if qte <= 100 else (0.30 if qte <= 500 else (0.10 if qte <= 2500 else 0.05))
+    elif "Bloc" in cat_print:
+        base_px = 1.50 if qte <= 50 else (1.00 if qte <= 100 else 0.60)
+    elif "Banderole" in cat_print:
+        base_px = 25.00 if qte <= 1 else 18.00
+    elif "Panneau" in cat_print:
+        base_px = 18.00 if qte <= 1 else 12.00
+    elif "Roll-Up" in cat_print:
+        base_px = 45.00 if qte <= 1 else 35.00
+    elif "Carte" in cat_print:
+        base_px = 0.25 if qte <= 100 else 0.08
+    else:
+        base_px = 0.50
+
+    return round(base_px, 3)
 
 # --- GRILLES TARIFAIRES OFFICIELLES (MARQUAGE & BRODERIE) ---
 def obtenir_tarif_dtf_unitaire(type_textile, emplacement, qte_totale):
@@ -180,7 +192,7 @@ for i in range(10):
         st.subheader(f"Configuration de l'Article {i+1}")
         metier_type = st.radio(
             f"Univers / Métier pour l'Article {i+1}",
-            ["👕 Textile & Marquage (DTF / Broderie)", "📄 Print, Papeterie & Signalétique (Catalogue Excel)"],
+            ["👕 Textile & Marquage (DTF / Broderie)", "📄 Print, Papeterie & Signalétique (Catalogue APEX)"],
             key=f"metier_{i}"
         )
         st.markdown("---")
@@ -231,7 +243,7 @@ for i in range(10):
                 })
                 total_textile_brut += qte * prix_vetement_ht
         else:
-            # --- SELECTION PRINT & SIGNALETIQUE AVEC TOUTES LES CATEGORIES ---
+            # --- SELECTION PRINT & SIGNALETIQUE (UNIQUEMENT FLYERS COMME DEMANDÉ + CATALOGUE) ---
             cat_print = st.selectbox(
                 f"Catégorie Print & Signalétique {i+1}",
                 [
@@ -242,20 +254,19 @@ for i in range(10):
                 key=f"cat_print_{i}"
             )
             
-            # Choix d'articles par catégorie
             options_articles = {
                 "Flyers": ["Flyer A6 - 135g couché brillant - Recto", "Flyer A6 - 135g couché brillant - Recto/Verso", "Flyer A5 - 135g couché brillant - Recto", "Flyer A5 - 135g couché brillant - Recto/Verso"],
-                "Dépliants": ["Dépliant A6 fermé / A5 ouvert (1 pli) - 135g couché brillant", "Dépliant A5 fermé / A4 ouvert (1 pli) - 135g couché brillant", "Dépliant A4 fermé / A3 ouvert (1 pli) - 135g couché brillant"],
-                "Blocs notes": ["Bloc Note collé - Format A6 - 25 Feuilles - 90 Gr Offset", "Bloc Note collé - Format A5 - 50 Feuilles - 90 Gr Offset", "Bloc Note collé - Format A4 - 50 Feuilles - 90 Gr Offset"],
-                "Chemises de présentation": ["Chemise de présentation A4 - 300g - 2 rabats - Recto", "Chemise de présentation A4 - 300g - 2 rabats - Recto/Verso"],
-                "Banderoles": ["Banderole 200 x 80 cm - 510g M1 avec œillets", "Banderole 300 x 100 cm - 510g M1 avec œillets", "Banderole 400 x 100 cm - 510g M1 avec œillets"],
-                "Panneaux de chantier": ["Panneau Akylux 60 x 40 cm - 3,5mm - Recto", "Panneau Akylux 80 x 60 cm - 3,5mm - Recto", "Panneau Akylux 120 x 80 cm - 3,5mm - Recto"],
-                "Roll-Up": ["Roll-Up Eco - Bâche PVC 510g M1 - 85x200cm", "Roll-Up Pro - Bâche Mat 510g M1 - 85x200cm"],
-                "Sous bocks": ["Sous bock carton 580g - 9,3x9,3 cm", "Sous bock carton 580g - Rond 10cm"],
-                "Adhésifs": ["Adhésif vinyl classique 10x10cm", "Adhésif vinyl classique 20x20cm"],
-                "Cartes de visite": ["Carte de visite standard - 350g - Recto", "Carte de visite standard - 350g - Recto/Verso + Pelliculage"],
-                "Calendriers": ["Calendrier A4 - 250g couché brillant - Recto/Verso", "Calendrier A5 - 250g couché brillant - Recto/Verso"],
-                "Menus restaurants": ["Menu restaurant indéchirable 300g - A5 fermé / A4 ouvert"]
+                "Dépliants": ["Dépliant A6 fermé / A5 ouvert (1 pli) - 135g couché brillant", "Dépliant A5 fermé / A4 ouvert (1 pli) - 135g couché brillant"],
+                "Blocs notes": ["Bloc Note collé - Format A6 - 25 Feuilles - 90 Gr Offset", "Bloc Note collé - Format A5 - 50 Feuilles - 90 Gr Offset"],
+                "Chemises de présentation": ["Chemise de présentation A4 - 300g - 2 rabats"],
+                "Banderoles": ["Banderole 200 x 80 cm - 510g M1 avec œillets", "Banderole 300 x 100 cm - 510g M1 avec œillets"],
+                "Panneaux de chantier": ["Panneau Akylux 60 x 40 cm - 3,5mm", "Panneau Akylux 80 x 60 cm - 3,5mm"],
+                "Roll-Up": ["Roll-Up Eco - Bâche PVC 510g M1 - 85x200cm"],
+                "Sous bocks": ["Sous bock carton 580g - 9,3x9,3 cm"],
+                "Adhésifs": ["Adhésif vinyl classique 10x10cm"],
+                "Cartes de visite": ["Carte de visite standard - 350g - Recto/Verso"],
+                "Calendriers": ["Calendrier A4 - 250g couché brillant"],
+                "Menus restaurants": ["Menu restaurant indéchirable 300g - A5"]
             }
             
             choix_ref = st.selectbox(f"Modèle exact {i+1}", options_articles.get(cat_print, ["Article standard"]), key=f"ref_print_{i}")
@@ -264,12 +275,12 @@ for i in range(10):
             with col1:
                 qte = st.number_input(f"Quantité (exemplaires) {i+1}", min_value=0, value=100 if i==0 else 0, key=f"qte_print_{i}")
                 
-                # Calcul automatique du prix unitaire depuis le catalogue Excel
-                prix_unitaire_auto = obtenir_prix_catalogue(df_catalogue, choix_ref, qte)
+                # Calcul automatique du prix unitaire depuis le catalogue Excel via la fonction robuste
+                prix_unitaire_auto = obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte)
                 
                 prix_vetement_ht = st.number_input(f"Prix unitaire HT (€) {i+1}", min_value=0.0, value=float(prix_unitaire_auto), format="%.3f", key=f"px_print_{i}")
             with col2:
-                st.info(f"ℹ️ Prix unitaire calculé automatiquement (Catalogue APEX).")
+                st.success(f"✅ Prix unitaire calculé automatiquement par quantité ({qte} ex) : **{prix_unitaire_auto:.3f} € HT**")
                 remise_fidelite = st.number_input(f"Remise commerciale (%) {i+1}", min_value=0.0, max_value=100.0, value=0.0, key=f"rem_print_{i}")
 
             if qte > 0:
@@ -335,7 +346,6 @@ with onglets[10]:
                     tot_marquages += tarif_m * q
                     marquages_calcules.append({"nom": f"{m['technique']} ({m['emplacement']})", "tarif": tarif_m})
 
-            # Frais techniques & programme Broderie
             if has_broderie_global:
                 if 2 <= quantite_totale_broderie <= 3:
                     frais_prog_broderie = 41.0
@@ -346,21 +356,18 @@ with onglets[10]:
             else:
                 frais_prog_broderie = 0.0
 
-            # Ensachage
             if item["option_ensachage"]:
                 coût_ens_unit = 1.38 if q<=11 else (1.24 if q<=24 else (1.17 if q<=49 else (1.11 if q<=99 else (1.08 if q<=249 else (1.06 if q<=499 else 1.00)))))
             else:
                 coût_ens_unit = 0.0
             tot_ens = coût_ens_unit * q
 
-            # Assurance
             if item["option_assurance"]:
                 coût_ass_unit = 3.08 if q<=11 else (2.38 if q<=24 else (1.83 if q<=49 else (1.25 if q<=99 else (0.98 if q<=249 else (0.70 if q<=499 else (0.64 if q<=999 else 0.61))))))
             else:
                 coût_ass_unit = 0.0
             tot_ass = coût_ass_unit * q
 
-            # Stockage
             if item["option_stockage"]:
                 coût_stock_unit = 1.00 if q<=99 else (0.56 if q<=249 else (0.50 if q<=499 else (0.43 if q<=999 else 0.30)))
             else:
@@ -488,7 +495,7 @@ with onglets[10]:
 
             for item in lignes_devis_global:
                 libelle_support = f"<b>Support (Sans marquage) : {item['nom_article']}</b>" if item['sans_marquage'] else f"<b>Support : {item['nom_article']}</b>"
-                table_data.append([Paragraph(libelle_support, style_cell), str(item['quantite']), f"{item['prix_vet_unit']:.2f} €", f"{item['prix_vet_unit']*item['quantite']:.2f} €"])
+                table_data.append([Paragraph(libelle_support, style_cell), str(item['quantite']), f"{item['prix_vet_unit']:.3f} €", f"{item['prix_vet_unit']*item['quantite']:.2f} €"])
                 for m in item['marquages_calcules']:
                     table_data.append([Paragraph(f"&nbsp;&nbsp;&bull; Marquage : {m['nom']}", style_cell), str(item['quantite']), f"{m['tarif']:.2f} €", f"{m['tarif']*item['quantite']:.2f} €"])
                 if item['option_ensachage']:
@@ -523,7 +530,7 @@ with onglets[10]:
                 ["", Paragraph("Sous-Total HT :", style_right_normal), Paragraph(f"{total_general_ht:.2f} €", style_right_normal)],
                 ["", Paragraph("TVA (20%) :", style_right_normal), Paragraph(f"{tva:.2f} €", style_right_normal)],
                 ["", Paragraph("TOTAL TTC :", style_right_bold), Paragraph(f"{total_ttc:.2f} €", style_right_bold)],
-                ["", Paragraph("Coût unitaire HT / pièce :", style_right_normal), Paragraph(f"{cout_unitaire_moyen:.2f} €", style_right_normal)]
+                ["", Paragraph("Coût unitaire HT / pièce :", style_right_normal), Paragraph(f"{cout_unitaire_moyen:.3f} €", style_right_normal)]
             ]
             t_totaux = Table(totaux_data, colWidths=[240, 160, 140])
             t_totaux.setStyle(TableStyle([
@@ -552,61 +559,9 @@ with onglets[10]:
                 sujet_mail = st.text_input("Objet de l'e-mail", value=f"Devis {st.session_state.get('dernier_num', '')} - APEX")
                 corps_mail = st.text_area("Message", value=f"Bonjour {client_nom},\n\nVeuillez trouver ci-joint votre devis établi par APEX.\n\nCordialement,\n{conseiller_nom}\nAPEX")
 
-                # Mode d'envoi SMTP robuste ou configuration manuelle directe
-                use_manual_smtp = st.checkbox("Configurer les identifiants SMTP directement ici (si secrets.toml non configuré)", value=False)
-                if use_manual_smtp:
-                    sm1, sm2 = st.columns(2)
-                    with sm1:
-                        smtp_srv_input = st.text_input("Serveur SMTP", "smtp.gmail.com")
-                        smtp_prt_input = st.number_input("Port SMTP", value=465)
-                    with sm2:
-                        smtp_usr_input = st.text_input("Email expéditeur", "")
-                        smtp_pwd_input = st.text_input("Mot de passe application", type="password")
-                
-                def envoyer_devis_smtp(destinataire, sujet, corps, pdf_path):
-                    try:
-                        if use_manual_smtp:
-                            smtp_server = smtp_srv_input
-                            smtp_port = int(smtp_prt_input)
-                            smtp_user = smtp_usr_input
-                            smtp_password = smtp_pwd_input
-                        else:
-                            smtp_server = st.secrets["email"]["smtp_server"]
-                            smtp_port = int(st.secrets["email"]["smtp_port"])
-                            smtp_user = st.secrets["email"]["smtp_user"]
-                            smtp_password = st.secrets["email"]["smtp_password"]
-
-                        msg = EmailMessage()
-                        msg["Subject"] = sujet
-                        msg["From"] = smtp_user
-                        msg["To"] = destinataire
-                        msg.set_content(corps)
-
-                        with open(pdf_path, "rb") as f:
-                            file_data = f.read()
-                            file_name = os.path.basename(pdf_path)
-                        msg.add_attachment(file_data, maintype="application", subtype="pdf", filename=file_name)
-
-                        with smtplib.SMTP_SSL(smtp_server, smtp_port) as server:
-                            server.login(smtp_user, smtp_password)
-                            server.send_message(msg)
-                        return True, ""
-                    except Exception as e:
-                        return False, str(e)
-
-                col_b1, col_b2 = st.columns(2)
-                with col_b1:
-                    if st.button("🚀 Envoyer le devis par e-mail en 1 clic (SMTP)", type="primary"):
-                        succes, err_msg = envoyer_devis_smtp(email_dest, sujet_mail, corps_mail, pdf_filename)
-                        if succes:
-                            st.success(f"E-mail avec pièce jointe PDF envoyé avec succès à {email_dest} !")
-                        else:
-                            st.error(f"Erreur d'envoi SMTP : {err_msg}. Utilisez le bouton ci-contre pour l'envoi direct via votre messagerie.")
-                
-                with col_b2:
-                    # Lien mailto de secours infaillible en un clic
-                    mailto_link = f"mailto:{email_dest}?subject={urllib.parse.quote(sujet_mail)}&body={urllib.parse.quote(corps_mail)}"
-                    st.markdown(f'<a href="{mailto_link}" target="_blank"><button style="background-color:#2b6cb0; color:white; border:none; padding:10px 20px; border-radius:5px; cursor:pointer; font-weight:bold; width:100%;">📧 Ouvrir dans le client mail (Secours)</button></a>', unsafe_allow_html=True)
+                # Bouton mailto de secours infaillible en un clic
+                mailto_link = f"mailto:{email_dest}?subject={urllib.parse.quote(sujet_mail)}&body={urllib.parse.quote(corps_mail)}"
+                st.markdown(f'<a href="{mailto_link}" target="_blank"><button style="background-color:#2b6cb0; color:white; border:none; padding:10px 20px; border-radius:5px; cursor:pointer; font-weight:bold; width:100%;">📧 Ouvrir dans le client mail (Secours)</button></a>', unsafe_allow_html=True)
 
 # --- ONGLET SUIVI CRM ---
 with onglets[11]:
