@@ -291,13 +291,25 @@ for i in range(10):
             )
             
             if "Autre" in cat_print:
-                choix_ref = st.text_input(f"Nom / Désignation du produit libre {i+1}", value="Produit personnalisé", key=f"ref_libre_{i}")
+                choix_ref = st.selectbox(f"Modèle exact {i+1}", options_articles.get(cat_print, ["Article standard"]), key=f"ref_print_{i}")
+                
                 col1, col2 = st.columns(2)
                 with col1:
-                    qte = st.number_input(f"Quantité (exemplaires) {i+1}", min_value=0, value=1 if i==0 else 0, key=f"qte_print_{i}")
-                    prix_vetement_ht = st.number_input(f"Prix unitaire HT (€) {i+1}", min_value=0.0, value=10.00, format="%.3f", key=f"px_libre_{i}")
+                    qte = st.number_input(f"Quantité (exemplaires) {i+1}", min_value=0, value=100 if i==0 else 0, key=f"qte_print_{i}")
+                    
+                    # --- CALCUL AUTOMATIQUE SYNCHRONISÉ ---
+                    prix_unitaire_auto = obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte)
+                    
+                    # On force la mise à jour du prix unitaire HT en fonction du calcul automatique
+                    prix_vetement_ht = st.number_input(
+                        f"Prix unitaire HT (€) {i+1}", 
+                        min_value=0.0, 
+                        value=float(prix_unitaire_auto), 
+                        format="%.4f", 
+                        key=f"px_print_{i}_{qte}_{choix_ref}"  # Clé dynamique pour forcer le rafraîchissement
+                    )
                 with col2:
-                    st.info("💡 Saisie manuelle activée pour produit hors catalogue.")
+                    st.success(f"✅ Tarif catalogue appliqué ({qte} ex) : **{prix_unitaire_auto:.4f} € HT**")
                     remise_fidelite = st.number_input(f"Remise commerciale (%) {i+1}", min_value=0.0, max_value=100.0, value=0.0, key=f"rem_print_{i}")
             else:
                 options_articles = {
