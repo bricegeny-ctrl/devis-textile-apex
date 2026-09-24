@@ -10,24 +10,31 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, Tabl
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 
-st.set_page_config(page_title="Gestionnaire de Devis - SAS ABCOM", layout="wide")
+st.set_page_config(page_title="Gestionnaire de Devis", layout="wide")
 
 # --- GESTION DU COMPTEUR DE DEVIS & CRM ---
 COMPTEUR_FILE = "compteur_devis.json"
 CRM_FILE = "crm_devis.csv"
-CATALOGUE_FILE = "catalogue_standardise.xlsx"
 
-# Chargement du catalogue standardisé
+# --- INTERFACE : CHARGEMENT DU CATALOGUE VIA UPLOADER ---
+st.sidebar.header("📁 Catalogue & Configuration")
+catalogue_file_uploaded = st.sidebar.file_uploader("Importer catalogue_standardise.xlsx", type=["xlsx"])
+
 @st.cache_data
-def charger_catalogue():
-    if os.path.exists(CATALOGUE_FILE):
+def charger_catalogue(uploaded_file):
+    if uploaded_file is not None:
         try:
-            return pd.read_excel(CATALOGUE_FILE)
+            return pd.read_excel(uploaded_file)
+        except Exception:
+            return pd.DataFrame(columns=["Categorie", "Reference", "Designation", "Quantite", "Prix_HT"])
+    elif os.path.exists("catalogue_standardise.xlsx"):
+        try:
+            return pd.read_excel("catalogue_standardise.xlsx")
         except Exception:
             return pd.DataFrame(columns=["Categorie", "Reference", "Designation", "Quantite", "Prix_HT"])
     return pd.DataFrame(columns=["Categorie", "Reference", "Designation", "Quantite", "Prix_HT"])
 
-df_catalogue = charger_catalogue()
+df_catalogue = charger_catalogue(catalogue_file_uploaded)
 
 def obtenir_prochain_numero_devis():
     annee_courante = datetime.now().strftime("%Y")
@@ -65,13 +72,6 @@ def enregistrer_dans_crm(data_devis):
     else:
         df_final = df_new
     df_final.to_csv(CRM_FILE, index=False)
-
-def mettre_a_jour_statut_crm(numero_devis, nouveau_statut):
-    if os.path.exists(CRM_FILE):
-        df = pd.read_csv(CRM_FILE)
-        if "Numero_Devis" in df.columns:
-            df.loc[df["Numero_Devis"] == numero_devis, "Statut"] = nouveau_statut
-            df.to_csv(CRM_FILE, index=False)
 
 # --- FONCTIONS DE CALCUL DES TARIFS & TRANCHES TEXTILE ---
 
@@ -234,8 +234,9 @@ if os.path.exists(CRM_FILE):
         pass
 
 # --- INTERFACE ---
-st.title("🖨️ Gestionnaire de Devis - SAS ABCOM")
+st.title("🖨️ Gestionnaire de Devis - Visual Communication")
 
+st.sidebar.markdown("---")
 st.sidebar.header("📋 Infos Client & Expédition")
 
 client_entreprise = st.sidebar.text_input("Nom de l'Entreprise / Société", value="")
@@ -295,7 +296,6 @@ for i in range(10):
     with onglets[i]:
         st.subheader(f"Configuration de l'Article {i+1}")
         
-        # Choix du mode : Textile sur mesure ou Catalogue Standardisé
         type_article_choix = st.radio(
             f"Type d'article pour la ligne {i+1}", 
             ["Marquage Textile / Sur Mesure", "Catalogue Standardisé (Flyers, Goodies, Impression...)"],
@@ -304,28 +304,24 @@ for i in range(10):
         
         if type_article_choix == "Catalogue Standardisé (Flyers, Goodies, Impression...)":
             if df_catalogue.empty:
-                st.warning("⚠️ Le fichier `catalogue_standardise.xlsx` est introuvable ou vide dans le dossier. Veuillez le placer à la racine.")
+                st.warning("⚠️ Veuillez importer votre fichier `catalogue_standardise.xlsx` dans la barre latérale à gauche.")
                 qte = 0
             else:
-                st.markdown("🔍 **Sélection depuis le catalogue standardisé ABCOM**")
+                st.markdown("🔍 **Sélection depuis le catalogue standardisé**")
                 
-                # 1. Catégorie
                 categories = sorted(df_catalogue["Categorie"].unique())
                 cat_choisie = st.selectbox(f"Catégorie {i+1}", categories, key=f"cat_std_{i}")
                 
                 df_cat_filtre = df_catalogue[df_catalogue["Categorie"] == cat_choisie]
                 
-                # 2. Désignation
                 designations = sorted(df_cat_filtre["Designation"].unique())
                 des_choisie = st.selectbox(f"Désignation / Produit {i+1}", designations, key=f"des_std_{i}")
                 
                 df_prod_filtre = df_cat_filtre[df_cat_filtre["Designation"] == des_choisie]
                 
-                # 3. Quantité disponible dans le catalogue
                 quantites_dispo = sorted(df_prod_filtre["Quantite"].unique())
-                qte = st.selectbox(f"Quantité (parmi les paliers catalogue) {i+1}", quantites_dispo, key=f"qte_std_{i}")
+                qte = st.selectbox(f"Quantité (paliers catalogue) {i+1}", quantites_dispo, key=f"qte_std_{i}")
                 
-                # Récupération automatique du prix et ref
                 ligne_tarif = df_prod_filtre[df_prod_filtre["Quantite"] == qte]
                 if not ligne_tarif.empty:
                     prix_unitaire = float(ligne_tarif.iloc[0]["Prix_HT"])
@@ -340,7 +336,6 @@ for i in range(10):
                 col_p1.metric(f"Prix unitaire HT {i+1}", f"{prix_unitaire:.4f} €")
                 col_p2.metric(f"Total ligne HT {i+1}", f"{prix_unitaire * qte:.2f} €")
                 
-                # Pour uniformiser avec le reste du traitement
                 articles_saisis.append({
                     "nom_article": nom_article,
                     "quantite": qte,
@@ -357,7 +352,6 @@ for i in range(10):
                     "total_ligne_direct": prix_unitaire * qte
                 })
         else:
-            # Mode Textile Historique
             sans_marquage = st.checkbox(f"Vêtement sans marquage (fourniture seule) {i+1}", key=f"sans_marq_{i}")
             
             col1, col2 = st.columns(2)
@@ -372,7 +366,7 @@ for i in range(10):
                     nb_marquages = st.selectbox(f"Nombre de marquages pour l'article {i+1}", [1, 2, 3, 4], key=f"nb_m_{i}")
                 else:
                     nb_marquages = 0
-                    st.info("ℹ️ Article sans marquage (fourniture seule sélectionnée).")
+                    st.info("ℹ️ Article sans marquage.")
 
             marquages_config = []
             has_broderie = False
@@ -589,10 +583,9 @@ with onglets[10]:
                 logo_path = logo_defaut_github
 
             header_text = Paragraph(
-                "<b>SAS ABCOM - VISUAL COMMUNICATION & PRINT SOLUTIONS</b><br/>"
+                "<b>VISUAL COMMUNICATION & PRINT SOLUTIONS</b><br/>"
                 "Plasne (Jura)<br/>"
-                "Tél (Brice Geny) : 06 32 69 73 28 &nbsp;|&nbsp; Tél (Brice Bugna) : 06 29 92 94 74<br/>"
-                "Email : brice.geny@gmail.com", 
+                f"Tél : {conseiller_tel} &nbsp;|&nbsp; Email : {conseiller_email}", 
                 style_sub
             )
             
@@ -732,7 +725,7 @@ with onglets[10]:
                 else:
                     try:
                         msg = EmailMessage()
-                        msg['Subject'] = f"Devis {num_devis} - SAS ABCOM"
+                        msg['Subject'] = f"Devis {num_devis}"
                         msg['From'] = conseiller_email
                         msg['To'] = client_email
                         msg['Cc'] = autre_email
@@ -745,7 +738,6 @@ Restant à votre disposition pour toute information complémentaire.
 
 Cordialement,
 {conseiller_nom}
-SAS ABCOM
 Tél : {conseiller_tel}
 Email : {conseiller_email}
 """
@@ -760,7 +752,7 @@ Email : {conseiller_email}
                             smtp.login(conseiller_email, gmail_password)
                             smtp.send_message(msg)
                         
-                        st.success(f"✅ E-mail envoyé avec succès à {client_email} depuis la boîte de {conseiller_nom} (avec copie à {autre_email}) !")
+                        st.success(f"✅ E-mail envoyé avec succès à {client_email} depuis la boîte de {conseiller_nom} !")
                     except Exception as e:
                         st.error(f"❌ Erreur lors de l'envoi de l'e-mail : {e}")
 
@@ -829,7 +821,6 @@ with onglets[11]:
                     st.write("")
                     st.write("")
                     if st.button("📋 Dupliquer ce devis pour un autre client"):
-                        ligne_source = df_crm[df_crm["Numero_Devis"] == devis_selectionne].iloc[0]
                         st.success("✨ Devis dupliqué ! Remontez sur les onglets articles pour ajuster et générer le nouveau devis.")
 
             st.markdown("---")
@@ -837,7 +828,7 @@ with onglets[11]:
             st.download_button(
                 label="📥 Exporter tout le CRM au format CSV",
                 data=csv_data,
-                file_name=f"crm_abcom_devis_{datetime.now().strftime('%Y_%m_%d')}.csv",
+                file_name=f"crm_devis_{datetime.now().strftime('%Y_%m_%d')}.csv",
                 mime="text/csv"
             )
         else:
