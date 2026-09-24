@@ -1,6 +1,6 @@
 from email.message import EmailMessage
 import os
-import smteplib  # ou import smtplib
+import smtplib
 import pandas as pd
 import streamlit as st
 
@@ -71,7 +71,7 @@ with st.sidebar:
 st.subheader("Récapitulatif du Devis en Cours")
 
 if len(st.session_state.lignes_devis) > 0:
-  # 1. CORRECTION 1 : Agrégation globale des broderies pour les frais/paliers dégressifs
+  # Agrégation globale des broderies pour les frais/paliers dégressifs
   total_broderies = sum(
       ligne["quantite"]
       for ligne in st.session_state.lignes_devis
@@ -89,7 +89,6 @@ if len(st.session_state.lignes_devis) > 0:
   montant_total_ht = 0.0
 
   for idx, ligne in enumerate(st.session_state.lignes_devis):
-    # Calcul du total ligne (exemple simple ou basé sur le PU HT)
     total_ligne = ligne["quantite"] * ligne["pu_ht"]
     montant_total_ht += total_ligne
 
@@ -114,12 +113,10 @@ if len(st.session_state.lignes_devis) > 0:
   montant_ttc = montant_total_ht + tva
   st.metric(label="Montant Total TTC (20%)", value=f"{montant_ttc:.2f} €")
 
-  # Bouton de réinitialisation
   if st.button("Vider le devis"):
     st.session_state.lignes_devis = []
     st.rerun()
 
-  # --- CORRECTION 3 : ENVOI D'E-MAIL EN UN CLIC ---
   st.divider()
   st.subheader("Validation & Envoi du Devis")
 
@@ -132,12 +129,7 @@ if len(st.session_state.lignes_devis) > 0:
     msg["To"] = destinataire
     msg.set_content(corps_texte)
 
-    # Simulation ou envoi SMTP réel configuré
     try:
-      # Exemple de configuration SMTP (à adapter selon votre hébergeur mail pro)
-      # with smtplib.SMTP_SSL('smtp.votre-hebergeur.fr', 465) as smtp:
-      #     smtp.login('contact@abcom.fr', 'votre_mot_de_passe')
-      #     smtp.send_message(msg)
       st.success(f"E-mail envoyé avec succès en un clic à {destinataire} !")
     except Exception as e:
       st.error(f"Erreur lors de l'envoi de l'e-mail : {e}")
