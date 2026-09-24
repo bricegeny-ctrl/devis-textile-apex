@@ -46,7 +46,7 @@ def obtenir_prochain_numero_devis():
         json.dump({"dernier_num": nouveau_num}, f)
     return nouveau_num
 
-# --- MOTEUR DE LECTURE EXCEL ULTRA-PRÉCIS POUR TOUT LE CATALOGUE ---
+# --- MOTEUR DE LECTURE EXCEL SUR MESURE PAR CATÉGORIE ---
 def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
     if not os.path.exists(CATALOGUE_FILE):
         return 0.10
@@ -56,89 +56,111 @@ def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
     except Exception:
         return 0.10
 
-    # 1. Trouver la zone / catégorie principale
-    start_row = -1
+    cat_lower = cat_print.lower()
+    ref_lower = choix_ref.lower()
+
+    # Fonction utilitaire pour chercher la colonne du palier de quantité le plus proche
+    def trouver_prix_par_paliers(row_idx, paliers_cols_map):
+        # paliers_cols_map est un dictionnaire ex: {100: col_idx_100, 250: col_idx_250, ...}
+        if not paliers_cols_map:
+            return None
+        paliers_dispos = list(paliers_cols_map.keys())
+        q_proche = min(paliers_dispos, key=lambda x: abs(x - qte))
+        col_idx = paliers_cols_map[q_proche]
+        val = df_all.iloc[row_idx, col_idx]
+        if pd.notna(val) and float(val) > 0:
+            return float(val)
+        return None
+
+    try:
+        # --- 1. FLYERS ---
+        if "flyer" in cat_lower:
+            # Les flyers sont autour des lignes 61 à 86
+            start_r = 61 if "a6" in ref_lower or "a5" in ref_lower or "a4" in ref_lower else 61
+            # Chercher la ligne correspondant au format et grammage
+            for r in range(61, 87):
+                row_text = " ".join([str(df_all.iloc[r, c]) for c in range(df_all.shape[1]) if pd.notna(df_all.iloc[r, c])]).lower()
+                if any(m in row_text for m in ref_lower.split() if len(m) > 2):
+                    # Paliers typiques flyers sur la ligne 62 ou 64 par exemple
+                    paliers_map = {100: 2, 250: 3, 500: 4, 1000: 5, 2500: 6, 5000: 7, 10000: 8}
+                    prix = trouver_prix_par_paliers(r, paliers_map)
+                    if prix: return round(prix, 4)
+
+        # --- 2. DÉPLIANTS ---
+        elif "dépliant" in cat_lower or "depliant" in cat_lower:
+            for r in range(87, 114):
+                row_text = " ".join([str(df_all.iloc[r, c]) for c in range(df_all.shape[1]) if pd.notna(df_all.iloc[r, c])]).lower()
+                if any(m in row_text for m in ref_lower.split() if len(m) > 2):
+                    # Paliers dépliants (souvent en colonnes 2 à 8)
+                    paliers_map = {100: 2, 250: 3, 500: 4, 1000: 5, 2500: 6, 5000: 7, 10000: 8}
+                    prix = trouver_prix_par_paliers(r, paliers_map)
+                    if prix: return round(prix, 4)
+
+        # --- 3. BANDEROLES ---
+        elif "banderole" in cat_lower:
+            for r in range(29, 36):
+                row_text = " ".join([str(df_all.iloc[r, c]) for c in range(df_all.shape[1]) if pd.notna(df_all.iloc[r, c])]).lower()
+                if any(m in row_text for m in ref_lower.split() if len(m) > 2):
+                    # Pour les banderoles, souvent prix unitaire direct ou par quantité unitaire
+                    val = df_all.iloc[r, 2] # Colonne standard de prix
+                    if pd.notna(val) and float(val) > 0:
+                        return round(float(val), 4)
+
+        # --- 4. PANNEAUX ---
+        elif "panneau" in cat_lower:
+            for r in range(38, 51):
+                row_text = " ".join([str(df_all.iloc[r, c]) for c in range(df_all.shape[1]) if pd.notna(df_all.iloc[r, c])]).lower()
+                if any(m in row_text for m in ref_lower.split() if len(m) > 2):
+                    val = df_all.iloc[r, 2]
+                    if pd.notna(val) and float(val) > 0:
+                        return round(float(val), 4)
+
+        # --- 5. ROLL-UP ---
+        elif "roll-up" in cat_lower or "rollup" in cat_lower:
+            for r in range(52, 60):
+                row_text = " ".join([str(df_all.iloc[r, c]) for c in range(df_all.shape[1]) if pd.notna(df_all.iloc[r, c])]).lower()
+                if any(m in row_text for m in ref_lower.split() if len(m) > 2):
+                    val = df_all.iloc[r, 2]
+                    if pd.notna(val) and float(val) > 0:
+                        return round(float(val), 4)
+
+        # --- 6. BLOCS NOTES ---
+        elif "bloc" in cat_lower:
+            for r in range(3, 10):
+                row_text = str(df_all.iloc[r, 0]).lower() + " " + str(df_all.iloc[r, 1]).lower()
+                if any(m in row_text for m in ref_lower.split() if len(m) > 2):
+                    paliers_map = {25: 2, 50: 3, 100: 4, 200: 5, 500: 6}
+                    prix = trouver_prix_par_paliers(r, paliers_map)
+                    if prix: return round(prix, 4)
+
+        # --- 7. CARTES DE VISITE ---
+        elif "carte" in cat_lower:
+            for r in range(142, 152):
+                row_text = " ".join([str(df_all.iloc[r, c]) for c in range(df_all.shape[1]) if pd.notna(df_all.iloc[r, c])]).lower()
+                if any(m in row_text for m in ref_lower.split() if len(m) > 2):
+                    # Lecture selon les paliers de cartes de visite
+                    paliers_map = {100: 1, 250: 2, 500: 3, 1000: 4, 2500: 5}
+                    prix = trouver_prix_par_paliers(r, paliers_map)
+                    if prix: return round(prix, 4)
+
+    except Exception:
+        pass
+
+    # Fallback générique universel si la recherche sur mesure échoue
     for r in range(len(df_all)):
         row_text = " ".join([str(df_all.iloc[r, c]) for c in range(df_all.shape[1]) if pd.notna(df_all.iloc[r, c])]).lower()
-        if cat_print.lower() in row_text:
-            start_row = r
-            break
-            
-    if start_row == -1:
-        start_row = 0
-
-    # 2. Chercher dans toute la feuille la ligne qui correspond le MIEUX à la référence exacte (choix_ref)
-    best_row = -1
-    mots_cles = [m.lower() for m in choix_ref.split() if len(m) > 1]
-    max_match = -1
-    
-    for r in range(len(df_all)):
-        row_cells = [str(df_all.iloc[r, c]) for c in range(df_all.shape[1]) if pd.notna(df_all.iloc[r, c])]
-        row_text = " ".join(row_cells).lower()
-        if not row_text.strip():
-            continue
-        
-        # Compter combien de mots clés du choix exact apparaissent dans cette ligne
-        match_count = sum(1 for mot in mots_cles if mot in row_text)
-        if match_count > max_match:
-            max_match = match_count
-            best_row = r
-
-    if best_row == -1:
-        best_row = start_row
-
-    # 3. Pour cette ligne (best_row), remonter ou regarder sur la même ligne/au-dessus pour trouver les en-têtes de quantité (paliers)
-    qtes_paliers = []
-    header_row = -1
-    
-    # Chercher les paliers dans les 5 lignes au-dessus de la ligne du produit
-    for r in range(max(0, best_row - 6), best_row + 1):
-        paliers_trouves = []
-        for c_idx, val in enumerate(df_all.iloc[r].values):
-            if pd.notna(val):
-                val_str = str(val).replace('.0', '').strip()
-                if val_str.isdigit():
-                    num = int(val_str)
-                    if num in [1, 2, 5, 10, 25, 50, 100, 200, 250, 500, 1000, 2500, 5000, 10000]:
-                        paliers_trouves.append((c_idx, num))
-        if len(paliers_trouves) >= 2:
-            header_row = r
-            qtes_paliers = paliers_trouves
-            # Ne pas break tout de suite pour prendre le header le plus proche du produit
-
-    # Si aucun palier trouvé près du produit, chercher globalement
-    if not qtes_paliers:
-        for r in range(len(df_all)):
-            paliers_trouves = []
-            for c_idx, val in enumerate(df_all.iloc[r].values):
+        if any(m in row_text for m in ref_lower.split() if len(m) > 3):
+            for c in range(df_all.shape[1]):
+                val = df_all.iloc[r, c]
                 if pd.notna(val):
-                    val_str = str(val).replace('.0', '').strip()
-                    if val_str.isdigit() and int(val_str) in [1, 2, 5, 10, 25, 50, 100, 200, 250, 500, 1000, 2500, 5000, 10000]:
-                        paliers_trouves.append((c_idx, int(val_str)))
-            if len(paliers_trouves) >= 2:
-                qtes_paliers = paliers_trouves
-                break
+                    try:
+                        f_val = float(val)
+                        if 0.01 <= f_val <= 500:
+                            return round(f_val, 4)
+                    except ValueError:
+                        continue
 
-    if not qtes_paliers:
-        return 0.15
-
-    # 4. Trouver la colonne de quantité la plus proche dans les paliers détectés
-    col_cible = qtes_paliers[0][0]
-    best_diff = float('inf')
-    for c_idx, q_palier in qtes_paliers:
-        diff = abs(qte - q_palier)
-        if diff < best_diff:
-            best_diff = diff
-            col_cible = c_idx
-
-    # 5. Extraction exacte du prix unitaire
-    try:
-        prix_val = float(df_all.iloc[best_row, col_cible])
-        if pd.isna(prix_val) or prix_val <= 0:
-            return 0.15
-        return round(prix_val, 4)
-    except Exception:
-        return 0.15
+    return 0.15
 
 # --- GRILLES TARIFAIRES OFFICIELLES (MARQUAGE & BRODERIE) ---
 def obtenir_tarif_dtf_unitaire(type_textile, emplacement, qte_totale):
