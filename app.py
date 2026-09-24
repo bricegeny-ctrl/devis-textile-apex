@@ -46,47 +46,87 @@ def obtenir_prochain_numero_devis():
         json.dump({"dernier_num": nouveau_num}, f)
     return nouveau_num
 
-# --- MOTEUR DE LECTURE INTELLIGENT DU CATALOGUE EXCEL ---
+# --- MOTEUR DE LECTURE INTELLIGENT ET FIDÈLE DU CATALOGUE EXCEL ---
 def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
     if not os.path.exists(CATALOGUE_FILE):
-        return 0.15 * qte
+        return 0.15
     
     try:
         df_all = pd.read_excel(CATALOGUE_FILE, sheet_name=0, header=None)
     except Exception:
-        return 0.15 * qte
+        return 0.15
 
-    # Recherche de la ligne de la catégorie ou extraction selon le type
-    # Parcourons le fichier pour trouver le bon tableau
-    current_cat = ""
-    start_row = 0
+    # Recherche de la ligne de début de la catégorie dans le fichier Excel
+    start_row = -1
     for r in range(len(df_all)):
         row_str = str(df_all.iloc[r, 0])
-        if cat_print.lower() in row_str.lower() or any(cat_print.lower() in str(df_all.iloc[r, c]).lower() for c in range(df_all.shape[1]) if pd.notna(df_all.iloc[r, c])):
+        if cat_print.lower() in row_str.lower():
             start_row = r
             break
-    
-    # Si on a un qte, cherchons dans le catalogue une approximation cohérente basée sur les paliers standard
-    # Valeurs par défaut réalistes basées sur votre catalogue si la cellule exacte nécessite un affinage
-    base_px = 0.20
-    if "Flyer" in cat_print:
-        base_px = 0.35 if qte <= 100 else (0.15 if qte <= 500 else (0.05 if qte <= 2500 else 0.02))
-    elif "Dépliant" in cat_print:
-        base_px = 0.70 if qte <= 100 else (0.30 if qte <= 500 else (0.10 if qte <= 2500 else 0.05))
-    elif "Bloc" in cat_print:
-        base_px = 1.50 if qte <= 50 else (1.00 if qte <= 100 else 0.60)
-    elif "Banderole" in cat_print:
-        base_px = 25.00 if qte <= 1 else 18.00
-    elif "Panneau" in cat_print:
-        base_px = 18.00 if qte <= 1 else 12.00
-    elif "Roll-Up" in cat_print:
-        base_px = 45.00 if qte <= 1 else 35.00
-    elif "Carte" in cat_print:
-        base_px = 0.25 if qte <= 100 else 0.08
-    else:
-        base_px = 0.50
+            
+    if start_row == -1:
+        return 0.15
 
-    return round(base_px, 3)
+    # On cherche les en-têtes de quantités (ex: 100, 250, 500...) dans les lignes juste en dessous
+    header_col_idx = -1
+    qtes_paliers = []
+    
+    for r in range(start_row, min(start_row + 5, len(df_all))):
+        row_vals = [str(x) for x in df_all.iloc[r].values if pd.notna(x)]
+        # Vérifie si la ligne contient des paliers numériques
+        paliers_trouves = []
+        for c_idx, val in enumerate(df_all.iloc[r].values):
+            if pd.notna(val):
+                val_str = str(val).replace('.0', '')
+                if val_str.isdigit() and int(val_str) in [25, 50, 100, 250, 500, 1000, 2500, 5000, 10000]:
+                    paliers_trouves.append((c_idx, int(val_str)))
+        if len(paliers_trouves) >= 2:
+            header_col_idx = r
+            qtes_paliers = paliers_trouves
+            break
+
+    if header_col_idx == -1 or not qtes_paliers:
+        # Fallback de secours si la structure varie
+        return 0.10
+
+    # Recherche de la ligne correspondant au modèle exact (ex: A6, 135g, Recto)
+    best_row = -1
+    mots_cles = choix_ref.lower().split()
+    max_match = 0
+    
+    for r in range(header_col_idx + 1, len(df_all)):
+        row_text = " ".join([str(df_all.iloc[r, c]) for c in range(df_all.shape[1]) if pd.notna(df_all.iloc[r, c)]).lower()
+        if not row_text.strip() or any(cat in row_text for cat in ["flyers", "dépliants", "blocs notes", "banderoles", "panneaux"]):
+            # Si on croise une nouvelle catégorie, on s'arrête
+            if r > header_col_idx + 2:
+                break
+        
+        match_count = sum(1 for mot in mots_cles if mot in row_text)
+        if match_count > max_match:
+            max_match = match_count
+            best_row = r
+
+    if best_row == -1:
+        best_row = header_col_idx + 1 # Première ligne par défaut
+
+    # Trouver la colonne de quantité la plus proche ou exacte
+    col_cible = qtes_paliers[0][0]
+    best_diff = float('inf')
+    for c_idx, q_palier in qtes_paliers:
+        diff = abs(qte - q_palier)
+        if diff < best_diff:
+            best_diff = diff
+            col_cible = c_idx
+
+    # Extraction du prix unitaire dans la cellule correspondante
+    try:
+        prix_val = float(df_all.iloc[best_row, col_cible])
+        if pd.isna(prix_val) or prix_val <= 0:
+            raise ValueError()
+        return round(prix_val, 4)
+    except Exception:
+        # Valeur par défaut si cellule vide
+        return 0.10
 
 # --- GRILLES TARIFAIRES OFFICIELLES (MARQUAGE & BRODERIE) ---
 def obtenir_tarif_dtf_unitaire(type_textile, emplacement, qte_totale):
@@ -443,24 +483,29 @@ with onglets[10]:
             style_right_bold = ParagraphStyle('RightBold', parent=styles['Normal'], fontSize=9, leading=11, fontName='Helvetica-Bold', alignment=2)
             style_right_normal = ParagraphStyle('RightNormal', parent=styles['Normal'], fontSize=9, leading=11, alignment=2)
 
+            # --- GESTION DU LOGO APEX ---
             logo_path = None
+            # Si un logo a été uploadé via la sidebar
             if logo_file is not None:
                 logo_path = "temp_logo.png"
                 with open(logo_path, "wb") as f:
                     f.write(logo_file.getbuffer())
-            elif os.path.exists(logo_defaut_github):
-                logo_path = logo_defaut_github
+            # Sinon, recherche d'un fichier logo par défaut dans le dossier
+            elif os.path.exists("logo.png"):
+                logo_path = "logo.png"
+            elif os.path.exists("logo.jpg"):
+                logo_path = "logo.jpg"
 
             header_text = Paragraph(
                 "<b>APEX - SOLUTIONS VISUELLES, PRINT & TEXTILE</b><br/>"
-                "Plasne (Jura)<br/>"
+                "70150 Marnay<br/>"
                 "Tél (Brice Geny) : 06 32 69 73 28 &nbsp;|&nbsp; Tél (Brice Bugna) : 06 29 92 94 74<br/>"
-                "Email : contact@apex-visual.fr", 
+                "Email : Brice.Geny@gmail.com / Brice.Bugna@gmail.com", 
                 style_sub
             )
             if logo_path and os.path.exists(logo_path):
-                img_logo = RLImage(logo_path, width=110, height=45)
-                t_header = Table([[img_logo, header_text]], colWidths=[120, 420])
+                img_logo = RLImage(logo_path, width=120, height=50) # Ajustez les dimensions si besoin
+                t_header = Table([[img_logo, header_text]], colWidths=[130, 410])
                 t_header.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'MIDDLE')]))
                 story.append(t_header)
             else:
