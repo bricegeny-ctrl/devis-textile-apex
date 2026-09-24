@@ -46,7 +46,7 @@ def obtenir_prochain_numero_devis():
         json.dump({"dernier_num": nouveau_num}, f)
     return nouveau_num
 
-# --- MOTEUR DE LECTURE EXCEL UNIVERSEL ET PROPRE ---
+# --- MOTEUR DE LECTURE EXCEL ROBUSTE ET INSTANTANÉ ---
 def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
     if not os.path.exists(CATALOGUE_FILE):
         return 0.15
@@ -59,20 +59,28 @@ def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
     cat_lower = str(cat_print).lower().strip()
     ref_lower = str(choix_ref).lower().strip()
 
-    # 1. Récupérer les paliers de quantité sur la ligne 1
-    paliers = []
-    for c in range(3, df_all.shape[1]):
-        val = df_all.iloc[1, c]
-        if pd.notna(val):
-            try:
-                paliers.append((c, float(str(val).replace('.0', '').strip())))
-            except ValueError:
-                continue
+    # 1. Scanner toutes les lignes du haut pour trouver les colonnes de paliers (100, 250, 500, 1000, etc.)
+    paliers_cols = {}
+    for r in range(0, min(5, len(df_all))):
+        for c in range(df_all.shape[1]):
+            val = df_all.iloc[r, c]
+            if pd.notna(val):
+                val_str = str(val).replace('.0', '').strip()
+                if val_str.isdigit():
+                    num = int(val_str)
+                    if num in [1, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000]:
+                        paliers_cols[num] = c
 
-    if not paliers:
-        return 0.15
+    # Si aucun palier standard détecté dans l'en-tête, on définit un mapping par défaut basé sur votre fichier
+    if not paliers_cols:
+        paliers_cols = {100: 9, 250: 10, 500: 11, 1000: 12, 2500: 13, 5000: 14, 10000: 15}
 
-    # 2. Trouver la meilleure ligne correspondant à la catégorie et au modèle exact
+    # Trouver le palier le plus proche de la quantité demandée
+    dispos = list(paliers_cols.keys())
+    q_proche = min(dispos, key=lambda x: abs(x - qte))
+    col_cible = paliers_cols[q_proche]
+
+    # 2. Trouver la meilleure ligne correspondant au produit
     best_row = -1
     max_match = -1
 
@@ -95,24 +103,26 @@ def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
     if best_row == -1 or max_match <= 0:
         return 0.15
 
-    # 3. Trouver la colonne de quantité la plus proche parmi les paliers disponibles
-    col_cible = paliers[0][0]
-    best_diff = float('inf')
-    for c_idx, q_palier in paliers:
-        diff = abs(qte - q_palier)
-        if diff < best_diff:
-            best_diff = diff
-            col_cible = c_idx
-
-    # 4. Extraire et retourner le prix unitaire
+    # 3. Extraire le prix à l'intersection de la ligne du produit et de la colonne de quantité
     try:
+        # Essayer d'abord la colonne exacte du palier
         prix_val = float(df_all.iloc[best_row, col_cible])
+        
+        # Si vide, chercher dans les colonnes adjacentes (gauche/droite)
+        if pd.isna(prix_val) or prix_val <= 0:
+            for offset in [1, -1, 2, -2]:
+                alt_col = col_cible + offset
+                if 0 <= alt_col < df_all.shape[1]:
+                    alt_val = float(df_all.iloc[best_row, alt_col])
+                    if not pd.isna(alt_val) and alt_val > 0:
+                        prix_val = alt_val
+                        break
+                        
         if pd.isna(prix_val) or prix_val <= 0:
             return 0.15
         return round(prix_val, 4)
     except Exception:
         return 0.15
-
 # --- GRILLES TARIFAIRES OFFICIELLES (MARQUAGE & BRODERIE) ---
 def obtenir_tarif_dtf_unitaire(type_textile, emplacement, qte_totale):
     grille_fin = {
