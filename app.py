@@ -10,12 +10,12 @@ from email.mime.base import MIMEBase
 from email import encoders
 from reportlab.lib.pagesizes import A4
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib import colors
 
 st.set_page_config(page_title="Gestionnaire de Devis - Multi-Métiers", layout="wide")
 
-# --- GESTION DES FICHIERS ---
+# --- GESTION DES FICHIERS & SECRETS ---
 COMPTEUR_FILE = "compteur_devis.json"
 CRM_FILE = "crm_devis.csv"
 CATALOGUE_FILE = "catalogue_standardise.xlsx"
@@ -68,7 +68,6 @@ def obtenir_prix_catalogue(df, designation, qte):
         return 0.0
         
     if 'Quantite' in df_art.columns:
-        # Trouver le palier inférieur ou égal le plus proche
         paliers = sorted(df_art['Quantite'].dropna().unique().tolist())
         if paliers:
             palier_choisi = paliers[0]
@@ -106,11 +105,9 @@ def generer_pdf_devis(numero_devis, client_infos, lignes, totaux, commercial_inf
     styles = getSampleStyleSheet()
     elements = []
 
-    # En-tête
     elements.append(Paragraph(f"<b>DEVIS N° {numero_devis}</b>", styles['Heading1']))
     elements.append(Spacer(1, 10))
     
-    # Infos client et commercial
     texte_client = f"<b>Client :</b> {client_infos['nom']}<br/><b>Contact :</b> {client_infos['contact']}<br/><b>Adresse :</b> {client_infos['adresse']}<br/><b>Email :</b> {client_infos['email']}"
     texte_comm = f"<b>Date :</b> {datetime.now().strftime('%d/%m/%Y')}<br/><b>Commercial :</b> {commercial_infos['nom']}<br/><b>Règlement :</b> {commercial_infos['reglement']}"
     
@@ -118,7 +115,6 @@ def generer_pdf_devis(numero_devis, client_infos, lignes, totaux, commercial_inf
     elements.append(table_infos)
     elements.append(Spacer(1, 20))
 
-    # Tableau des articles
     data_table = [["Désignation", "Qté", "P.U. HT (€)", "Total HT (€)"]]
     for l in lignes:
         data_table.append([l['nom'], str(l['qte']), f"{l['pu']:.2f}", f"{l['total']:.2f}"])
@@ -135,9 +131,9 @@ def generer_pdf_devis(numero_devis, client_infos, lignes, totaux, commercial_inf
     elements.append(t)
     elements.append(Spacer(1, 15))
 
-    # Totaux
     texte_totaux = f"""
-    <b>Sous-Total HT :</b> {totaux['sous_total']:.2f} €<br/>
+    <b>Sous-Total Articles HT :</b> {totaux['sous_total']:.2f} €<br/>
+    <b>Frais techniques HT :</b> {totaux['frais_techniques']:.2f} €<br/>
     <b>Frais de port HT :</b> {totaux['port']:.2f} €<br/>
     <b>Total HT :</b> {totaux['total_ht']:.2f} €<br/>
     <b>TVA (20%) :</b> {totaux['tva']:.2f} €<br/>
@@ -148,20 +144,25 @@ def generer_pdf_devis(numero_devis, client_infos, lignes, totaux, commercial_inf
     doc.build(elements)
     return filename
 
-# --- ENVOI MAIL SMTP ---
-def envoyer_email_smtp(destinataire, sujet, corps, pdf_path, smtp_user, smtp_password):
-    expéditeur = smtp_user
+# --- ENVOI MAIL SMTP (Via Secrets.toml transparent) ---
+def envoyer_email_smtp(destinataire, sujet, corps, pdf_path):
+    try:
+        smtp_user = st.secrets["smtp"]["email"]
+        smtp_password = st.secrets["smtp"]["password"]
+    except Exception as e:
+        return False, fnu"Erreur de lecture des secrets Streamlit (secrets.toml) : {e}"
+
+    expediteur = smtp_user
     bcc = "Brice.geny@gmail.com"
     
     msg = MIMEMultipart()
-    msg['From'] = expéditeur
+    msg['From'] = expediteur
     msg['To'] = destinataire
     msg['Bcc'] = bcc
     msg['Subject'] = sujet
 
     msg.attach(MIMEText(corps, 'plain'))
 
-    # Pièce jointe PDF
     with open(pdf_path, "rb") as f:
         part = MIMEBase('application', 'octet-stream')
         part.set_payload(f.read())
@@ -175,7 +176,7 @@ def envoyer_email_smtp(destinataire, sujet, corps, pdf_path, smtp_user, smtp_pas
         server = smtplib.SMTP('smtp.gmail.com', 587)
         server.starttls()
         server.login(smtp_user, smtp_password)
-        server.sendmail(expéditeur, destinataires_finaux, msg.as_string())
+        server.sendmail(expediteur, destinataires_finaux, msg.as_string())
         server.quit()
         return True, "E-mail envoyé avec succès avec copie à Brice.geny@gmail.com !"
     except Exception as e:
@@ -192,16 +193,10 @@ client_tel = st.sidebar.text_input("Téléphone du Client")
 st.sidebar.markdown("---")
 st.sidebar.subheader("🚚 Logistique & Commercial")
 zone_livraison = st.sidebar.selectbox("Zone de Livraison", ["France Continentale", "Corse, Monaco ou Andorre", "Espace UE"])
-frais_port_manuel = st.sidebar.number_input("Frais de port HT (€)", min_value=0.0, value=0.0, step=5.0)
 
 conseiller_choix = st.sidebar.selectbox("Commercial / Conseiller", ["Brice Geny", "Brice Bugna"])
 mode_reglement = st.sidebar.selectbox("Mode de Règlement", ["Virement bancaire 30 jours", "Comptant à la commande", "50% à la commande, 50% à 30 jours"])
 delai_validite = st.sidebar.selectbox("Validité du Devis", ["30 jours", "15 jours", "45 jours"])
-
-st.sidebar.markdown("---")
-st.sidebar.subheader("⚙️ Configuration SMTP Gmail (Envoi auto)")
-smtp_email_input = st.sidebar.text_input("Votre adresse Gmail", value="brice.geny@gmail.com" if conseiller_choix=="Brice Geny" else "")
-smtp_password_input = st.sidebar.text_input("Mot de passe d'application Gmail", type="password", help="Générer un mot de passe d'application depuis votre compte Google.")
 
 # --- INTERFACE PRINCIPALE ---
 noms_onglets = [f"Article {i+1}" for i in range(10)] + ["📊 Général & Devis", "📈 Suivi CRM"]
@@ -259,14 +254,16 @@ for i in range(10):
             col1, col2 = st.columns(2)
             with col1:
                 qte = st.number_input(f"Quantité (exemplaires) {i+1}", min_value=0, value=100 if i==0 else 0, key=f"qte_print_{i}")
+                
+                # Récupération automatique du prix unitaire depuis le catalogue selon la quantité
                 if not df_catalogue.empty:
-                    categories_dispo = df_catalogue['Categorie'].dropna().unique().tolist()
+                    categories_dispo = df_catalogue['Categorie'].dropna().unique().tolist() if 'Categorie' in df_catalogue.columns else []
                     cat_choisie = st.selectbox(f"Catégorie Print {i+1}", categories_dispo, key=f"cat_print_{i}")
+                    
                     df_filtre = df_catalogue[df_catalogue['Categorie'] == cat_choisie]
-                    liste_designations = df_filtre['Designation'].dropna().unique().tolist()
+                    liste_designations = df_filtre['Designation'].dropna().unique().tolist() if 'Designation' in df_filtre.columns else []
                     nom_article = st.selectbox(f"Article du catalogue {i+1}", liste_designations, key=f"nom_print_{i}")
                     
-                    # Application automatique du prix unitaire catalogue selon le palier de quantité
                     prix_defaut = obtenir_prix_catalogue(df_catalogue, nom_article, qte)
                 else:
                     nom_article = st.text_input(f"Désignation article print {i+1}", value="Flyer A5", key=f"nom_print_libre_{i}")
@@ -291,7 +288,7 @@ for i in range(10):
 
 # --- CALCULS FINANCIERS ---
 lignes_devis_global = []
-frais_techniques_dossier = 0.0
+total_textile_brut = 0.0
 
 for art in articles_saisis:
     q = art["quantite"]
@@ -306,8 +303,9 @@ for art in articles_saisis:
             total_marquages_ligne += q * unit_m
 
     total_ligne_ht = total_support + total_marquages_ligne
-    if art.get("has_broderie", False):
-        frais_techniques_dossier += 35.0
+    
+    if art["type_univers"] == "textile":
+        total_textile_brut += total_ligne_ht
 
     lignes_devis_global.append({
         "nom": art["nom_article"],
@@ -325,7 +323,38 @@ with onglets[10]:
         st.warning("⚠️ Veuillez renseigner au moins un article avec une quantité > 0.")
     else:
         sous_total_articles = sum([item["total"] for item in lignes_devis_global])
-        frais_port = frais_port_manuel if frais_port_manuel > 0 else (15.0 if zone_livraison == "France Continentale" else 45.0)
+        
+        # Frais techniques textile automatiques : Commande textile < 800 € HT = 24.90 €
+        frais_techniques_dossier = 24.90 if (total_textile_brut > 0 and total_textile_brut < 800.0) else 0.0
+
+        # Calcul automatique des frais de port selon la grille officielle
+        # Détermination de la base de calcul pour le port (Sous-total + frais techniques)
+        montant_base_port = sous_total_articles + frais_techniques_dossier
+
+        if zone_livraison == "France Continentale":
+            if montant_base_port < 99.99: port_auto = 14.95
+            elif montant_base_port < 499.99: port_auto = 20.95
+            elif montant_base_port < 999.99: port_auto = 24.95
+            else: port_auto = 0.0 # Franco de port
+        elif zone_livraison == "Livraison Corse, Monaco ou Andorre":
+            if montant_base_port < 99.99: port_auto = 19.95
+            elif montant_base_port < 499.99: port_auto = 25.95
+            elif montant_base_port < 999.99: port_auto = 29.95
+            else: port_auto = 0.0 # Franco de port
+        else: # Espace UE
+            if montant_base_port < 99.99: port_auto = 25.95
+            elif montant_base_port < 499.99: port_auto = 39.0
+            elif montant_base_port < 999.99: port_auto = 60.0
+            elif montant_base_port < 1500.0: port_auto = 90.0
+            else: port_auto = 0.0
+
+        st.markdown("---")
+        col_port1, col_port2 = st.columns(2)
+        with col_port1:
+            annuler_port = st.checkbox("🎁 Offrir les frais de port (Franco total)", value=False)
+        with col_port2:
+            frais_port = 0.0 if annuler_port else port_auto
+
         total_ht = sous_total_articles + frais_techniques_dossier + frais_port
         tva = total_ht * 0.20
         total_ttc = total_ht + tva
@@ -345,23 +374,21 @@ with onglets[10]:
         st.markdown("---")
         st.write(f"**Sous-Total Articles HT :** {sous_total_articles:.2f} €")
         if frais_techniques_dossier > 0:
-            st.write(f"**Frais techniques / Broderie HT :** {frais_techniques_dossier:.2f} €")
-        st.write(f"**Frais de port HT :** {frais_port:.2f} €")
+            st.write(f"**Frais techniques textile (Commande < 800€ HT) :** {frais_techniques_dossier:.2f} €")
+        st.write(f"**Frais de port ({zone_livraison}) HT :** {frais_port:.2f} €")
         st.markdown(f"### **Total HT : {total_ht:.2f} €**")
         st.markdown(f"### **Total TTC (20%) : {total_ttc:.2f} €**")
 
         st.markdown("---")
         st.subheader("📤 Validation, Enregistrement PDF & Envoi Mail Automatique")
 
-        if st.button("💾 Générer le PDF, enregistrer dans le CRM & Envoyer l'e-mail"):
-            # 1. Génération du PDF
+        if st.button("💾 Générer le PDF, enregistrer dans le CRM & Envoyer l'e-mail automatique"):
             client_infos = {"nom": client_nom, "contact": client_contact, "adresse": client_adresse, "email": client_email}
-            totaux_dict = {"sous_total": sous_total_articles, "port": frais_port, "total_ht": total_ht, "tva": tva, "total_ttc": total_ttc}
+            totaux_dict = {"sous_total": sous_total_articles, "frais_techniques": frais_techniques_dossier, "port": frais_port, "total_ht": total_ht, "tva": tva, "total_ttc": total_ttc}
             commercial_infos = {"nom": conseiller_choix, "reglement": mode_reglement}
             
             pdf_path = generer_pdf_devis(numero_devis_genere, client_infos, lignes_devis_global, totaux_dict, commercial_infos)
             
-            # 2. Enregistrement CRM avec chemin PDF
             devis_record = {
                 "Numero_Devis": numero_devis_genere,
                 "Date": datetime.now().strftime('%Y-%m-%d'),
@@ -379,10 +406,9 @@ with onglets[10]:
             enregistrer_devis_crm(devis_record)
             st.success(f"✨ PDF généré avec succès ({pdf_path}) et enregistré dans le CRM !")
 
-            # 3. Envoi d'e-mail automatique SMTP si identifiants fournis
-            if smtp_email_input and smtp_password_input:
-                sujet = f"Votre devis n° {numero_devis_genere}"
-                corps = f"""Bonjour {client_contact or client_nom},
+            # Envoi automatique via secrets.toml sans demande de code
+            sujet = f"Votre devis n° {numero_devis_genere}"
+            corps = f"""Bonjour {client_contact or client_nom},
 
 Veuillez trouver ci-joint votre devis n° {numero_devis_genere} d'un montant total de {total_ttc:.2f} € TTC.
 
@@ -394,13 +420,11 @@ Restant à votre disposition pour tout renseignement complémentaire.
 Bien cordialement,
 {conseiller_choix}
 """
-                succes, message = envoyer_email_smtp(client_email, sujet, corps, pdf_path, smtp_email_input, smtp_password_input)
-                if succes:
-                    st.success(message)
-                else:
-                    st.error(message)
+            succes, message = envoyer_email_smtp(client_email, sujet, corps, pdf_path)
+            if succes:
+                st.success(message)
             else:
-                st.warning("⚠️ Veuillez renseigner votre adresse Gmail et votre mot de passe d'application dans la barre latérale pour activer l'envoi automatique direct.")
+                st.error(message)
 
             with open(pdf_path, "rb") as f:
                 st.download_button("📥 Télécharger le PDF du devis", f, file_name=os.path.basename(pdf_path), mime="application/pdf")
