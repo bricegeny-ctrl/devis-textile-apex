@@ -16,7 +16,8 @@ st.set_page_config(page_title="Gestionnaire de Devis - APEX", layout="wide")
 # --- GESTION DES FICHIERS ---
 COMPTEUR_FILE = "compteur_devis.json"
 CRM_FILE = "crm_devis.csv"
-CATALOGUE_FILE = "tarifs print-panneaux-banderoles.xlsx"
+# Nom exact de votre fichier Excel dans le dossier du projet
+CATALOGUE_FILE = "catalogue print et signalétique.xlsx"
 PDF_DIR = "devis_pdf"
 
 if not os.path.exists(PDF_DIR):
@@ -46,121 +47,73 @@ def obtenir_prochain_numero_devis():
         json.dump({"dernier_num": nouveau_num}, f)
     return nouveau_num
 
-# --- MOTEUR DE LECTURE EXCEL SUR MESURE PAR CATÉGORIE ---
+# --- MOTEUR DE LECTURE EXCEL UNIVERSEL ET PROPRE ---
 def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
     if not os.path.exists(CATALOGUE_FILE):
-        return 0.10
+        return 0.15
     
     try:
         df_all = pd.read_excel(CATALOGUE_FILE, sheet_name=0, header=None)
     except Exception:
-        return 0.10
+        return 0.15
 
-    cat_lower = cat_print.lower()
-    ref_lower = choix_ref.lower()
+    cat_lower = str(cat_print).lower().strip()
+    ref_lower = str(choix_ref).lower().strip()
 
-    # Fonction utilitaire pour chercher la colonne du palier de quantité le plus proche
-    def trouver_prix_par_paliers(row_idx, paliers_cols_map):
-        # paliers_cols_map est un dictionnaire ex: {100: col_idx_100, 250: col_idx_250, ...}
-        if not paliers_cols_map:
-            return None
-        paliers_dispos = list(paliers_cols_map.keys())
-        q_proche = min(paliers_dispos, key=lambda x: abs(x - qte))
-        col_idx = paliers_cols_map[q_proche]
-        val = df_all.iloc[row_idx, col_idx]
-        if pd.notna(val) and float(val) > 0:
-            return float(val)
-        return None
+    # 1. Récupérer les paliers de quantité sur la ligne 1
+    paliers = []
+    for c in range(3, df_all.shape[1]):
+        val = df_all.iloc[1, c]
+        if pd.notna(val):
+            try:
+                paliers.append((c, float(str(val).replace('.0', '').strip())))
+            except ValueError:
+                continue
 
+    if not paliers:
+        return 0.15
+
+    # 2. Trouver la meilleure ligne correspondant à la catégorie et au modèle exact
+    best_row = -1
+    max_match = -1
+
+    for r in range(2, len(df_all)):
+        row_cat = str(df_all.iloc[r, 0]).lower()
+        row_ref = str(df_all.iloc[r, 2]).lower()
+
+        # Score de correspondance basé sur les mots-clés de la référence
+        score = 0
+        if cat_lower in row_cat or row_cat in cat_lower:
+            score += 2
+        
+        mots_ref = [m for m in ref_lower.split() if len(m) > 2]
+        match_mots = sum(1 for m in mots_ref if m in row_ref)
+        score += match_mots
+
+        if score > max_match:
+            max_match = score
+            best_row = r
+
+    if best_row == -1 or max_match <= 0:
+        return 0.15
+
+    # 3. Trouver la colonne de quantité la plus proche parmi les paliers disponibles
+    col_cible = paliers[0][0]
+    best_diff = float('inf')
+    for c_idx, q_palier in paliers:
+        diff = abs(qte - q_palier)
+        if diff < best_diff:
+            best_diff = diff
+            col_cible = c_idx
+
+    # 4. Extraire et retourner le prix unitaire
     try:
-        # --- 1. FLYERS ---
-        if "flyer" in cat_lower:
-            # Les flyers sont autour des lignes 61 à 86
-            start_r = 61 if "a6" in ref_lower or "a5" in ref_lower or "a4" in ref_lower else 61
-            # Chercher la ligne correspondant au format et grammage
-            for r in range(61, 87):
-                row_text = " ".join([str(df_all.iloc[r, c]) for c in range(df_all.shape[1]) if pd.notna(df_all.iloc[r, c])]).lower()
-                if any(m in row_text for m in ref_lower.split() if len(m) > 2):
-                    # Paliers typiques flyers sur la ligne 62 ou 64 par exemple
-                    paliers_map = {100: 2, 250: 3, 500: 4, 1000: 5, 2500: 6, 5000: 7, 10000: 8}
-                    prix = trouver_prix_par_paliers(r, paliers_map)
-                    if prix: return round(prix, 4)
-
-        # --- 2. DÉPLIANTS ---
-        elif "dépliant" in cat_lower or "depliant" in cat_lower:
-            for r in range(87, 114):
-                row_text = " ".join([str(df_all.iloc[r, c]) for c in range(df_all.shape[1]) if pd.notna(df_all.iloc[r, c])]).lower()
-                if any(m in row_text for m in ref_lower.split() if len(m) > 2):
-                    # Paliers dépliants (souvent en colonnes 2 à 8)
-                    paliers_map = {100: 2, 250: 3, 500: 4, 1000: 5, 2500: 6, 5000: 7, 10000: 8}
-                    prix = trouver_prix_par_paliers(r, paliers_map)
-                    if prix: return round(prix, 4)
-
-        # --- 3. BANDEROLES ---
-        elif "banderole" in cat_lower:
-            for r in range(29, 36):
-                row_text = " ".join([str(df_all.iloc[r, c]) for c in range(df_all.shape[1]) if pd.notna(df_all.iloc[r, c])]).lower()
-                if any(m in row_text for m in ref_lower.split() if len(m) > 2):
-                    # Pour les banderoles, souvent prix unitaire direct ou par quantité unitaire
-                    val = df_all.iloc[r, 2] # Colonne standard de prix
-                    if pd.notna(val) and float(val) > 0:
-                        return round(float(val), 4)
-
-        # --- 4. PANNEAUX ---
-        elif "panneau" in cat_lower:
-            for r in range(38, 51):
-                row_text = " ".join([str(df_all.iloc[r, c]) for c in range(df_all.shape[1]) if pd.notna(df_all.iloc[r, c])]).lower()
-                if any(m in row_text for m in ref_lower.split() if len(m) > 2):
-                    val = df_all.iloc[r, 2]
-                    if pd.notna(val) and float(val) > 0:
-                        return round(float(val), 4)
-
-        # --- 5. ROLL-UP ---
-        elif "roll-up" in cat_lower or "rollup" in cat_lower:
-            for r in range(52, 60):
-                row_text = " ".join([str(df_all.iloc[r, c]) for c in range(df_all.shape[1]) if pd.notna(df_all.iloc[r, c])]).lower()
-                if any(m in row_text for m in ref_lower.split() if len(m) > 2):
-                    val = df_all.iloc[r, 2]
-                    if pd.notna(val) and float(val) > 0:
-                        return round(float(val), 4)
-
-        # --- 6. BLOCS NOTES ---
-        elif "bloc" in cat_lower:
-            for r in range(3, 10):
-                row_text = str(df_all.iloc[r, 0]).lower() + " " + str(df_all.iloc[r, 1]).lower()
-                if any(m in row_text for m in ref_lower.split() if len(m) > 2):
-                    paliers_map = {25: 2, 50: 3, 100: 4, 200: 5, 500: 6}
-                    prix = trouver_prix_par_paliers(r, paliers_map)
-                    if prix: return round(prix, 4)
-
-        # --- 7. CARTES DE VISITE ---
-        elif "carte" in cat_lower:
-            for r in range(142, 152):
-                row_text = " ".join([str(df_all.iloc[r, c]) for c in range(df_all.shape[1]) if pd.notna(df_all.iloc[r, c])]).lower()
-                if any(m in row_text for m in ref_lower.split() if len(m) > 2):
-                    # Lecture selon les paliers de cartes de visite
-                    paliers_map = {100: 1, 250: 2, 500: 3, 1000: 4, 2500: 5}
-                    prix = trouver_prix_par_paliers(r, paliers_map)
-                    if prix: return round(prix, 4)
-
+        prix_val = float(df_all.iloc[best_row, col_cible])
+        if pd.isna(prix_val) or prix_val <= 0:
+            return 0.15
+        return round(prix_val, 4)
     except Exception:
-        pass
-
-    # Fallback générique universel si la recherche sur mesure échoue
-    for r in range(len(df_all)):
-        row_text = " ".join([str(df_all.iloc[r, c]) for c in range(df_all.shape[1]) if pd.notna(df_all.iloc[r, c])]).lower()
-        if any(m in row_text for m in ref_lower.split() if len(m) > 3):
-            for c in range(df_all.shape[1]):
-                val = df_all.iloc[r, c]
-                if pd.notna(val):
-                    try:
-                        f_val = float(val)
-                        if 0.01 <= f_val <= 500:
-                            return round(f_val, 4)
-                    except ValueError:
-                        continue
-
-    return 0.15
+        return 0.15
 
 # --- GRILLES TARIFAIRES OFFICIELLES (MARQUAGE & BRODERIE) ---
 def obtenir_tarif_dtf_unitaire(type_textile, emplacement, qte_totale):
