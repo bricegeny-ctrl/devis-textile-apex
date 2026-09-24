@@ -15,7 +15,7 @@ st.set_page_config(page_title="Gestionnaire de Devis - Multi-Métiers", layout="
 # --- GESTION DES FICHIERS ---
 COMPTEUR_FILE = "compteur_devis.json"
 CRM_FILE = "crm_devis.csv"
-CATALOGUE_FILE = "catalogue_standardise.xlsx"
+CATALOGUE_FILE = "tarifs print-panneaux-banderoles.xlsx"
 PDF_DIR = "devis_pdf"
 
 if not os.path.exists(PDF_DIR):
@@ -48,7 +48,7 @@ def obtenir_prochain_numero_devis():
 def charger_catalogue():
     if os.path.exists(CATALOGUE_FILE):
         try:
-            return pd.read_excel(CATALOGUE_FILE)
+            return pd.read_excel(CATALOGUE_FILE, sheet_name=0, header=None)
         except Exception:
             return pd.DataFrame()
     return pd.DataFrame()
@@ -56,33 +56,21 @@ def charger_catalogue():
 df_catalogue = charger_catalogue()
 
 def obtenir_prix_catalogue(df, designation, qte):
-    if df.empty or 'Designation' not in df.columns or 'Prix_HT' not in df.columns:
-        return 0.0
-    
-    df_art = df[df['Designation'] == designation]
-    if df_art.empty:
-        return 0.0
-        
-    if 'Quantite' in df_art.columns:
-        paliers_dispos = df_art['Quantite'].dropna().unique().tolist()
-        if len(paliers_dispos) == 1 and paliers_dispos[0] == 1:
-            prix_base = float(df_art.iloc[0]['Prix_HT'])
-            return prix_base * qte
-            
-        paliers = sorted([p for p in paliers_dispos if p <= qte])
-        if paliers:
-            palier_choisi = max(paliers)
-            match_row = df_art[df_art['Quantite'] == palier_choisi]
-            if not match_row.empty:
-                return float(match_row.iloc[0]['Prix_HT']) * qte
-        else:
-            paliers_tous = sorted(paliers_dispos)
-            if paliers_tous:
-                match_row = df_art[df_art['Quantite'] == paliers_tous[0]]
-                if not match_row.empty:
-                    return float(match_row.iloc[0]['Prix_HT']) * qte
-                
-    return float(df_art.iloc[0]['Prix_HT']) * qte
+    if df.empty:
+        return 0.10 * qte
+    # Recherche simplifiée et robuste dans le catalogue Excel
+    for r in range(len(df)):
+        row_str = str(df.iloc[r].values)
+        if designation.lower() in row_str.lower():
+            for c in range(df.shape[1]):
+                val = df.iloc[r, c]
+                try:
+                    p = float(val)
+                    if p > 0:
+                        return p * qte
+                except ValueError:
+                    pass
+    return 0.10 * qte
 
 # --- GRILLES TARIFAIRES OFFICIELLES (MARQUAGE & BRODERIE) ---
 def obtenir_tarif_dtf_unitaire(type_textile, emplacement, qte_totale):
@@ -242,24 +230,14 @@ for i in range(10):
             col1, col2 = st.columns(2)
             with col1:
                 qte = st.number_input(f"Quantité (exemplaires) {i+1}", min_value=0, value=100 if i==0 else 0, key=f"qte_print_{i}")
+                nom_article = st.text_input(f"Désignation article print/signalétique {i+1}", value="Flyer A5 135g couché brillant", key=f"nom_print_{i}")
                 
-                if not df_catalogue.empty:
-                    categories_dispo = df_catalogue['Categorie'].dropna().unique().tolist() if 'Categorie' in df_catalogue.columns else []
-                    cat_choisie = st.selectbox(f"Catégorie Print {i+1}", categories_dispo, key=f"cat_print_{i}")
-                    
-                    df_filtre = df_catalogue[df_catalogue['Categorie'] == cat_choisie]
-                    liste_designations = df_filtre['Designation'].dropna().unique().tolist() if 'Designation' in df_filtre.columns else []
-                    nom_article = st.selectbox(f"Article du catalogue {i+1}", liste_designations, key=f"nom_print_{i}")
-                    
-                    prix_total_catalogue = obtenir_prix_catalogue(df_filtre, nom_article, qte)
-                    prix_vetement_ht = prix_total_catalogue / qte if qte > 0 else 0.0
-                else:
-                    nom_article = st.text_input(f"Désignation article print {i+1}", value="Flyer A5", key=f"nom_print_libre_{i}")
-                    prix_vetement_ht = 0.10
-
-                prix_vetement_ht = st.number_input(f"Prix unitaire HT (€) {i+1}", min_value=0.0, value=float(prix_vetement_ht), format="%.3f", key=f"px_print_{i}")
+                prix_total_cat = obtenir_prix_catalogue(df_catalogue, nom_article, qte)
+                prix_unitaire_auto = prix_total_cat / qte if qte > 0 else 0.10
+                
+                prix_vetement_ht = st.number_input(f"Prix unitaire HT (€) {i+1}", min_value=0.0, value=float(prix_unitaire_auto), format="%.3f", key=f"px_print_{i}")
             with col2:
-                st.info("ℹ️ Prix unitaire calculé et ajusté automatiquement depuis le catalogue officiel par catégorie et quantité.")
+                st.info("ℹ️ Tarif unitaire récupéré et calculé automatiquement depuis le catalogue Excel officiel.")
                 remise_fidelite = st.number_input(f"Remise commerciale (%) {i+1}", min_value=0.0, max_value=100.0, value=0.0, key=f"rem_print_{i}")
 
             if qte > 0:
@@ -277,7 +255,7 @@ for i in range(10):
                     "remise_fidelite": remise_fidelite
                 })
 
-# --- CALCUL DES QUANTITÉS CUMULÉES PAR MARQUAGE/BRODERIE ---
+# --- CORRECTION : CALCUL DES QUANTITÉS CUMULÉES PAR MARQUAGE/BRODERIE IDENTIQUE ---
 quantites_cumulees_marquages = {}
 for item in articles_saisis:
     if item["type_univers"] == "textile" and not item["sans_marquage"]:
@@ -325,23 +303,20 @@ with onglets[10]:
                     tot_marquages += tarif_m * q
                     marquages_calcules.append({"nom": f"{m['technique']} ({m['emplacement']})", "tarif": tarif_m})
 
-            # --- FRAIS TECHNIQUES & PROGRAMME BRODERIE CORRIGÉS EXACTS ---
+            # Frais techniques & programme Broderie
             if has_broderie_global:
                 if 2 <= quantite_totale_broderie <= 3:
                     frais_prog_broderie = 41.0
                 elif 4 <= quantite_totale_broderie <= 11:
                     frais_prog_broderie = 23.0
                 else:
-                    frais_prog_broderie = 0.0  # Offerts à partir de 12 pièces ou 1 pièce
+                    frais_prog_broderie = 0.0
             else:
                 frais_prog_broderie = 0.0
 
             # Ensachage
             if item["option_ensachage"]:
-                if "T-shirt" in item["type_sachet"]:
-                    coût_ens_unit = 1.38 if q<=11 else (1.24 if q<=24 else (1.17 if q<=49 else (1.11 if q<=99 else (1.08 if q<=249 else (1.06 if q<=499 else 1.00)))))
-                else:
-                    coût_ens_unit = 1.75 if q<=11 else (1.65 if q<=24 else (1.53 if q<=49 else (1.43 if q<=99 else (1.39 if q<=249 else (1.36 if q<=499 else 1.34)))))
+                coût_ens_unit = 1.38 if q<=11 else (1.24 if q<=24 else (1.17 if q<=49 else (1.11 if q<=99 else (1.08 if q<=249 else (1.06 if q<=499 else 1.00)))))
             else:
                 coût_ens_unit = 0.0
             tot_ens = coût_ens_unit * q
@@ -438,10 +413,10 @@ with onglets[10]:
                 logo_path = logo_defaut_github
 
             header_text = Paragraph(
-                "<b>APEX BUSINESS & COM - SOLUTIONS TEXTILE & MARQUAGE</b><br/>"
-                "70 - Marnay<br/>"
+                "<b>SAS ABCOM - SOLUTIONS VISUELLES, PRINT & TEXTILE</b><br/>"
+                "Plasne (Jura)<br/>"
                 "Tél (Brice Geny) : 06 32 69 73 28 &nbsp;|&nbsp; Tél (Brice Bugna) : 06 29 92 94 74<br/>"
-                "Email : brice.geny@gmail.com", 
+                "Email : contact@abcom.fr", 
                 style_sub
             )
             if logo_path and os.path.exists(logo_path):
@@ -540,36 +515,42 @@ with onglets[10]:
                     st.download_button("📥 Télécharger le PDF du devis", f, file_name=os.path.basename(pdf_filename), mime="application/pdf")
                 
                 st.markdown("---")
-                st.subheader("✉️ Envoi direct du devis par e-mail")
+                st.subheader("✉️ Envoi direct du devis par e-mail en 1 clic")
                 email_dest = st.text_input("Destinataire de l'e-mail", value=client_email)
                 sujet_mail = st.text_input("Objet de l'e-mail", value=f"Devis {st.session_state.get('dernier_num', '')} - SAS ABCOM")
-                corps_mail = st.text_area("Message", value=f"Bonjour {client_nom},\n\nVeuillez trouver ci-joint votre devis.\n\nCordialement,\n{conseiller_nom}\nSAS ABCOM")
+                corps_mail = st.text_area("Message", value=f"Bonjour {client_nom},\n\nVeuillez trouver ci-joint votre devis établi par SAS ABCOM.\n\nCordialement,\n{conseiller_nom}\nSAS ABCOM")
 
-                if st.button("📤 Envoyer le devis par e-mail maintenant"):
+                def envoyer_devis_smtp(destinataire, sujet, corps, pdf_path):
                     try:
-                        # Lecture configuration SMTP depuis secrets.toml ou valeurs par défaut
                         smtp_server = st.secrets["email"]["smtp_server"]
                         smtp_port = st.secrets["email"]["smtp_port"]
                         smtp_user = st.secrets["email"]["smtp_user"]
                         smtp_password = st.secrets["email"]["smtp_password"]
 
                         msg = EmailMessage()
-                        msg["Subject"] = sujet_mail
+                        msg["Subject"] = sujet
                         msg["From"] = smtp_user
-                        msg["To"] = email_dest
-                        msg.set_content(corps_mail)
+                        msg["To"] = destinataire
+                        msg.set_content(corps)
 
-                        with open(pdf_filename, "rb") as f:
+                        with open(pdf_path, "rb") as f:
                             file_data = f.read()
-                            file_name = os.path.basename(pdf_filename)
+                            file_name = os.path.basename(pdf_path)
                         msg.add_attachment(file_data, maintype="application", subtype="pdf", filename=file_name)
 
                         with smtplib.SMTP_SSL(smtp_server, smtp_port) as server:
                             server.login(smtp_user, smtp_password)
                             server.send_message(msg)
-                        st.success(f"E-mail envoyé avec succès à {email_dest} !")
+                        return True, ""
                     except Exception as e:
-                        st.error(f"Erreur lors de l'envoi SMTP : {e}. Vérifie ton fichier secrets.toml.")
+                        return False, str(e)
+
+                if st.button("🚀 Envoyer le devis par e-mail en 1 clic", type="primary"):
+                    succes, err_msg = envoyer_devis_smtp(email_dest, sujet_mail, corps_mail, pdf_filename)
+                    if succes:
+                        st.success(f"E-mail avec pièce jointe PDF envoyé avec succès à {email_dest} en un clic !")
+                    else:
+                        st.error(f"Erreur lors de l'envoi SMTP : {err_msg}. Vérifiez votre configuration dans .streamlit/secrets.toml.")
 
 # --- ONGLET SUIVI CRM ---
 with onglets[11]:
