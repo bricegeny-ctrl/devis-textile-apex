@@ -3,8 +3,9 @@ import pandas as pd
 from datetime import datetime
 import os
 import json
+import urllib.parse
 
-st.set_page_config(page_title="Gestionnaire de Devis Multi-Métiers", layout="wide")
+st.set_page_config(page_title="Gestionnaire de Devis - Multi-Métiers", layout="wide")
 
 # --- GESTION DU COMPTEUR DE DEVIS & CRM ---
 COMPTEUR_FILE = "compteur_devis.json"
@@ -49,13 +50,12 @@ df_catalogue = charger_catalogue()
 
 def obtenir_prix_catalogue(df, designation, qte):
     if df.empty or 'Designation' not in df.columns or 'Prix_HT' not in df.columns:
-        return 4.92
+        return 0.0
     
     df_art = df[df['Designation'] == designation]
     if df_art.empty:
-        return 4.92
+        return 0.0
         
-    # Recherche du palier de quantité optimal (le plus grand palier inférieur ou égal à la quantité demandée)
     if 'Quantite' in df_art.columns:
         quantites_dispo = sorted(df_art['Quantite'].dropna().unique().tolist())
         if quantites_dispo:
@@ -136,95 +136,112 @@ for i in range(10):
     with onglets[i]:
         st.subheader(f"Configuration de l'Article {i+1}")
         
-        sans_marquage = st.checkbox(f"Vêtement / Support sans marquage (fourniture seule) {i+1}", key=f"sans_marq_{i}")
-        
-        # Choix du mode de sélection
-        mode_selection = st.radio(
-            f"Mode de sélection pour l'Article {i+1}", 
-            ["Catalogue Excel", "Saisie Manuelle / Libre"], 
-            key=f"mode_sel_{i}"
+        metier_type = st.radio(
+            f"Univers / Métier pour l'Article {i+1}",
+            ["👕 Textile & Marquage (DTF / Broderie)", "📄 Print, Papeterie & Signalétique (Catalogue Excel)"],
+            key=f"metier_{i}"
         )
         
-        col1, col2 = st.columns(2)
-        with col1:
-            qte = st.number_input(f"Quantité (pcs) {i+1}", min_value=0, value=10 if i==0 else 0, key=f"qte_{i}")
-
-            if mode_selection == "Catalogue Excel" and not df_catalogue.empty:
-                categories_dispo = df_catalogue['Categorie'].dropna().unique().tolist() if 'Categorie' in df_catalogue.columns else []
-                if categories_dispo:
-                    cat_choisie = st.selectbox(f"Catégorie catalogue {i+1}", categories_dispo, key=f"cat_choix_{i}")
-                    df_filtre = df_catalogue[df_catalogue['Categorie'] == cat_choisie]
-                else:
-                    df_filtre = df_catalogue
-                
-                liste_designations = df_filtre['Designation'].dropna().unique().tolist() if 'Designation' in df_filtre.columns else []
-                nom_article = st.selectbox(f"Sélectionner l'article du catalogue {i+1}", liste_designations, key=f"nom_cat_{i}")
-                
-                # Calcul automatique du prix unitaire variable selon la quantité saisie
-                prix_defaut = obtenir_prix_catalogue(df_catalogue, nom_article, qte)
-            else:
-                nom_article = st.text_input(f"Nom / Référence personnalisée {i+1}", value=f"T-Shirt 100% coton" if i==0 else f"Article {i+1}", key=f"nom_{i}")
-                prix_defaut = 4.92
-
-            prix_vetement_ht = st.number_input(f"Prix unitaire HT du support (€) {i+1}", min_value=0.0, value=float(prix_defaut), format="%.3f", key=f"px_vet_{i}")
-            
-        with col2:
-            if not sans_marquage:
-                st.markdown("**Gestion des Marquages / Impressions (jusqu'à 4)**")
-                nb_marquages = st.selectbox(f"Nombre de marquages pour l'article {i+1}", [1, 2, 3, 4], key=f"nb_m_{i}")
-            else:
-                nb_marquages = 0
-                st.info("ℹ️ Article sans marquage (fourniture/support seul).")
-
-        marquages_config = []
-        has_broderie = False
-        
-        if not sans_marquage:
-            for m in range(nb_marquages):
-                st.markdown(f"--- *Marquage / Impression {m+1}*")
-                mc1, mc2 = st.columns(2)
-                with mc1:
-                    t_marq = st.selectbox(f"Technique / Procédé M{m+1} (Art {i+1})", ["DTF Textile Fin", "DTF Textile Épais", "Broderie HD", "Impression Numérique / Panneau", "Signalétique / Adhésif"], key=f"t_marq_{i}_{m}")
-                with mc2:
-                    if "DTF" in t_marq:
-                        emp = st.selectbox(f"Emplacement M{m+1}", ["Cœur (13x9 cm)", "Dos D10 (20x13 cm)", "Dos D20 (28x20 cm)", "Format P (37x27 cm)", "Manche (9x8 cm)", "+ Perso. Nom"], key=f"emp_f_{i}_{m}")
-                    elif "Broderie" in t_marq:
-                        emp = st.selectbox(f"Emplacement M{m+1}", ["Poitrine (9x8 cm)", "Dos D10 (25x10 cm)", "Dos Large D20 (25x20)", "Col/Signature (7x2)", "Casquettes / Bonnets", "Manche (8x5 cm)"], key=f"emp_b_{i}_{m}")
-                    else:
-                        emp = st.selectbox(f"Emplacement M{m+1}", ["Recto seul", "Recto / Verso", "Sur-mesure / Pose spécifique"], key=f"emp_p_{i}_{m}")
-                
-                if t_marq == "Broderie HD":
-                    has_broderie = True
-
-                marquages_config.append({"technique": t_marq, "emplacement": emp})
-
         st.markdown("---")
-        st.markdown("**Options & Logistique spécifiques à l'article**")
-        oc1, oc2, oc3, oc4 = st.columns(4)
-        with oc1:
-            option_ensachage = st.checkbox(f"Ensachage individuel {i+1}", key=f"ens_{i}")
-            type_sachet = st.selectbox(f"Type de sachet {i+1}", ["Sachet (T-shirt/Polo)", "Sachet (Veste/Sweat)"], key=f"tsach_{i}") if option_ensachage else ""
-        with oc2:
-            option_assurance = st.checkbox(f"Assurance MHC (Garantie) {i+1}", key=f"ass_{i}")
-        with oc3:
-            option_stockage = st.checkbox(f"Mise en stockage + picking {i+1}", key=f"stock_{i}")
-        with oc4:
-            remise_fidelite = st.number_input(f"Réduction fidélité (%) {i+1}", min_value=0.0, max_value=100.0, value=0.0, step=1.0, key=f"rem_{i}")
+        
+        if "Textile" in metier_type:
+            sans_marquage = st.checkbox(f"Vêtement sans marquage (fourniture seule) {i+1}", key=f"sans_marq_{i}")
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                nom_article = st.text_input(f"Référence / Nom du vêtement {i+1}", value="T-Shirt 100% coton bio" if i==0 else f"Vêtement {i+1}", key=f"nom_textile_{i}")
+                qte = st.number_input(f"Quantité (pcs) {i+1}", min_value=0, value=10 if i==0 else 0, key=f"qte_textile_{i}")
+                prix_vetement_ht = st.number_input(f"Prix unitaire HT du support textile (€) {i+1}", min_value=0.0, value=4.92, format="%.2f", key=f"px_textile_{i}")
+                
+            with col2:
+                if not sans_marquage:
+                    st.markdown("**Gestion des Marquages Textiles**")
+                    nb_marquages = st.selectbox(f"Nombre de marquages pour l'article {i+1}", [1, 2, 3, 4], key=f"nb_m_textile_{i}")
+                else:
+                    nb_marquages = 0
+                    st.info("ℹ️ Vêtement sans marquage (fourniture seule).")
 
-        if qte > 0:
-            articles_saisis.append({
-                "nom_article": nom_article,
-                "quantite": qte,
-                "prix_vet_unit": prix_vetement_ht,
-                "sans_marquage": sans_marquage,
-                "marquages_config": marquages_config,
-                "has_broderie": has_broderie,
-                "option_ensachage": option_ensachage,
-                "type_sachet": type_sachet if option_ensachage else "",
-                "option_assurance": option_assurance,
-                "option_stockage": option_stockage,
-                "remise_fidelite": remise_fidelite
-            })
+            marquages_config = []
+            has_broderie = False
+            
+            if not sans_marquage:
+                for m in range(nb_marquages):
+                    st.markdown(f"--- *Marquage Textile {m+1}*")
+                    mc1, mc2 = st.columns(2)
+                    with mc1:
+                        t_marq = st.selectbox(f"Technique M{m+1}", ["DTF Textile Fin", "DTF Textile Épais", "Broderie HD"], key=f"t_marq_textile_{i}_{m}")
+                    with mc2:
+                        if "Broderie" in t_marq:
+                            emp = st.selectbox(f"Emplacement M{m+1}", ["Poitrine (9x8 cm)", "Dos D10 (25x10 cm)", "Dos Large D20 (25x20)", "Col/Signature (7x2)", "Casquettes / Bonnets", "Manche (8x5 cm)"], key=f"emp_b_{i}_{m}")
+                        else:
+                            emp = st.selectbox(f"Emplacement M{m+1}", ["Cœur (13x9 cm)", "Dos D10 (20x13 cm)", "Dos D20 (28x20 cm)", "Format P (37x27 cm)", "Manche (9x8 cm)", "+ Perso. Nom"], key=f"emp_f_{i}_{m}")
+                    
+                    if t_marq == "Broderie HD":
+                        has_broderie = True
+
+                    marquages_config.append({"technique": t_marq, "emplacement": emp})
+
+            st.markdown("---")
+            st.markdown("**Options logistiques textile**")
+            oc1, oc2, oc3, oc4 = st.columns(4)
+            with oc1:
+                option_ensachage = st.checkbox(f"Ensachage individuel {i+1}", key=f"ens_{i}")
+            with oc2:
+                option_assurance = st.checkbox(f"Assurance MHC {i+1}", key=f"ass_{i}")
+            with oc3:
+                option_stockage = st.checkbox(f"Stockage + picking {i+1}", key=f"stock_{i}")
+            with oc4:
+                remise_fidelite = st.number_input(f"Remise fidélité (%) {i+1}", min_value=0.0, max_value=100.0, value=0.0, step=1.0, key=f"rem_{i}")
+
+            if qte > 0:
+                articles_saisis.append({
+                    "type_univers": "textile",
+                    "nom_article": nom_article,
+                    "quantite": qte,
+                    "prix_vet_unit": prix_vetement_ht,
+                    "sans_marquage": sans_marquage,
+                    "marquages_config": marquages_config,
+                    "has_broderie": has_broderie,
+                    "option_ensachage": option_ensachage,
+                    "remise_fidelite": remise_fidelite
+                })
+
+        else:
+            col1, col2 = st.columns(2)
+            with col1:
+                qte = st.number_input(f"Quantité (exemplaires) {i+1}", min_value=0, value=100 if i==0 else 0, key=f"qte_print_{i}")
+
+                if not df_catalogue.empty:
+                    categories_dispo = df_catalogue['Categorie'].dropna().unique().tolist() if 'Categorie' in df_catalogue.columns else []
+                    cat_choisie = st.selectbox(f"Catégorie Print / Signalétique {i+1}", categories_dispo, key=f"cat_print_{i}")
+                    
+                    df_filtre = df_catalogue[df_catalogue['Categorie'] == cat_choisie]
+                    liste_designations = df_filtre['Designation'].dropna().unique().tolist() if 'Designation' in df_filtre.columns else []
+                    nom_article = st.selectbox(f"Article du catalogue {i+1}", liste_designations, key=f"nom_print_{i}")
+                    
+                    prix_defaut = obtenir_prix_catalogue(df_catalogue, nom_article, qte)
+                else:
+                    nom_article = st.text_input(f"Désignation article print {i+1}", value="Flyer A5", key=f"nom_print_libre_{i}")
+                    prix_defaut = 0.10
+
+                prix_vetement_ht = st.number_input(f"Prix unitaire HT (€) {i+1}", min_value=0.0, value=float(prix_defaut), format="%.3f", key=f"px_print_{i}")
+
+            with col2:
+                st.info("ℹ️ Article Print / Signalétique géré via le catalogue tarifaire officiel.")
+                remise_fidelite = st.number_input(f"Remise commerciale (%) {i+1}", min_value=0.0, max_value=100.0, value=0.0, step=1.0, key=f"rem_print_{i}")
+
+            if qte > 0:
+                articles_saisis.append({
+                    "type_univers": "print",
+                    "nom_article": nom_article,
+                    "quantite": qte,
+                    "prix_vet_unit": prix_vetement_ht,
+                    "sans_marquage": True,
+                    "marquages_config": [],
+                    "has_broderie": False,
+                    "option_ensachage": False,
+                    "remise_fidelite": remise_fidelite
+                })
 
 # --- CALCULS FINANCIERS ---
 lignes_devis_global = []
@@ -238,7 +255,7 @@ for art in articles_saisis:
     total_support = q * px_support_remise
     
     total_marquages_ligne = 0.0
-    if not art["sans_marquage"]:
+    if art["type_univers"] == "textile" and not art["sans_marquage"]:
         for m_cfg in art["marquages_config"]:
             tech = m_cfg["technique"]
             if "DTF" in tech:
@@ -246,28 +263,23 @@ for art in articles_saisis:
             elif "Broderie" in tech:
                 unit_m = 4.50 if q < 50 else (3.20 if q < 200 else 2.50)
             else:
-                unit_m = 5.00
+                unit_m = 2.00
             total_marquages_ligne += q * unit_m
 
     total_options = 0.0
-    if art["option_ensachage"]:
+    if art.get("option_ensachage", False):
         total_options += q * 0.35
-    if art["option_assurance"]:
-        total_options += q * 0.20
-    if art["option_stockage"]:
-        total_options += q * 0.50
 
     total_ligne_ht = total_support + total_marquages_ligne + total_options
     
-    if art["has_broderie"]:
+    if art.get("has_broderie", False):
         frais_techniques_dossier += 35.0
 
     lignes_devis_global.append({
         "nom_article": art["nom_article"],
         "quantite": q,
         "total_ligne_ht": total_ligne_ht,
-        "sans_marquage": art["sans_marquage"],
-        "marquages_config": art["marquages_config"]
+        "type_univers": art["type_univers"]
     })
 
 # --- ONGLET : GÉNÉRAL & DEVIS ---
@@ -278,8 +290,6 @@ with onglets[10]:
         st.warning("⚠️ Veuillez renseigner au moins un article avec une quantité supérieure à 0 dans les onglets Articles.")
     else:
         sous_total_articles = sum([item["total_ligne_ht"] for item in lignes_devis_global])
-        montant_base_port = sous_total_articles + frais_techniques_dossier
-        
         frais_port = frais_port_manuel if frais_port_manuel > 0 else (15.0 if zone_livraison == "France Continentale" else 45.0)
         
         total_ht = sous_total_articles + frais_techniques_dossier + frais_port
@@ -305,23 +315,57 @@ with onglets[10]:
         st.markdown(f"### **Total Général HT : {total_ht:.2f} €**")
         st.markdown(f"### **Total Général TTC (20%) : {total_ttc:.2f} €**")
 
-        if st.button("💾 Enregistrer le devis dans le CRM"):
-            devis_record = {
-                "Numero_Devis": numero_devis_genere,
-                "Date": datetime.now().strftime('%Y-%m-%d'),
-                "Client": client_nom,
-                "Contact": client_contact,
-                "Email": client_email,
-                "Telephone": client_tel,
-                "Total_HT": round(total_ht, 2),
-                "Total_TTC": round(total_ttc, 2),
-                "Statut": "En attente",
-                "Commercial": conseiller_choix,
-                "Mode_Reglement": mode_reglement,
-                "Commentaires": "Généré via l'application multi-métiers"
-            }
-            enregistrer_devis_crm(devis_record)
-            st.success(f"✨ Devis {numero_devis_genere} enregistré avec succès dans le CRM !")
+        # --- SECTION BOUTONS D'ACTION ET ENVOI MAIL ---
+        st.markdown("---")
+        st.subheader("📤 Actions & Envoi du Devis")
+
+        col_btn1, col_btn2 = st.columns(2)
+        
+        with col_btn1:
+            if st.button("💾 Enregistrer le devis dans le CRM"):
+                devis_record = {
+                    "Numero_Devis": numero_devis_genere,
+                    "Date": datetime.now().strftime('%Y-%m-%d'),
+                    "Client": client_nom,
+                    "Contact": client_contact,
+                    "Email": client_email,
+                    "Telephone": client_tel,
+                    "Total_HT": round(total_ht, 2),
+                    "Total_TTC": round(total_ttc, 2),
+                    "Statut": "En attente",
+                    "Commercial": conseiller_choix,
+                    "Mode_Reglement": mode_reglement,
+                    "Commentaires": "Généré via l'application multi-métiers"
+                }
+                enregistrer_devis_crm(devis_record)
+                st.success(f"✨ Devis {numero_devis_genere} enregistré avec succès dans le CRM !")
+
+        with col_btn2:
+            sujet_mail = f"Devis {numero_devis_genere}"
+            corps_mail = f"""Bonjour {client_contact or client_nom},
+
+Veuillez trouver ci-joint votre devis n° {numero_devis_genere} d'un montant total de {total_ttc:.2f} € TTC.
+
+Conditions de règlement : {mode_reglement}
+Validité de l'offre : {delai_validite}
+
+Restant à votre disposition pour tout renseignement complémentaire.
+
+Bien cordialement,
+{conseiller_choix}
+"""
+            mailto_url = f"mailto:{client_email}?subject={urllib.parse.quote(sujet_mail)}&body={urllib.parse.quote(corps_mail)}"
+            
+            st.markdown(
+                f"""
+                <a href="{mailto_url}" target="_blank">
+                    <button style="width:100%; background-color:#ff4b4b; color:white; border:none; padding:10px 20px; border-radius:5px; font-weight:bold; cursor:pointer;">
+                        ✉️ Envoyer le devis par e-mail (Ouvrir le client mail)
+                    </button>
+                </a>
+                """,
+                unsafe_allow_html=True
+            )
 
 # --- ONGLET : SUIVI CRM ---
 with onglets[11]:
