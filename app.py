@@ -59,20 +59,7 @@ def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
     cat_lower = str(cat_print).lower().strip()
     ref_lower = str(choix_ref).lower().strip()
 
-    # Association rigoureuse et explicite : Quantité minimale requise -> Index de colonne Excel
-    # Index 3 (Col D)  -> 1 ex
-    # Index 4 (Col E)  -> 5 ex
-    # Index 5 (Col F)  -> 10 ex
-    # Index 6 (Col G)  -> 25 ex
-    # Index 7 (Col H)  -> 50 ex
-    # Index 8 (Col I)  -> 100 ex  <-- C'est ici que la colonne 8 est enfin prise en compte pour 100 à 249 ex
-    # Index 9 (Col J)  -> 250 ex
-    # Index 10 (Col K) -> 500 ex
-    # Index 11 (Col L) -> 1000 ex
-    # Index 12 (Col M) -> 2500 ex
-    # Index 13 (Col N) -> 5000 ex
-    # Index 14 (Col O) -> 10000 ex
-
+    # Association rigoureuse et explicite des colonnes Excel (Index 3 à 14)
     if qte <= 1:
         col_cible = 3
     elif qte < 5:
@@ -84,9 +71,9 @@ def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
     elif qte < 50:
         col_cible = 7
     elif qte < 250:
-        col_cible = 8    # De 50 à 249 ex -> Pointe directement sur la colonne 8 (index 8)
+        col_cible = 8
     elif qte < 500:
-        col_cible = 9    # À partir de 250 ex -> Pointe sur la colonne 9
+        col_cible = 9
     elif qte < 1000:
         col_cible = 10
     elif qte < 2500:
@@ -118,7 +105,6 @@ def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
             max_match = score
             best_row = r
 
-    # Secours si la ligne exacte n'est pas trouvée par mots-clés
     if best_row == -1 or max_match < 5:
         for r in range(2, len(df_all)):
             if cat_lower in str(df_all.iloc[r, 0]).lower():
@@ -128,7 +114,7 @@ def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
     if best_row == -1:
         return 0.15
 
-    # 2. Extraction sécurisée du prix dans la colonne ciblée (index 8 inclus sans risque d'être ignoré)
+    # 2. Extraction sécurisée du prix dans la colonne ciblée
     try:
         prix_val = float(df_all.iloc[best_row, col_cible])
         
@@ -231,7 +217,6 @@ client_email = st.sidebar.text_input("Email", "client@exemple.com")
 client_contact_tel = st.sidebar.text_input("Téléphone", "0600000000")
 
 logo_file = st.sidebar.file_uploader("Logo entreprise (PNG/JPG)", type=["png", "jpg", "jpeg"])
-logo_defaut_github = "logo.png"
 
 st.sidebar.markdown("---")
 zone_livraison = st.sidebar.selectbox("Zone de Livraison", ["France Continentale", "Livraison Corse, Monaco ou Andorre", "Espace UE"])
@@ -302,7 +287,6 @@ for i in range(10):
                 })
                 total_textile_brut += qte * prix_vetement_ht
         else:
-            # --- SELECTION PRINT & SIGNALETIQUE + OPTION AUTRE ---
             cat_print = st.selectbox(
                 f"Catégorie Print & Signalétique {i+1}",
                 [
@@ -344,14 +328,9 @@ for i in range(10):
                 col1, col2 = st.columns(2)
                 with col1:
                     qte = st.number_input(f"Quantité (exemplaires) {i+1}", min_value=0, value=100 if i==0 else 0, key=f"qte_print_{i}")
-                    
-                    # --- CALCUL AUTOMATIQUE INSTANTANÉ (PALIERS STRICTS) ---
                     prix_unitaire_auto = obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte)
-                    prix_vetement_ht = prix_unitaire_auto  # Affectation directe pour le devis
-                    
-                    # Affichage clair et dynamique du prix unitaire calculé selon la tranche
+                    prix_vetement_ht = prix_unitaire_auto
                     st.metric(label=f"Prix unitaire HT (€) {i+1} (Catalogue auto)", value=f"{prix_unitaire_auto:.4f} €")
-                    
                 with col2:
                     st.success(f"✅ Tarif appliqué ({qte} ex) : **{prix_unitaire_auto:.4f} € HT**")
                     remise_fidelite = st.number_input(f"Remise commerciale (%) {i+1}", min_value=0.0, max_value=100.0, value=0.0, key=f"rem_print_{i}")
@@ -382,7 +361,7 @@ for item in articles_saisis:
 
 frais_tech_auto = 19.80 if total_textile_brut > 0 else 0.0
 
-# --- ONGLET GÉNÉRAL & DEVIS ---
+# --- ONGLET GÉNÉRAL & DEVIS (Index 10) ---
 with onglets[10]:
     st.subheader("📊 Récapitulatif Général & Génération du Devis Professionnel")
 
@@ -429,22 +408,13 @@ with onglets[10]:
             else:
                 frais_prog_broderie = 0.0
 
-            if item["option_ensachage"]:
-                coût_ens_unit = 1.38 if q<=11 else (1.24 if q<=24 else (1.17 if q<=49 else (1.11 if q<=99 else (1.08 if q<=249 else (1.06 if q<=499 else 1.00)))))
-            else:
-                coût_ens_unit = 0.0
+            coût_ens_unit = (1.38 if q<=11 else (1.24 if q<=24 else (1.17 if q<=49 else (1.11 if q<=99 else (1.08 if q<=249 else (1.06 if q<=499 else 1.00)))))) if item["option_ensachage"] else 0.0
             tot_ens = coût_ens_unit * q
 
-            if item["option_assurance"]:
-                coût_ass_unit = 3.08 if q<=11 else (2.38 if q<=24 else (1.83 if q<=49 else (1.25 if q<=99 else (0.98 if q<=249 else (0.70 if q<=499 else (0.64 if q<=999 else 0.61))))))
-            else:
-                coût_ass_unit = 0.0
+            coût_ass_unit = (3.08 if q<=11 else (2.38 if q<=24 else (1.83 if q<=49 else (1.25 if q<=99 else (0.98 if q<=249 else (0.70 if q<=499 else (0.64 if q<=999 else 0.61))))))) if item["option_assurance"] else 0.0
             tot_ass = coût_ass_unit * q
 
-            if item["option_stockage"]:
-                coût_stock_unit = 1.00 if q<=99 else (0.56 if q<=249 else (0.50 if q<=499 else (0.43 if q<=999 else 0.30)))
-            else:
-                coût_stock_unit = 0.0
+            coût_stock_unit = (1.00 if q<=99 else (0.56 if q<=249 else (0.50 if q<=499 else (0.43 if q<=999 else 0.30)))) if item["option_stockage"] else 0.0
             tot_stock = coût_stock_unit * q
             
             tot_ligne = tot_support + tot_marquages + tot_ens + tot_ass + tot_stock
@@ -505,7 +475,7 @@ with onglets[10]:
             enregistrer_dans_crm(data_crm)
             st.success("✅ Données enregistrées dans le CRM avec succès !")
 
-            # --- GÉNÉRATION DU PDF (MENTION APEX UNIQUEMENT) ---
+            # --- GÉNÉRATION DU PDF ---
             doc = SimpleDocTemplate(pdf_filename, pagesize=A4, rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)
             story = []
             styles = getSampleStyleSheet()
@@ -637,7 +607,7 @@ with onglets[10]:
                 mailto_link = f"mailto:{email_dest}?subject={urllib.parse.quote(sujet_mail)}&body={urllib.parse.quote(corps_mail)}"
                 st.markdown(f'<a href="{mailto_link}" target="_blank"><button style="background-color:#2b6cb0; color:white; border:none; padding:10px 20px; border-radius:5px; cursor:pointer; font-weight:bold; width:100%;">📧 Ouvrir dans le client mail (Secours)</button></a>', unsafe_allow_html=True)
 
-# --- ONGLET SUIVI CRM ---
+# --- ONGLET SUIVI CRM (Index 11) ---
 with onglets[11]:
     st.header("📈 Suivi CRM & Historique des Devis")
     if os.path.exists(CRM_FILE):
