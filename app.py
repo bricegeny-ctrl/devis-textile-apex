@@ -442,20 +442,20 @@ for i in range(10):
         st.success(f"✔ Tarif appliqué ({qte} ex) : **{prix_unitaire_auto:.4f} € HT**")
         remise_fidelite = st.number_input(f"Remise commerciale (%) {i+1}", min_value=0.0, max_value=100.0, value=0.0, key=f"rem_print_{i}")
 
-            if qte > 0:
-                articles_saisis.append({
-                    "type_univers": "print",
-                    "nom_article": f"{cat_print} - {choix_ref}" if "Autre" not in cat_print else choix_ref,
-                    "quantite": qte,
-                    "prix_vet_unit": prix_vetement_ht,
-                    "sans_marquage": True,
-                    "marquages": [],
-                    "option_ensachage": False,
-                    "type_sachet": "",
-                    "option_assurance": False,
-                    "option_stockage": False,
-                    "remise_fidelite": remise_fidelite
-                })
+    if qte > 0:
+        articles_saisis.append({
+            "type_univers": "print",
+            "nom_article": f"{cat_print} - {choix_ref}" if "Autre" not in cat_print else choix_ref,
+            "quantite": qte,
+            "prix_vet_unit": prix_vetement_ht,
+            "sans_marquage": True,
+            "marquages": [],
+            "option_ensachage": False,
+            "type_sachet": "",
+            "option_assurance": False,
+            "option_stockage": False,
+            "remise_fidelite": remise_fidelite
+        })
 
 # --- CALCUL DES QUANTITÉS CUMULÉES ---
 quantites_cumulees_marquages = {}
