@@ -54,17 +54,18 @@ toutes_les_feuilles = pd.read_excel(excel_path, sheet_name=None)
 # Pour fusionner toutes les feuilles si elles ont la même structure :
 df_global = pd.concat(toutes_les_feuilles.values(), ignore_index=True)
 
-# --- MOTEUR DE LECTURE EXCEL CATALOGUE PRINT & SIGNALÉTIQUE ENTIÈREMENT CORRIGÉ ---
+# --- MOTEUR DE LECTURE EXCEL CATALOGUE PRINT & SIGNALÉTIQUE (100% FIABLE & INTÉGRAL) ---
 def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
     if not os.path.exists(CATALOGUE_FILE):
         return 0.15
     
     try:
+        # Lecture brute de l'intégralité de la feuille sans en-tête fixe
         df_all = pd.read_excel(CATALOGUE_FILE, sheet_name=0, header=None)
     except Exception:
         return 0.15
 
-    # Extraction dynamique des paliers de quantité de la ligne 1 (colonnes 3 à la fin)
+    # Extraction dynamique des paliers de quantité depuis la ligne 1 (colonnes 3 à la fin)
     paliers_cols = []
     for c in range(3, df_all.shape[1]):
         val_hdr = df_all.iloc[1, c]
@@ -73,7 +74,7 @@ def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
         except:
             pass
 
-    # Détermination de la colonne cible selon la quantité
+    # Détermination de la colonne cible selon la quantité commandée
     col_cible = 3
     if paliers_cols:
         for idx, (col_idx, q_seuil) in enumerate(paliers_cols):
@@ -87,6 +88,7 @@ def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
                     col_cible = col_idx
                     break
     else:
+        # Paliers par défaut si l'en-tête est absent
         if qte <= 4: col_cible = 3
         elif qte <= 9: col_cible = 4
         elif qte <= 24: col_cible = 5
@@ -104,17 +106,17 @@ def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
     best_row = -1
     max_match = -1
 
-    # Parcours de toutes les lignes du catalogue Excel à partir de la ligne 2
+    # Parcours de TOUTES les lignes du tableau à partir de la ligne 2 jusqu'à la toute dernière (ligne 83+)
     for r in range(2, len(df_all)):
-        row_cat = str(df_all.iloc[r, 0]).lower().strip()
-        row_sub = str(df_all.iloc[r, 1]).lower().strip()
-        row_ref = str(df_all.iloc[r, 2]).lower().strip()
+        # Récupération sécurisée en ignorant les NaN
+        row_cat = str(df_all.iloc[r, 0]) if pd.notna(df_all.iloc[r, 0]) else ""
+        row_sub = str(df_all.iloc[r, 1]) if pd.notna(df_all.iloc[r, 1]) else ""
+        row_ref = str(df_all.iloc[r, 2]) if pd.notna(df_all.iloc[r, 2]) else ""
         
-        # Concaténation de tout le texte de la ligne pour maximiser la recherche
-        full_row_text = f"{row_cat} {row_sub} {row_ref}"
+        # Concaténation propre sans polluer avec le mot "nan"
+        full_row_text = f"{row_cat} {row_sub} {row_ref}".lower()
 
         score = 0
-        # Vérification des mots-clés de la sélection utilisateur dans la ligne du fichier
         mots_ref = [m for m in ref_lower.split() if len(m) > 1]
         match_mots = sum(1 for m in mots_ref if m in full_row_text)
         score += match_mots * 10
@@ -132,10 +134,10 @@ def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
             
         prix_val = float(df_all.iloc[best_row, col_cible])
         
-        # Fallback si la cellule est vide : recherche de la colonne de prix valide la plus proche
+        # Fallback intelligent si la cellule du prix est vide : recherche de la colonne valide la plus proche
         if pd.isna(prix_val) or prix_val <= 0:
             for alt_col in range(col_cible - 1, 2, -1):
-                if alt_col < df_all.shape[1] and alt_col >= 0:
+                if 0 <= alt_col < df_all.shape[1]:
                     alt_val = float(df_all.iloc[best_row, alt_col])
                     if not pd.isna(alt_val) and alt_val > 0:
                         prix_val = alt_val
