@@ -416,22 +416,23 @@ for i in range(10):
                     st.info("💡 Saisie manuelle active (produit hors catalogue).")
                     remise_fidelite = st.number_input(f"Remise commerciale (%) {i+1}", min_value=0.0, max_value=100.0, value=0.0, key=f"rem_print_{i}")
             else:
-                # --- CONSTRUCTION AUTOMATIQUE DEPUIS L'EXCEL ---
-df_all = pd.read_excel(CATALOGUE_FILE, sheet_name=0, header=None)
+                df_all = pd.read_excel(CATALOGUE_FILE, sheet_name=0, header=None)
+        	options_articles = {}
+        	for r in range(2, len(df_all)):
+            	    cat = str(df_all.iloc[r, 0]).strip() if pd.notna(df_all.iloc[r, 0]) else "Autres"
+            	    ref = str(df_all.iloc[r, 2]).strip() if pd.notna(df_all.iloc[r, 2]) else ""
+            
+            	    if ref:
+                	if cat not in options_articles:
+                    	    options_articles[cat] = []
+                	if ref not in options_articles[cat]:
+                            options_articles[cat].append(ref)
 
-options_articles = {}
-for r in range(2, len(df_all)):
-    cat = str(df_all.iloc[r, 0]).strip() if pd.notna(df_all.iloc[r, 0]) else "Autres"
-    ref = str(df_all.iloc[r, 2]).strip() if pd.notna(df_all.iloc[r, 2]) else ""
-    
-    if ref:
-        if cat not in options_articles:
-            options_articles[cat] = []
-        if ref not in options_articles[cat]:
-            options_articles[cat].append(ref)
-
-# Puis votre selectbox existant fonctionnera tout seul avec l'Excel :
-choix_ref = st.selectbox(f"Modèle exact {i+1}", options_articles.get(cat_print, ["Article standard"]), key=f"ref_print_{i}")
+        	choix_ref = st.selectbox(
+            	    f"Modèle exact {i+1}", 
+                    options_articles.get(cat_print, ["Article standard"]), 
+            	    key=f"ref_print_{i}"
+        	)
                 
                 col1, col2 = st.columns(2)
                 with col1:
