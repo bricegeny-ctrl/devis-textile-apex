@@ -46,7 +46,7 @@ def obtenir_prochain_numero_devis():
         json.dump({"dernier_num": nouveau_num}, f)
     return nouveau_num
 
-# --- MOTEUR DE LECTURE EXCEL : NETTOYAGE ROBUSTE DES FORMATS (VIRGULES & EUROS) ---
+# --- MOTEUR DE LECTURE EXCEL : LECTURE DYNAMIQUE DES PALIERS ---
 def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
     if not os.path.exists(CATALOGUE_FILE):
         return 0.15
@@ -59,33 +59,28 @@ def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
     cat_lower = str(cat_print).lower().strip()
     ref_lower = str(choix_ref).lower().strip()
 
-    # Détermination de la colonne cible en fonction de la quantité
-    if qte <= 1:
-        col_cible = 3
-    elif qte < 5:
-        col_cible = 4
-    elif qte < 10:
-        col_cible = 5
-    elif qte < 25:
-        col_cible = 6
-    elif qte < 50:
-        col_cible = 7
-    elif qte < 250:
-        col_cible = 8    # 100 ex -> Index 8 (Colonne I)
-    elif qte < 500:
-        col_cible = 9
-    elif qte < 1000:
-        col_cible = 10
-    elif qte < 2500:
-        col_cible = 11
-    elif qte < 5000:
-        col_cible = 12
-    elif qte < 10000:
-        col_cible = 13
-    else:
-        col_cible = 14
+    # 1. Lecture dynamique des paliers depuis la ligne d'en-tête (ligne 1, index 1)
+    paliers = {}
+    for c in range(3, df_all.shape[1]):
+        val_entete = str(df_all.iloc[1, c]).replace(',', '.').strip()
+        try:
+            val_num = float(val_entete)
+            if not pd.isna(val_num):
+                paliers[int(val_num)] = c
+        except Exception:
+            continue
 
-    # 1. Recherche de la ligne du produit
+    paliers_tries = sorted(paliers.keys()) # Ex: [1, 5, 10, 25, 50, 100, 250, 500...]
+    
+    # Détermination de la colonne cible selon la quantité demandée
+    col_cible = paliers[paliers_tries[0]] if paliers_tries else 3
+    for p in paliers_tries:
+        if qte >= p:
+            col_cible = paliers[p]
+        else:
+            break
+
+    # 2. Recherche de la meilleure ligne correspondant au produit
     best_row = -1
     max_score = -1
 
@@ -110,34 +105,39 @@ def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
             max_score = score
             best_row = r
 
+    # Secours par catégorie si le modèle exact n'est pas trouvé
+    if best_row == -1 or max_score < 10:
+        for r in range(2, len(df_all)):
+            row_cat = str(df_all.iloc[r, 0]).lower().strip()
+            if cat_lower in row_cat or row_cat in cat_lower:
+                best_row = r
+                break
+
     if best_row == -1:
         return 0.15
 
-    # Fonction interne pour nettoyer et convertir proprement n'importe quelle cellule Excel en float
-    def nettoyer_valeur_cellule(val):
-        if pd.isna(val):
-            return -1.0
-        if isinstance(val, (int, float)):
-            return float(val)
-        # Si c'est du texte (ex: "0,3135", "0.3135 €", " 0,31 ")
-        val_str = str(val).replace('€', '').replace('EUR', '').replace(' ', '').replace(',', '.').strip()
-        try:
-            return float(val_str)
-        except Exception:
-            return -1.0
-
-    # 2. Extraction sécurisée et conversion du prix
+    # 3. Extraction et nettoyage sécurisé du prix dans la cellule ciblée
     try:
-        prix_val = nettoyer_valeur_cellule(df_all.iloc[best_row, col_cible])
+        val_brute = df_all.iloc[best_row, col_cible]
         
-        # Si la case ciblée est vide ou invalide, on cherche sur les colonnes précédentes
-        if prix_val <= 0:
+        # Si la case est vide, on cherche le prix valide le plus proche sur les colonnes précédentes
+        if pd.isna(val_brute) or str(val_brute).strip() == "":
             for alt_col in range(col_cible - 1, 2, -1):
                 if alt_col < df_all.shape[1]:
-                    alt_val = nettoyer_valeur_cellule(df_all.iloc[best_row, alt_col])
-                    if alt_val > 0:
-                        prix_val = alt_val
+                    alt_val = df_all.iloc[best_row, alt_col]
+                    if not pd.isna(alt_val) and str(alt_val).strip() != "":
+                        val_brute = alt_val
                         break
+
+        if pd.isna(val_brute):
+            return 0.15
+
+        # Conversion propre en float
+        if isinstance(val_brute, (int, float)):
+            prix_val = float(val_brute)
+        else:
+            val_str = str(val_brute).replace('€', '').replace('EUR', '').replace(' ', '').replace(',', '.').strip()
+            prix_val = float(val_str)
 
         if prix_val <= 0:
             return 0.15
