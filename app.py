@@ -9,29 +9,9 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, Tabl
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 
-# --- DÉFINITION DU FICHIER CATALOGUE EN PREMIER ---
-CATALOGUE_FILE = "catalogue_print.xlsx"  # Vérifiez que c'est bien le nom de votre fichier Excel
-
-def obtenir_prix_catalogue_intelligent(categorie, reference, quantite):
-    """Fonction sécurisée pour récupérer le prix catalogue"""
-    try:
-        df_catalogue = pd.read_excel(CATALOGUE_FILE, sheet_name=0, header=None)
-        for idx, row in df_catalogue.iterrows():
-            cat_cell = str(row.iloc[0]).strip() if pd.notna(row.iloc[0]) else ""
-            ref_cell = str(row.iloc[2]).strip() if pd.notna(row.iloc[2]) else ""
-            
-            if categorie.lower() in cat_cell.lower() and reference.lower() in ref_cell.lower():
-                for col_idx in range(3, len(row)):
-                    val_cell = row.iloc[col_idx]
-                    if pd.notna(val_cell):
-                        return float(val_cell)
-        return 0.0
-    except Exception:
-        return 0.0
-
 st.set_page_config(page_title="Gestionnaire de Devis - APEX", layout="wide")
 
-# --- GESTION DES FICHIERS ---
+# --- GESTION DES FICHIERS & CONFIGURATIONS ---
 COMPTEUR_FILE = "compteur_devis.json"
 CRM_FILE = "crm_devis.csv"
 CATALOGUE_FILE = "catalogue_print.xlsx"
@@ -65,27 +45,16 @@ def obtenir_prochain_numero_devis():
         json.dump({"dernier_num": nouveau_num}, f)
     return nouveau_num
 
-import pandas as pd
-
-# Charge toutes les feuilles dans un dictionnaire de DataFrames
-excel_path = 'catalogue print et signalétique.xlsx'
-toutes_les_feuilles = pd.read_excel(excel_path, sheet_name=None)
-
-# Pour fusionner toutes les feuilles si elles ont la même structure :
-df_global = pd.concat(toutes_les_feuilles.values(), ignore_index=True)
-
 # --- MOTEUR DE LECTURE EXCEL CATALOGUE PRINT & SIGNALÉTIQUE (100% FIABLE & INTÉGRAL) ---
 def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
     if not os.path.exists(CATALOGUE_FILE):
         return 0.15
     
     try:
-        # Lecture brute de l'intégralité de la feuille sans en-tête fixe
         df_all = pd.read_excel(CATALOGUE_FILE, sheet_name=0, header=None)
     except Exception:
         return 0.15
 
-    # Extraction dynamique des paliers de quantité depuis la ligne 1 (colonnes 3 à la fin)
     paliers_cols = []
     for c in range(3, df_all.shape[1]):
         val_hdr = df_all.iloc[1, c]
@@ -94,7 +63,6 @@ def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
         except:
             pass
 
-    # Détermination de la colonne cible selon la quantité commandée
     col_cible = 3
     if paliers_cols:
         for idx, (col_idx, q_seuil) in enumerate(paliers_cols):
@@ -108,7 +76,6 @@ def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
                     col_cible = col_idx
                     break
     else:
-        # Paliers par défaut si l'en-tête est absent
         if qte <= 4: col_cible = 3
         elif qte <= 9: col_cible = 4
         elif qte <= 24: col_cible = 5
@@ -126,14 +93,11 @@ def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
     best_row = -1
     max_match = -1
 
-    # Parcours de TOUTES les lignes du tableau à partir de la ligne 2 jusqu'à la toute dernière (ligne 83+)
     for r in range(2, len(df_all)):
-        # Récupération sécurisée en ignorant les NaN
         row_cat = str(df_all.iloc[r, 0]) if pd.notna(df_all.iloc[r, 0]) else ""
         row_sub = str(df_all.iloc[r, 1]) if pd.notna(df_all.iloc[r, 1]) else ""
         row_ref = str(df_all.iloc[r, 2]) if pd.notna(df_all.iloc[r, 2]) else ""
         
-        # Concaténation propre sans polluer avec le mot "nan"
         full_row_text = f"{row_cat} {row_sub} {row_ref}".lower()
 
         score = 0
@@ -154,7 +118,6 @@ def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
             
         prix_val = float(df_all.iloc[best_row, col_cible])
         
-        # Fallback intelligent si la cellule du prix est vide : recherche de la colonne valide la plus proche
         if pd.isna(prix_val) or prix_val <= 0:
             for alt_col in range(col_cible - 1, 2, -1):
                 if 0 <= alt_col < df_all.shape[1]:
@@ -172,7 +135,6 @@ def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
 
 # --- MOTEUR DE LECTURE EXCEL MARQUAGE & BRODERIE ---
 def lire_grille_depuis_excel(sheet_name_keyword, emplacement, qte_totale):
-    """Lit dynamiquement le fichier Excel de tarifs de marquage/broderie s'il existe."""
     if not os.path.exists(TARIF_MARQUAGE_FILE):
         return None
     try:
@@ -186,13 +148,9 @@ def lire_grille_depuis_excel(sheet_name_keyword, emplacement, qte_totale):
             sheet_target = xls.sheet_names[0]
         
         df = pd.read_excel(xls, sheet_name=sheet_target, header=None)
-        # Recherche de la ligne correspondant à l'emplacement et de la colonne correspondant à la quantité
-        # Implémentation générique basée sur la structure tabulaire standard
         for r in range(len(df)):
             row_str = str(df.iloc[r, 0]).lower()
             if any(m in row_str for m in emplacement.lower().split()):
-                # Ligne trouvée, recherche de la bonne colonne de quantité
-                # (Par défaut, on parcourt la ligne pour trouver le tarif correspondant au palier)
                 for c in range(1, df.shape[1]):
                     val_cell = df.iloc[r, c]
                     if isinstance(val_cell, (int, float)) and val_cell > 0:
@@ -203,7 +161,6 @@ def lire_grille_depuis_excel(sheet_name_keyword, emplacement, qte_totale):
 
 # --- GRILLES TARIFAIRES OFFICIELLES & LECTURE FICHIER (DTF & BRODERIE) ---
 def obtenir_tarif_dtf_unitaire(type_textile, emplacement, qte_totale):
-    # Tentative de lecture depuis le fichier Excel dédié
     prix_excel = lire_grille_depuis_excel("dtf", emplacement, qte_totale)
     if prix_excel is not None and prix_excel > 0:
         prix = prix_excel
@@ -436,46 +393,51 @@ for i in range(10):
                     st.info("💡 Saisie manuelle active (produit hors catalogue).")
                     remise_fidelite = st.number_input(f"Remise commerciale (%) {i+1}", min_value=0.0, max_value=100.0, value=0.0, key=f"rem_print_{i}")
             else:
-                df_all = pd.read_excel(CATALOGUE_FILE, sheet_name=0, header=None)
                 options_articles = {}
-                for r in range(2, len(df_all)):
-                    cat = str(df_all.iloc[r, 0]).strip() if pd.notna(df_all.iloc[r, 0]) else "Autres"
-                    ref = str(df_all.iloc[r, 2]).strip() if pd.notna(df_all.iloc[r, 2]) else ""
-                    if ref:
-                        if cat not in options_articles:
-                            options_articles[cat] = []
-                        if ref not in options_articles[cat]:
-                            options_articles[cat].append(ref)
-            choix_ref = st.selectbox(
-                f"Modèle exact {i+1}", 
-                options_articles.get(cat_print, ["Article standard"]), 
-                key=f"ref_print_{i}"
-            )
+                if os.path.exists(CATALOGUE_FILE):
+                    try:
+                        df_all = pd.read_excel(CATALOGUE_FILE, sheet_name=0, header=None)
+                        for r in range(2, len(df_all)):
+                            cat = str(df_all.iloc[r, 0]).strip() if pd.notna(df_all.iloc[r, 0]) else "Autres"
+                            ref = str(df_all.iloc[r, 2]).strip() if pd.notna(df_all.iloc[r, 2]) else ""
+                            if ref:
+                                if cat not in options_articles:
+                                    options_articles[cat] = []
+                                if ref not in options_articles[cat]:
+                                    options_articles[cat].append(ref)
+                    except Exception:
+                        pass
                 
-    col1, col2 = st.columns(2)
-    with col1:
-        qte = st.number_input(f"Quantité (exemplaires) {i+1}", min_value=0, value=100 if i==0 else 0, key=f"qte_print_{i}")
-        prix_unitaire_auto = obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte)
-        prix_vetement_ht = prix_unitaire_auto
-        st.metric(label=f"Prix unitaire HT (€) {i+1} (Catalogue auto)", value=f"{prix_unitaire_auto:.4f} €")
-    with col2:
-        st.success(f"✔ Tarif appliqué ({qte} ex) : **{prix_unitaire_auto:.4f} € HT**")
-        remise_fidelite = st.number_input(f"Remise commerciale (%) {i+1}", min_value=0.0, max_value=100.0, value=0.0, key=f"rem_print_{i}")
+                choix_ref = st.selectbox(
+                    f"Modèle exact {i+1}", 
+                    options_articles.get(cat_print, ["Article standard"]), 
+                    key=f"ref_print_{i}"
+                )
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    qte = st.number_input(f"Quantité (exemplaires) {i+1}", min_value=0, value=100 if i==0 else 0, key=f"qte_print_{i}")
+                    prix_unitaire_auto = obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte)
+                    prix_vetement_ht = prix_unitaire_auto
+                    st.metric(label=f"Prix unitaire HT (€) {i+1} (Catalogue auto)", value=f"{prix_unitaire_auto:.4f} €")
+                with col2:
+                    st.success(f"✔ Tarif appliqué ({qte} ex) : **{prix_unitaire_auto:.4f} € HT**")
+                    remise_fidelite = st.number_input(f"Remise commerciale (%) {i+1}", min_value=0.0, max_value=100.0, value=0.0, key=f"rem_print_{i}")
 
-    if qte > 0:
-        articles_saisis.append({
-            "type_univers": "print",
-            "nom_article": f"{cat_print} - {choix_ref}" if "Autre" not in cat_print else choix_ref,
-            "quantite": qte,
-            "prix_vet_unit": prix_vetement_ht,
-            "sans_marquage": True,
-            "marquages": [],
-            "option_ensachage": False,
-            "type_sachet": "",
-            "option_assurance": False,
-            "option_stockage": False,
-            "remise_fidelite": remise_fidelite
-        })
+            if qte > 0:
+                articles_saisis.append({
+                    "type_univers": "print",
+                    "nom_article": f"{cat_print} - {choix_ref}" if "Autre" not in cat_print else choix_ref,
+                    "quantite": qte,
+                    "prix_vet_unit": prix_vetement_ht,
+                    "sans_marquage": True,
+                    "marquages": [],
+                    "option_ensachage": False,
+                    "type_sachet": "",
+                    "option_assurance": False,
+                    "option_stockage": False,
+                    "remise_fidelite": remise_fidelite
+                })
 
 # --- CALCUL DES QUANTITÉS CUMULÉES ---
 quantites_cumulees_marquages = {}
