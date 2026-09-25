@@ -292,8 +292,7 @@ for i in range(10):
                 })
                 total_textile_brut += qte * prix_vetement_ht
         else:
-            else:
-            # --- SELECTION PRINT & SIGNALETIQUE + OPTION AUTRE (SAISIE LIBRE) ---
+            # --- SELECTION PRINT & SIGNALETIQUE + OPTION AUTRE ---
             cat_print = st.selectbox(
                 f"Catégorie Print & Signalétique {i+1}",
                 [
@@ -306,13 +305,10 @@ for i in range(10):
             )
             
             if "Autre" in cat_print:
-                # Saisie libre pour un produit hors catalogue
                 choix_ref = st.text_input(f"Nom / Désignation du produit libre {i+1}", value="Produit personnalisé", key=f"ref_libre_{i}")
-                
                 col1, col2 = st.columns(2)
                 with col1:
                     qte = st.number_input(f"Quantité (exemplaires) {i+1}", min_value=0, value=1 if i==0 else 0, key=f"qte_print_{i}")
-                    # Prix unitaire en saisie libre pour le hors catalogue
                     prix_vetement_ht = st.number_input(f"Prix unitaire HT (€) {i+1} (Saisie libre)", min_value=0.0, value=10.00, format="%.4f", key=f"px_libre_{i}")
                 with col2:
                     st.info("💡 Saisie manuelle active (produit hors catalogue).")
@@ -348,50 +344,6 @@ for i in range(10):
                     
                 with col2:
                     st.success(f"✅ Tarif appliqué ({qte} ex) : **{prix_unitaire_auto:.4f} € HT**")
-                    remise_fidelite = st.number_input(f"Remise commerciale (%) {i+1}", min_value=0.0, max_value=100.0, value=0.0, key=f"rem_print_{i}")
-                    
-                    # --- CALCUL AUTOMATIQUE SYNCHRONISÉ ---
-                    prix_unitaire_auto = obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte)
-                    
-                    # On force la mise à jour du prix unitaire HT en fonction du calcul automatique
-                    prix_vetement_ht = st.number_input(
-                        f"Prix unitaire HT (€) {i+1}", 
-                        min_value=0.0, 
-                        value=float(prix_unitaire_auto), 
-                        format="%.4f", 
-                        key=f"px_print_{i}_{qte}_{choix_ref}"  # Clé dynamique pour forcer le rafraîchissement
-                    )
-                with col2:
-                    st.success(f"✅ Tarif catalogue appliqué ({qte} ex) : **{prix_unitaire_auto:.4f} € HT**")
-                    remise_fidelite = st.number_input(f"Remise commerciale (%) {i+1}", min_value=0.0, max_value=100.0, value=0.0, key=f"rem_print_{i}")
-            else:
-                options_articles = {
-                    "Flyers": ["Flyer A6 - 135g couché brillant - Recto", "Flyer A6 - 135g couché brillant - Recto/Verso", "Flyer A6 - 170g couché demi mat - Recto", "Flyer A6 - 170g couché demi mat - Recto/Verso", "Flyer A6 - 250g couché - Recto", "Flyer A6 - 250g couché - Recto/Verso", "Flyer A6 - 350g couché - Recto", "Flyer A6 - 350g couché - Recto/Verso", "Flyer A6 - 115g recyclé - Recto", "Flyer A6 - 115g recyclé - Recto/Verso", "Flyer A5 - 135g couché brillant - Recto", "Flyer A5 - 135g couché brillant - Recto/Verso", "Flyer A5 - 170g couché demi mat - Recto", "Flyer A5 - 170g couché demi mat - Recto/Verso"],
-                    "Dépliants": ["Dépliant A6 fermé / A5 ouvert (1 pli) - 135g couché brillant", "Dépliant A5 fermé / A4 ouvert (1 pli) - 135g couché brillant"],
-                    "Blocs notes": ["Bloc Note collé - Format A6 - 25 Feuilles - 90 Gr Offset", "Bloc Note collé - Format A5 - 50 Feuilles - 90 Gr Offset"],
-                    "Chemises de présentation": ["Chemise de présentation A4 - 300g - 2 rabats"],
-                    "Banderoles": ["Banderole 200 x 80 cm - 510g M1 avec œillets", "Banderole 300 x 100 cm - 510g M1 avec œillets"],
-                    "Panneaux de chantier": ["Panneau Akylux 60 x 40 cm - 3,5mm", "Panneau Akylux 80 x 60 cm - 3,5mm"],
-                    "Roll-Up": ["Roll-Up Eco - Bâche PVC 510g M1 - 85x200cm"],
-                    "Sous bocks": ["Sous bock carton 580g - 9,3x9,3 cm"],
-                    "Adhésifs": ["Adhésif vinyl classique 10x10cm"],
-                    "Cartes de visite": ["Carte de visite standard - 350g - Recto/Verso"],
-                    "Calendriers": ["Calendrier A4 - 250g couché brillant"],
-                    "Menus restaurants": ["Menu restaurant indéchirable 300g - A5"]
-                }
-                
-                choix_ref = st.selectbox(f"Modèle exact {i+1}", options_articles.get(cat_print, ["Article standard"]), key=f"ref_print_{i}")
-                
-                col1, col2 = st.columns(2)
-                with col1:
-                    qte = st.number_input(f"Quantité (exemplaires) {i+1}", min_value=0, value=100 if i==0 else 0, key=f"qte_print_{i}")
-                    
-                    # Calcul automatique instantané du prix unitaire depuis le catalogue Excel
-                    prix_unitaire_auto = obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte)
-                    
-                    prix_vetement_ht = st.number_input(f"Prix unitaire HT (€) {i+1} (Calculé auto)", min_value=0.0, value=float(prix_unitaire_auto), format="%.3f", key=f"px_print_{i}")
-                with col2:
-                    st.success(f"✅ Prix unitaire calculé automatiquement ({qte} ex) : **{prix_unitaire_auto:.3f} € HT**")
                     remise_fidelite = st.number_input(f"Remise commerciale (%) {i+1}", min_value=0.0, max_value=100.0, value=0.0, key=f"rem_print_{i}")
 
             if qte > 0:
