@@ -46,7 +46,7 @@ def obtenir_prochain_numero_devis():
         json.dump({"dernier_num": nouveau_num}, f)
     return nouveau_num
 
-# --- MOTEUR DE LECTURE EXCEL : DÉTECTION DYNAMIQUE UNIVERSELLE DES PALIERS ---
+# --- MOTEUR DE LECTURE EXCEL : CORRESPONDANCE ROBUSTE ADHÉSIFS & FLYERS ---
 def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
     if not os.path.exists(CATALOGUE_FILE):
         return 0.15
@@ -59,81 +59,79 @@ def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
     cat_lower = str(cat_print).lower().strip()
     ref_lower = str(choix_ref).lower().strip()
 
-    # 1. Lecture dynamique et ultra-robuste des en-têtes de quantité (ligne 1, index 1)
-    paliers = {}
-    for c in range(3, df_all.shape[1]):
-        val_entete = str(df_all.iloc[1, c]).strip()
-        # Nettoyage des éventuels caractères indésirables (ex: ".0", espaces)
-        val_entete = val_entete.replace(',', '.')
-        try:
-            val_num = float(val_entete)
-            if not pd.isna(val_num):
-                paliers[int(val_num)] = c
-        except Exception:
-            continue
-
-    # Si la lecture dynamique trouve des paliers, on s'en sert
-    paliers_tries = sorted(paliers.keys()) # Ex: [1, 5, 10, 25, 50, 100, 250...]
-    
-    if paliers_tries:
-        # On trouve le palier le plus grand inférieur ou égal à la quantité demandée
-        col_cible = paliers[paliers_tries[0]]
-        for p in paliers_tries:
-            if qte >= p:
-                col_cible = paliers[p]
-            else:
-                break
+    # Détermination de la colonne cible en fonction de la quantité
+    if qte <= 1:
+        col_cible = 3
+    elif qte < 5:
+        col_cible = 4
+    elif qte < 10:
+        col_cible = 5
+    elif qte < 25:
+        col_cible = 6
+    elif qte < 50:
+        col_cible = 7
+    elif qte < 250:
+        col_cible = 8    # 100 ex (et de 50 à 249 ex) -> Colonne 8 (Index I)
+    elif qte < 500:
+        col_cible = 9
+    elif qte < 1000:
+        col_cible = 10
+    elif qte < 2500:
+        col_cible = 11
+    elif qte < 5000:
+        col_cible = 12
+    elif qte < 10000:
+        col_cible = 13
     else:
-        # Fallback de secours si les en-têtes ne sont pas lisibles
-        if qte <= 1: col_cible = 3
-        elif qte < 5: col_cible = 4
-        elif qte < 10: col_cible = 5
-        elif qte < 25: col_cible = 6
-        elif qte < 50: col_cible = 7
-        elif qte < 100: col_cible = 8
-        elif qte < 250: col_cible = 9
-        elif qte < 500: col_cible = 10
-        elif qte < 1000: col_cible = 11
-        else: col_cible = 12
+        col_cible = 14
 
-    # 2. Recherche de la meilleure ligne correspondant au produit
+    # 1. Recherche ultra-précise de la ligne du produit
     best_row = -1
-    max_match = -1
+    max_score = -1
 
     for r in range(2, len(df_all)):
         row_cat = str(df_all.iloc[r, 0]).lower().strip()
         row_ref = str(df_all.iloc[r, 2]).lower().strip()
 
+        # On s'assure d'abord que la catégorie correspond un minimum
+        if cat_lower not in row_cat and row_cat not in cat_lower:
+            continue
+
         score = 0
-        if cat_lower in row_cat or row_cat in cat_lower:
-            score += 10
-        
-        if ref_lower in row_ref or row_ref in ref_lower:
-            score += 20
+        # Correspondance exacte du modèle prioritaire
+        if ref_lower == row_ref:
+            score += 100
+        elif ref_lower in row_ref or row_ref in ref_lower:
+            score += 50
         else:
+            # Correspondance par mots-clés significatifs
             mots_ref = [m for m in ref_lower.split() if len(m) > 2]
             match_mots = sum(1 for m in mots_ref if m in row_ref)
-            score += match_mots * 5
+            score += match_mots * 10
 
-        if score > max_match:
-            max_match = score
+        if score > max_score:
+            max_score = score
             best_row = r
 
-    # Secours par catégorie si correspondance trop faible
-    if best_row == -1 or max_match < 5:
+    # Si aucun score pertinent n'est atteint, on cherche a minima un produit de la bonne catégorie qui a un prix dans la colonne
+    if best_row == -1 or max_score < 10:
         for r in range(2, len(df_all)):
-            if cat_lower in str(df_all.iloc[r, 0]).lower():
-                best_row = r
-                break
+            row_cat = str(df_all.iloc[r, 0]).lower().strip()
+            if cat_lower in row_cat or row_cat in cat_lower:
+                # Vérifie si cette ligne a bien une valeur non vide pour éviter de tomber sur une ligne de titre/vide
+                val_test = df_all.iloc[r, col_cible]
+                if not pd.isna(val_test) and str(val_test).strip() != "":
+                    best_row = r
+                    break
 
     if best_row == -1:
         return 0.15
 
-    # 3. Extraction sécurisée du prix dans la colonne ciblée dynamiquement
+    # 2. Extraction sécurisée du prix dans la colonne ciblée
     try:
         prix_val = float(df_all.iloc[best_row, col_cible])
         
-        # Si la case est vide, on cherche le prix valide le plus proche sur les colonnes précédentes
+        # Si la case ciblée est vide, on cherche le dernier prix valide en reculant sur les colonnes précédentes
         if pd.isna(prix_val) or prix_val <= 0:
             for alt_col in range(col_cible - 1, 2, -1):
                 if alt_col < df_all.shape[1]:
