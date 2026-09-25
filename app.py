@@ -46,7 +46,7 @@ def obtenir_prochain_numero_devis():
         json.dump({"dernier_num": nouveau_num}, f)
     return nouveau_num
 
-# --- MOTEUR DE LECTURE EXCEL : INDEX DE COLONNES CORRIGÉS ET ALIGNÉS ---
+# --- MOTEUR DE LECTURE EXCEL : INDEX CORRIGÉS DEPUIS LA COLONNE D (INDEX 3) ---
 def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
     if not os.path.exists(CATALOGUE_FILE):
         return 0.15
@@ -59,44 +59,31 @@ def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
     cat_lower = str(cat_print).lower().strip()
     ref_lower = str(choix_ref).lower().strip()
 
-    # Alignement exact des colonnes et des tranches :
-    # Col index 3 (1 ex)      -> qte == 1
-    # Col index 4 (5 ex)      -> qte de 2 à 4
-    # Col index 5 (10 ex)     -> qte de 5 à 9
-    # Col index 6 (25 ex)     -> qte de 10 à 24
-    # Col index 7 (50 ex)     -> qte de 25 à 49
-    # Col index 8 (100 ex)    -> qte de 50 à 99 (et pour 100 pile)
-    # Col index 9 (250 ex)    -> qte de 100 à 249 (Attention: si qte >= 100, on passe sur le palier 250)
-    # Col index 10 (500 ex)   -> qte de 250 à 499
-    # Col index 11 (1000 ex)  -> qte de 500 à 999
-    # Col index 12 (2500 ex)  -> qte de 1000 à 2499
-    # Col index 13 (5000 ex)  -> qte de 2500 à 4999
-    # Col index 14 (10000 ex) -> qte >= 5000
-
+    # Association stricte : Quantité -> Index de colonne Excel
     if qte <= 1: 
-        col_cible = 3
+        col_cible = 3   # Col D (1 ex)
     elif qte < 5: 
-        col_cible = 4
+        col_cible = 4   # Col E (5 ex)
     elif qte < 10: 
-        col_cible = 5
+        col_cible = 5   # Col F (10 ex)
     elif qte < 25: 
-        col_cible = 6
+        col_cible = 6   # Col G (25 ex)
     elif qte < 50: 
-        col_cible = 7
-    elif qte <= 100: 
-        col_cible = 8    # Le palier de 100 ex couvre de 50 à 100 inclus
+        col_cible = 7   # Col H (50 ex)
+    elif qte < 100: 
+        col_cible = 8   # Col I (100 ex)
     elif qte < 250: 
-        col_cible = 9
+        col_cible = 9   # Col J (250 ex) -> 100 à 249 ex = 0.3135 €
     elif qte < 500: 
-        col_cible = 10
+        col_cible = 10  # Col K (500 ex) -> 250 à 499 ex = 0.1386 €
     elif qte < 1000: 
-        col_cible = 11
+        col_cible = 11  # Col L (1000 ex)
     elif qte < 2500: 
-        col_cible = 12
+        col_cible = 12  # Col M (2500 ex)
     elif qte < 5000: 
-        col_cible = 13
+        col_cible = 13  # Col N (5000 ex)
     else: 
-        col_cible = 14
+        col_cible = 14  # Col O (10000 ex)
 
     # 1. Trouver la meilleure ligne correspondant au produit dans le catalogue
     best_row = -1
@@ -121,7 +108,7 @@ def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
     if best_row == -1 or max_match <= 0:
         return 0.15
 
-    # 2. Extraire le prix exact de la cellule correspondant au palier actif
+    # 2. Extraire le prix exact de la cellule correspondante
     try:
         prix_val = float(df_all.iloc[best_row, col_cible])
         
