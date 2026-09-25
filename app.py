@@ -46,7 +46,7 @@ def obtenir_prochain_numero_devis():
         json.dump({"dernier_num": nouveau_num}, f)
     return nouveau_num
 
-# --- MOTEUR DE LECTURE EXCEL : CORRIGÉ POUR LES PALIERS EXACTS (25, 50, etc.) ---
+# --- MOTEUR DE LECTURE EXCEL : GESTION DES PRIX UNIQUES ET SÉCURITÉ GLOBALE ---
 def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
     if not os.path.exists(CATALOGUE_FILE):
         return 0.15
@@ -59,33 +59,33 @@ def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
     cat_lower = str(cat_print).lower().strip()
     ref_lower = str(choix_ref).lower().strip()
 
-    # Association rigoureuse du plus grand au plus petit pour éviter les pièges sur les valeurs exactes (25, 50, 100...)
+    # Détermination de la colonne cible idéale selon la quantité
     if qte >= 10000:
-        col_cible = 14  # Col O
+        col_cible = 14
     elif qte >= 5000:
-        col_cible = 13  # Col N
+        col_cible = 13
     elif qte >= 2500:
-        col_cible = 12  # Col M
+        col_cible = 12
     elif qte >= 1000:
-        col_cible = 11  # Col L
+        col_cible = 11
     elif qte >= 500:
-        col_cible = 10  # Col K
+        col_cible = 10
     elif qte >= 250:
-        col_cible = 9   # Col J (250 ex)
+        col_cible = 9
     elif qte >= 100:
-        col_cible = 8   # Col I (100 ex)
+        col_cible = 8
     elif qte >= 50:
-        col_cible = 7   # Col H (50 ex)
+        col_cible = 7
     elif qte >= 25:
-        col_cible = 6   # Col G (25 ex)  <-- Vise enfin la bonne colonne pour 25 ex !
+        col_cible = 6
     elif qte >= 10:
-        col_cible = 5   # Col F (10 ex)
+        col_cible = 5
     elif qte >= 5:
-        col_cible = 4   # Col E (5 ex)
+        col_cible = 4
     else:
-        col_cible = 3   # Col D (1 ex)
+        col_cible = 3
 
-    # 1. Recherche de la meilleure ligne du produit dans le catalogue
+    # Recherche de la ligne exacte du produit
     best_row = -1
     max_match = -1
 
@@ -97,37 +97,42 @@ def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
         if cat_lower in row_cat or row_cat in cat_lower:
             score += 10
         
-        mots_ref = [m for m in ref_lower.split() if len(m) > 2]
-        match_mots = sum(1 for m in mots_ref if m in row_ref)
-        score += match_mots * 5
+        if ref_lower == row_ref:
+            score += 50
+        elif ref_lower in row_ref or row_ref in ref_lower:
+            score += 25
 
         if score > max_match:
             max_match = score
             best_row = r
 
-    # Secours si la ligne exacte n'est pas trouvée par mots-clés
-    if best_row == -1 or max_match < 5:
-        for r in range(2, len(df_all)):
-            if cat_lower in str(df_all.iloc[r, 0]).lower():
-                best_row = r
-                break
-
     if best_row == -1:
         return 0.15
 
-    # 2. Extraction sécurisée du prix dans la colonne ciblée
+    # Extraction sécurisée avec repli intelligent vers la gauche si la colonne ciblée est vide (cas des prix uniques comme les banderoles)
     try:
-        prix_val = float(df_all.iloc[best_row, col_cible])
+        prix_val = -1.0
         
-        if pd.isna(prix_val) or prix_val <= 0:
-            for alt_col in range(col_cible - 1, 2, -1):
-                if alt_col < df_all.shape[1]:
-                    alt_val = float(df_all.iloc[best_row, alt_col])
-                    if not pd.isna(alt_val) and alt_val > 0:
-                        prix_val = alt_val
-                        break
+        # On essaie de lire la colonne cible, ou les colonnes juste avant (vers la gauche) si elle est vide
+        for c in range(col_cible, 2, -1):
+            if c < df_all.shape[1]:
+                val = df_all.iloc[best_row, c]
+                if not pd.isna(val) and str(val).strip() != "":
+                    try:
+                        temp_val = float(str(val).replace('€', '').replace('EUR', '').replace(' ', '').replace(',', '.'))
+                        if temp_val > 0:
+                            prix_val = temp_val
+                            break
+                    except Exception:
+                        continue
 
-        if pd.isna(prix_val) or prix_val <= 0:
+        # Si vraiment rien n'est trouvé sur la ligne, on cherche un prix de secours à l'index 3 (colonne D)
+        if prix_val <= 0:
+            val_secours = df_all.iloc[best_row, 3]
+            if not pd.isna(val_secours) and str(val_secours).strip() != "":
+                prix_val = float(str(val_secours).replace('€', '').replace('EUR', '').replace(' ', '').replace(',', '.'))
+
+        if prix_val <= 0:
             return 0.15
             
         return round(prix_val, 4)
@@ -289,48 +294,40 @@ for i in range(10):
                 })
                 total_textile_brut += qte * prix_vetement_ht
         else:
-            # --- SELECTION PRINT & SIGNALETIQUE + OPTION AUTRE ---
-            cat_print = st.selectbox(
-                f"Catégorie Print & Signalétique {i+1}",
-                [
-                    "Flyers", "Dépliants", "Blocs notes", "Chemises de présentation", 
-                    "Banderoles", "Panneaux de chantier", "Roll-Up", "Sous bocks", 
-                    "Adhésifs", "Cartes de visite", "Calendriers", "Menus restaurants",
-                    "➕ Autre / Produit hors catalogue (Saisie libre)"
-                ],
-                key=f"cat_print_{i}"
-            )
-            
-            if "Autre" in cat_print:
-                choix_ref = st.text_input(f"Nom / Désignation du produit libre {i+1}", value="Produit personnalisé", key=f"ref_libre_{i}")
-                col1, col2 = st.columns(2)
-                with col1:
-                    qte = st.number_input(f"Quantité (exemplaires) {i+1}", min_value=0, value=1 if i==0 else 0, key=f"qte_print_{i}")
-                    prix_vetement_ht = st.number_input(f"Prix unitaire HT (€) {i+1} (Saisie libre)", min_value=0.0, value=10.00, format="%.4f", key=f"px_libre_{i}")
-                with col2:
-                    st.info("💡 Saisie manuelle active (produit hors catalogue).")
-                    remise_fidelite = st.number_input(f"Remise commerciale (%) {i+1}", min_value=0.0, max_value=100.0, value=0.0, key=f"rem_print_{i}")
-            else:
-                options_articles = {
-                    "Flyers": ["Flyer A6 - 135g couché brillant - Recto", "Flyer A6 - 135g couché brillant - Recto/Verso", "Flyer A6 - 170g couché demi mat - Recto", "Flyer A6 - 170g couché demi mat - Recto/Verso", "Flyer A6 - 250g couché - Recto", "Flyer A6 - 250g couché - Recto/Verso", "Flyer A6 - 350g couché - Recto", "Flyer A6 - 350g couché - Recto/Verso", "Flyer A6 - 115g recyclé - Recto", "Flyer A6 - 115g recyclé - Recto/Verso", "Flyer A5 - 135g couché brillant - Recto", "Flyer A5 - 135g couché brillant - Recto/Verso", "Flyer A5 - 170g couché demi mat - Recto", "Flyer A5 - 170g couché demi mat - Recto/Verso"],
-                    "Dépliants": ["Dépliant A6 fermé / A5 ouvert (1 pli) - 135g couché brillant", "Dépliant A5 fermé / A4 ouvert (1 pli) - 135g couché brillant"],
-                    "Blocs notes": ["Bloc Note collé - Format A6 - 25 Feuilles - 90 Gr Offset", "Bloc Note collé - Format A5 - 50 Feuilles - 90 Gr Offset"],
-                    "Chemises de présentation": ["Chemise de présentation A4 - 300g - 2 rabats"],
-                    "Banderoles": ["Banderole 200 x 80 cm - 510g M1 avec œillets", "Banderole 300 x 100 cm - 510g M1 avec œillets"],
-                    "Panneaux de chantier": ["Panneau Akylux 60 x 40 cm - 3,5mm", "Panneau Akylux 80 x 60 cm - 3,5mm"],
-                    "Roll-Up": ["Roll-Up Eco - Bâche PVC 510g M1 - 85x200cm"],
-                    "Sous bocks": ["Sous bock carton 580g - 9,3x9,3 cm"],
-                    "Adhésifs": ["Adhésif vinyl classique 10x10cm"],
-                    "Cartes de visite": ["Carte de visite standard - 350g - Recto/Verso"],
-                    "Calendriers": ["Calendrier A4 - 250g couché brillant"],
-                    "Menus restaurants": ["Menu restaurant indéchirable 300g - A5"]
-                }
-                
-                choix_ref = st.selectbox(f"Modèle exact {i+1}", options_articles.get(cat_print, ["Article standard"]), key=f"ref_print_{i}")
-                
-                col1, col2 = st.columns(2)
-                with col1:
-                    qte = st.number_input(f"Quantité (exemplaires) {i+1}", min_value=0, value=100 if i==0 else 0, key=f"qte_print_{i}")
+            # --- SELECTION PRINT & SIGNALETIQUE + OPTION AUTRE (DYNAMIQUE) ---
+cat_print = st.selectbox(
+    f"Catégorie Print & Signalétique {i+1}",
+    [
+        "Flyers", "Dépliants", "Blocs notes", "Chemises de présentation",
+        "Banderoles", "Panneaux de chantier", "Roll-up", "Sous bocks",
+        "Adhésifs", "Cartes de visite", "Calendriers", "Menus restaurants",
+        "➕ Autre / Produit hors catalogue (Saisie libre)"
+    ],
+    key=f"cat_print_{i}"
+)
+
+if "Autre" in cat_print:
+    choix_ref = st.text_input(f"Nom / Désignation du produit libre {i+1}", value="Produit personnalisé", key=f"ref_libre_{i}")
+    coll, col2 = st.columns(2)
+    with coll:
+        qte = st.number_input(f"Quantité (exemplaires) {i+1}", min_value=0, value=1 if i==0 else 0, key=f"qte_print_{i}")
+        prix_vetement_ht = st.number_input(f"Prix unitaire HT (€) {i+1} (Saisie libre)", min_value=0.0, value=10.00, format="%.4f", key=f"px_libre_{i}")
+    with col2:
+        st.info("💡 Saisie manuelle active (produit hors catalogue).")
+        remise_fidelite = st.number_input(f"Remise commerciale (%) {i+1}", min_value=0.0, max_value=100.0, value=0.0, key=f"rem_print_{i}")
+else:
+    # Récupération automatique et exhaustive de tous les modèles depuis le fichier Excel
+    options_trouvees = obtenir_modeles_pour_categorie(cat_print)
+    
+    # Sécurité si le fichier Excel ne renvoie rien
+    if not options_trouvees:
+        options_trouvees = ["Article standard"]
+
+    choix_ref = st.selectbox(f"Modèle exact {i+1}", options_trouvees, key=f"ref_print_{i}")
+
+    coll, col2 = st.columns(2)
+    with coll:
+        qte = st.number_input(f"Quantité (exemplaires) {i+1}", min_value=0, value=100 if i==0 else 0, key=f"qte_print_{i}")
                     
                     # --- CALCUL AUTOMATIQUE INSTANTANÉ (PALIERS STRICTS) ---
                     prix_unitaire_auto = obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte)
