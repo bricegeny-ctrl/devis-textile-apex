@@ -46,7 +46,7 @@ def obtenir_prochain_numero_devis():
         json.dump({"dernier_num": nouveau_num}, f)
     return nouveau_num
 
-# --- MOTEUR DE LECTURE EXCEL AVEC LOGIQUE DE PALIERS STRICTS ---
+# --- MOTEUR DE LECTURE EXCEL : TRANCHES STRICTES D'IMPRIMERIE ---
 def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
     if not os.path.exists(CATALOGUE_FILE):
         return 0.15
@@ -59,41 +59,44 @@ def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
     cat_lower = str(cat_print).lower().strip()
     ref_lower = str(choix_ref).lower().strip()
 
-    # Liste des paliers de quantité et leur colonne associée (index 3 à 14) :
-    # (Seuil limite supérieure, index de colonne)
-    # Si qte <= 1 -> col 3 (1 ex)
-    # Si qte <= 5 -> col 4 (5 ex)
-    # Si qte <= 10 -> col 5 (10 ex)
-    # Si qte <= 25 -> col 6 (25 ex)
-    # Si qte <= 50 -> col 7 (50 ex)
-    # Si qte <= 100 -> col 8 (100 ex)
-    # Si qte <= 250 -> col 9 (250 ex)
-    # Si qte <= 500 -> col 10 (500 ex)
-    # Si qte <= 1000 -> col 11 (1000 ex)
-    # Si qte <= 2500 -> col 12 (2500 ex)
-    # Si qte <= 5000 -> col 13 (5000 ex)
-    # Au-delà -> col 14 (10000 ex)
+    # Bornes exactes selon vos tranches :
+    # qte == 1       -> Col index 3 (1 ex)
+    # qte entre 2 et 4   -> Col index 4 (5 ex)
+    # qte entre 5 et 9   -> Col index 5 (10 ex)
+    # qte entre 10 et 24 -> Col index 6 (25 ex)
+    # qte entre 25 et 49 -> Col index 7 (50 ex)
+    # qte entre 50 et 99 -> Col index 8 (100 ex)
+    # qte entre 100 et 249 -> Col index 9 (250 ex)
+    # qte entre 250 et 499 -> Col index 10 (500 ex)
+    # qte entre 500 et 999 -> Col index 11 (1000 ex)
+    # qte entre 1000 et 2499 -> Col index 12 (2500 ex)
+    # qte entre 2500 et 4999 -> Col index 13 (5000 ex)
+    # qte >= 5000    -> Col index 14 (10000 ex)
 
-    paliers_seuils = [
-        (1, 3),
-        (5, 4),
-        (10, 5),
-        (25, 6),
-        (50, 7),
-        (100, 8),
-        (250, 9),
-        (500, 10),
-        (1000, 11),
-        (2500, 12),
-        (5000, 13),
-        (float('inf'), 14)
-    ]
-
-    col_cible = 14 # Par défaut au max
-    for seuil, col_idx in paliers_seuils:
-        if qte <= seuil:
-            col_cible = col_idx
-            break
+    if qte <= 1: 
+        col_cible = 3
+    elif qte < 5: 
+        col_cible = 4
+    elif qte < 10: 
+        col_cible = 5
+    elif qte < 25: 
+        col_cible = 6
+    elif qte < 50: 
+        col_cible = 7
+    elif qte < 100: 
+        col_cible = 8
+    elif qte < 250: 
+        col_cible = 9
+    elif qte < 500: 
+        col_cible = 10
+    elif qte < 1000: 
+        col_cible = 11
+    elif qte < 2500: 
+        col_cible = 12
+    elif qte < 5000: 
+        col_cible = 13
+    else: 
+        col_cible = 14
 
     # 2. Trouver la meilleure ligne correspondant au produit dans le catalogue
     best_row = -1
@@ -122,7 +125,7 @@ def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
     try:
         prix_val = float(df_all.iloc[best_row, col_cible])
         
-        # Sécurité si la cellule de la colonne exacte est vide : on cherche le premier prix valide en reculant vers les petites quantités
+        # Sécurité si la cellule exacte est vide : on cherche le tarif valide le plus proche en reculant
         if pd.isna(prix_val) or prix_val <= 0:
             for alt_col in range(col_cible - 1, 2, -1):
                 if alt_col < df_all.shape[1]:
