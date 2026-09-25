@@ -44,7 +44,7 @@ def obtenir_prochain_numero_devis():
         json.dump({"dernier_num": nouveau_num}, f)
     return nouveau_num
 
-# --- MOTEUR DE LECTURE EXCEL ROBUSTE (PRINT & SIGNALÉTIQUE) ---
+# --- MOTEUR DE LECTURE EXCEL ROBUSTE (PRINT & SIGNALÉTIQUE - Règle Col à Col - 1) ---
 def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
     if not os.path.exists(CATALOGUE_FILE):
         return 0.15
@@ -54,22 +54,45 @@ def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
     except Exception:
         return 0.15
 
+    # Extraction des paliers de quantité de la ligne 1 (colonnes 3 à 14)
+    paliers_cols = []
+    for c in range(3, df_all.shape[1]):
+        val_hdr = df_all.iloc[1, c]
+        try:
+            paliers_cols.append((c, float(val_hdr)))
+        except:
+            pass
+
+    # Détermination de la colonne cible selon la règle : de valeur colonne à colonne suivante - 1
+    col_cible = 3
+    if paliers_cols:
+        for idx, (col_idx, q_seuil) in enumerate(paliers_cols):
+            if idx < len(paliers_cols) - 1:
+                q_prochain = paliers_cols[idx + 1][1]
+                if q_seuil <= qte < q_prochain:
+                    col_cible = col_idx
+                    break
+            else:
+                if qte >= q_seuil:
+                    col_cible = col_idx
+                    break
+    else:
+        # Fallback par défaut
+        if qte <= 4: col_cible = 3
+        elif qte <= 9: col_cible = 4
+        elif qte <= 24: col_cible = 5
+        elif qte <= 49: col_cible = 6
+        elif qte <= 99: col_cible = 7
+        elif qte <= 249: col_cible = 8
+        elif qte <= 499: col_cible = 9
+        elif qte <= 999: col_cible = 10
+        elif qte <= 2499: col_cible = 11
+        elif qte <= 4999: col_cible = 12
+        elif qte <= 9999: col_cible = 13
+        else: col_cible = 14
+
     cat_lower = str(cat_print).lower().strip()
     ref_lower = str(choix_ref).lower().strip()
-
-    # Mappage strict des colonnes du catalogue Excel (Indices 3 à 14)
-    if qte <= 1: col_cible = 3
-    elif qte <= 5: col_cible = 4
-    elif qte <= 10: col_cible = 5
-    elif qte <= 25: col_cible = 6
-    elif qte <= 50: col_cible = 7
-    elif qte <= 100: col_cible = 8
-    elif qte <= 250: col_cible = 9
-    elif qte <= 500: col_cible = 10
-    elif qte <= 1000: col_cible = 11
-    elif qte <= 2500: col_cible = 12
-    elif qte <= 5000: col_cible = 13
-    else: col_cible = 14
 
     best_row = -1
     max_match = -1
@@ -122,7 +145,6 @@ def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
 
 # --- GRILLES TARIFAIRES OFFICIELLES (DTF & BRODERIE CONFORMES EXCEL) ---
 def obtenir_tarif_dtf_unitaire(type_textile, emplacement, qte_totale):
-    # Grilles DTF officielles (Léger / Vif)
     grille_dtf = {
         "Cœur (13x9 cm)": [(5, 6.00), (9, 4.50), (19, 3.60), (29, 2.81), (39, 2.50), (49, 2.40), (99, 2.00), (249, 1.80), (499, 1.60), (999, 1.40), (1999, 1.20), (4999, 1.00), (float('inf'), 0.70)],
         "Opposé Cœur (9x8 cm)": [(5, 6.00), (9, 4.50), (19, 3.60), (29, 2.81), (39, 2.50), (49, 2.40), (99, 2.00), (249, 1.80), (499, 1.60), (999, 1.40), (1999, 1.20), (4999, 1.00), (float('inf'), 0.70)],
@@ -143,18 +165,18 @@ def obtenir_tarif_dtf_unitaire(type_textile, emplacement, qte_totale):
         if qte_totale <= limite:
             prix = p
             break
-    if "Vif" in type_textile: # Majoration coloris vif si applicable
+    if "Vif" in type_textile:
         prix = round(prix * 1.10, 2)
     return prix
 
 def obtenir_tarif_broderie_unitaire(emplacement, qte_totale):
-    # Grilles Broderie officielles exactes
+    # Grilles Broderie officielles exactes (y compris Casquettes / Bonnets corrigées)
     grille_brod = {
         "Poitrine (9x8 cm)": [(3, 9.21), (11, 8.23), (23, 6.50), (47, 5.20), (95, 4.30), (251, 3.80), (503, 3.50), (1007, 3.20), (1511, 2.90), (2015, 2.60), (float('inf'), 2.30)],
         "Dos D10 (25x10 cm)": [(3, 11.35), (11, 10.44), (23, 8.50), (47, 7.10), (95, 6.00), (251, 5.40), (503, 4.90), (1007, 4.50), (1511, 4.10), (2015, 3.70), (float('inf'), 3.30)],
         "Dos Large D20 (25x20 cm)": [(3, 14.21), (11, 13.61), (23, 11.00), (47, 9.20), (95, 7.80), (251, 7.10), (503, 6.50), (1007, 5.90), (1511, 5.30), (2015, 4.80), (float('inf'), 4.20)],
         "Col / Signature (7x2 cm)": [(3, 6.50), (11, 5.63), (23, 4.50), (47, 3.60), (95, 2.90), (251, 2.60), (503, 2.30), (1007, 2.10), (1511, 1.90), (2015, 1.70), (float('inf'), 1.50)],
-        "Casquettes / Bonnets": [(3, 10.47), (11, 9.54), (23, 7.50), (47, 6.00), (95, 5.00), (251, 4.50), (503, 4.10), (1007, 3.70), (1511, 3.30), (2015, 2.90), (float('inf'), 2.50)],
+        "Casquettes / Bonnets": [(3, 10.47), (11, 9.54), (23, 8.57), (47, 7.71), (95, 6.55), (251, 5.35), (503, 4.61), (1007, 4.00), (1511, 3.54), (2015, 3.27), (float('inf'), 3.01)],
         "Parapluie / Bagagerie": [(3, 11.35), (11, 10.44), (23, 8.50), (47, 7.10), (95, 6.00), (251, 5.40), (503, 4.90), (1007, 4.50), (1511, 4.10), (2015, 3.70), (float('inf'), 3.30)],
         "Manche (8x5 cm)": [(3, 10.47), (11, 9.54), (23, 7.50), (47, 6.00), (95, 5.00), (251, 4.50), (503, 4.10), (1007, 3.70), (1511, 3.30), (2015, 2.90), (float('inf'), 2.50)],
         "Pantalon / Poche": [(3, 11.07), (11, 10.71), (23, 8.80), (47, 7.40), (95, 6.20), (251, 5.60), (503, 5.10), (1007, 4.60), (1511, 4.20), (2015, 3.80), (float('inf'), 3.40)],
@@ -430,12 +452,18 @@ for i in range(10):
 
 # --- CALCUL DES QUANTITÉS CUMULÉES ---
 quantites_cumulees_marquages = {}
+quantite_totale_broderie_global = 0
+has_broderie_global = False
+
 for item in articles_saisis:
     if item["type_univers"] == "textile" and not item["sans_marquage"]:
         q = item["quantite"]
         for m in item["marquages"]:
             cle = (m["technique"], m["emplacement"])
             quantites_cumulees_marquages[cle] = quantites_cumulees_marquages.get(cle, 0) + q
+            if "Broderie" in m["technique"]:
+                has_broderie_global = True
+                quantite_totale_broderie_global += q
 
 frais_tech_auto = 19.80 if total_textile_brut > 0 else 0.0
 
@@ -446,12 +474,28 @@ with onglets[10]:
     if not articles_saisis:
         st.warning("Veuillez renseigner au moins un article avec une quantité supérieure à 0.")
     else:
-        supprimer_frais_tech = st.checkbox("⚙️ Supprimer / Offrir les frais techniques de dossier", value=False)
-        frais_techniques_dossier = 0.0 if supprimer_frais_tech else frais_tech_auto
+        # Options globales frais
+        col_f1, col_f2 = st.columns(2)
+        with col_f1:
+            supprimer_frais_tech = st.checkbox("⚙️ Supprimer / Offrir les frais techniques de dossier", value=False)
+            frais_techniques_dossier = 0.0 if supprimer_frais_tech else frais_tech_auto
+        with col_f2:
+            offrir_frais_broderie = st.checkbox("🎁 Offrir les Frais de technique & programme Broderie", value=False)
+
+        # Calcul automatique des frais de programme broderie selon la règle exacte
+        if has_broderie_global and not offrir_frais_broderie:
+            if quantite_totale_broderie_global == 1:
+                frais_prog_broderie = 52.0
+            elif 2 <= quantite_totale_broderie_global <= 3:
+                frais_prog_broderie = 41.0
+            elif 4 <= quantite_totale_broderie_global <= 11:
+                frais_prog_broderie = 23.0
+            else:
+                frais_prog_broderie = 0.0
+        else:
+            frais_prog_broderie = 0.0
 
         lignes_devis_global = []
-        has_broderie_global = False
-        quantite_totale_broderie = 0
 
         for item in articles_saisis:
             q = item["quantite"]
@@ -468,20 +512,11 @@ with onglets[10]:
                     
                     if "Broderie" in m["technique"]:
                         tarif_m = obtenir_tarif_broderie_unitaire(m["emplacement"], qte_tot_ref)
-                        has_broderie_global = True
-                        quantite_totale_broderie += q
                     else:
                         tarif_m = obtenir_tarif_dtf_unitaire(m["technique"], m["emplacement"], qte_tot_ref)
                         
                     tot_marquages += tarif_m * q
                     marquages_calcules.append({"nom": f"{m['technique']} ({m['emplacement']})", "tarif": tarif_m})
-
-            if has_broderie_global:
-                if 1 <= quantite_totale_broderie <= 3: frais_prog_broderie = 52.0
-                elif 4 <= quantite_totale_broderie <= 11: frais_prog_broderie = 41.0
-                else: frais_prog_broderie = 23.0
-            else:
-                frais_prog_broderie = 0.0
 
             coût_ens_unit = (1.375 if q<=11 else (1.243 if q<=24 else (1.166 if q<=49 else (1.111 if q<=99 else (1.078 if q<=249 else (1.056 if q<=499 else (1.023 if q<=999 else (1.001 if q<=1999 else 0.979)))))))) if item["option_ensachage"] else 0.0
             tot_ens = coût_ens_unit * q
@@ -498,7 +533,6 @@ with onglets[10]:
                 **item,
                 "prix_vet_unit": px_support,
                 "marquages_calcules": marquages_calcules,
-                "frais_prog_broderie": frais_prog_broderie,
                 "coût_ensachage_unit": coût_ens_unit,
                 "coût_assurance_unit": coût_ass_unit,
                 "coût_stockage_unit": coût_stock_unit,
@@ -506,8 +540,7 @@ with onglets[10]:
             })
 
         sous_total_articles = sum([item["total_ligne_ht"] for item in lignes_devis_global])
-        frais_prog_total = lignes_devis_global[0]["frais_prog_broderie"] if lignes_devis_global else 0.0
-        montant_base_port = sous_total_articles + frais_prog_total + frais_techniques_dossier
+        montant_base_port = sous_total_articles + frais_prog_broderie + frais_techniques_dossier
         
         frais_port = 0.0 if offrir_port else calculer_frais_port(montant_base_port, zone_livraison)
         
@@ -520,8 +553,9 @@ with onglets[10]:
 
         st.write(f"**Quantité globale pièces :** {quantite_globale_totale}")
         st.write(f"**Sous-Total Articles HT :** {sous_total_articles:.2f} €")
-        if frais_prog_total > 0:
-            st.write(f"**Frais de technique & programme Broderie :** {frais_prog_total:.2f} € HT")
+        if frais_prog_broderie > 0 or offrir_frais_broderie:
+            libelle_fp = f"{frais_prog_broderie:.2f} € HT" if not offrir_frais_broderie else "Offerts (0.00 €)"
+            st.write(f"**Frais de technique & programme Broderie :** {libelle_fp}")
         st.write(f"**Frais techniques de dossier :** {frais_techniques_dossier:.2f} € HT")
         st.write(f"**Frais de port ({zone_livraison}) :** {frais_port:.2f} € HT" if not offrir_port else "**Frais de port :** Offerts (0.00 €)")
         st.markdown(f"### **Total Général HT : {total_general_ht:.2f} €** | **TOTAL TTC (20%) : {total_ttc:.2f} €**")
@@ -625,15 +659,17 @@ with onglets[10]:
                 if item['option_stockage']:
                     table_data.append([Paragraph("&nbsp;&nbsp;&bull; Option : Mise en stockage + picking", style_cell), str(item['quantite']), f"{item['coût_stockage_unit']:.2f} €", f"{item['coût_stockage_unit']*item['quantite']:.2f} €"])
 
-            if frais_prog_total > 0:
-                table_data.append([Paragraph("Frais de technique & programme Broderie", style_cell), "1", f"{frais_prog_total:.2f} €", f"{frais_prog_total:.2f} €"])
+            if frais_prog_broderie > 0 or offrir_frais_broderie:
+                fp_libelle = "Frais de technique & programme Broderie" if not offrir_frais_broderie else "Frais de technique & programme Broderie - Offerts"
+                fp_val = f"{frais_prog_broderie:.2f} €" if not offrir_frais_broderie else "0.00 €"
+                table_data.append([Paragraph(fp_libelle, style_cell), "1", fp_val, fp_val])
 
             if frais_techniques_dossier > 0:
                 table_data.append([Paragraph("Frais techniques de dossier", style_cell), "1", f"{frais_techniques_dossier:.2f} €", f"{frais_techniques_dossier:.2f} €"])
             
             if frais_port > 0 or offrir_port:
                 port_libelle = f"Frais d'envoi ({zone_livraison})" if not offrir_port else f"Frais d'envoi ({zone_livraison}) - Offerts"
-                port_val = f"{frais_port:.2f} €"
+                port_val = f"{frais_port:.2f} €" if not offrir_port else "0.00 €"
                 table_data.append([Paragraph(port_libelle, style_cell), "1", port_val, port_val])
 
             t_main = Table(table_data, colWidths=[260, 45, 115, 120])
