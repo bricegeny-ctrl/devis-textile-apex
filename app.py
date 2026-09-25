@@ -46,7 +46,7 @@ def obtenir_prochain_numero_devis():
         json.dump({"dernier_num": nouveau_num}, f)
     return nouveau_num
 
-# --- MOTEUR DE LECTURE EXCEL : CORRESPONDANCE ROBUSTE ADHÉSIFS & FLYERS ---
+# --- MOTEUR DE LECTURE EXCEL : NETTOYAGE ROBUSTE DES FORMATS (VIRGULES & EUROS) ---
 def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
     if not os.path.exists(CATALOGUE_FILE):
         return 0.15
@@ -71,7 +71,7 @@ def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
     elif qte < 50:
         col_cible = 7
     elif qte < 250:
-        col_cible = 8    # 100 ex (et de 50 à 249 ex) -> Colonne 8 (Index I)
+        col_cible = 8    # 100 ex -> Index 8 (Colonne I)
     elif qte < 500:
         col_cible = 9
     elif qte < 1000:
@@ -85,7 +85,7 @@ def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
     else:
         col_cible = 14
 
-    # 1. Recherche ultra-précise de la ligne du produit
+    # 1. Recherche de la ligne du produit
     best_row = -1
     max_score = -1
 
@@ -93,18 +93,15 @@ def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
         row_cat = str(df_all.iloc[r, 0]).lower().strip()
         row_ref = str(df_all.iloc[r, 2]).lower().strip()
 
-        # On s'assure d'abord que la catégorie correspond un minimum
         if cat_lower not in row_cat and row_cat not in cat_lower:
             continue
 
         score = 0
-        # Correspondance exacte du modèle prioritaire
         if ref_lower == row_ref:
             score += 100
         elif ref_lower in row_ref or row_ref in ref_lower:
             score += 50
         else:
-            # Correspondance par mots-clés significatifs
             mots_ref = [m for m in ref_lower.split() if len(m) > 2]
             match_mots = sum(1 for m in mots_ref if m in row_ref)
             score += match_mots * 10
@@ -113,34 +110,36 @@ def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
             max_score = score
             best_row = r
 
-    # Si aucun score pertinent n'est atteint, on cherche a minima un produit de la bonne catégorie qui a un prix dans la colonne
-    if best_row == -1 or max_score < 10:
-        for r in range(2, len(df_all)):
-            row_cat = str(df_all.iloc[r, 0]).lower().strip()
-            if cat_lower in row_cat or row_cat in cat_lower:
-                # Vérifie si cette ligne a bien une valeur non vide pour éviter de tomber sur une ligne de titre/vide
-                val_test = df_all.iloc[r, col_cible]
-                if not pd.isna(val_test) and str(val_test).strip() != "":
-                    best_row = r
-                    break
-
     if best_row == -1:
         return 0.15
 
-    # 2. Extraction sécurisée du prix dans la colonne ciblée
+    # Fonction interne pour nettoyer et convertir proprement n'importe quelle cellule Excel en float
+    def nettoyer_valeur_cellule(val):
+        if pd.isna(val):
+            return -1.0
+        if isinstance(val, (int, float)):
+            return float(val)
+        # Si c'est du texte (ex: "0,3135", "0.3135 €", " 0,31 ")
+        val_str = str(val).replace('€', '').replace('EUR', '').replace(' ', '').replace(',', '.').strip()
+        try:
+            return float(val_str)
+        except Exception:
+            return -1.0
+
+    # 2. Extraction sécurisée et conversion du prix
     try:
-        prix_val = float(df_all.iloc[best_row, col_cible])
+        prix_val = nettoyer_valeur_cellule(df_all.iloc[best_row, col_cible])
         
-        # Si la case ciblée est vide, on cherche le dernier prix valide en reculant sur les colonnes précédentes
-        if pd.isna(prix_val) or prix_val <= 0:
+        # Si la case ciblée est vide ou invalide, on cherche sur les colonnes précédentes
+        if prix_val <= 0:
             for alt_col in range(col_cible - 1, 2, -1):
                 if alt_col < df_all.shape[1]:
-                    alt_val = float(df_all.iloc[best_row, alt_col])
-                    if not pd.isna(alt_val) and alt_val > 0:
+                    alt_val = nettoyer_valeur_cellule(df_all.iloc[best_row, alt_col])
+                    if alt_val > 0:
                         prix_val = alt_val
                         break
 
-        if pd.isna(prix_val) or prix_val <= 0:
+        if prix_val <= 0:
             return 0.15
             
         return round(prix_val, 4)
