@@ -46,7 +46,7 @@ def obtenir_prochain_numero_devis():
         json.dump({"dernier_num": nouveau_num}, f)
     return nouveau_num
 
-# --- MOTEUR DE LECTURE EXCEL AVEC INDEX DE COLONNES PRÉCIS (4 à 15) ---
+# --- MOTEUR DE LECTURE EXCEL AVEC LOGIQUE DE PALIERS STRICTS ---
 def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
     if not os.path.exists(CATALOGUE_FILE):
         return 0.15
@@ -59,46 +59,43 @@ def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
     cat_lower = str(cat_print).lower().strip()
     ref_lower = str(choix_ref).lower().strip()
 
-    # Mapping exact des colonnes 4 à 15 (index 3 à 14) selon votre ligne d'en-tête Excel :
-    # Col 4 (index 3)  = 1 ex
-    # Col 5 (index 4)  = 5 ex
-    # Col 6 (index 5)  = 10 ex
-    # Col 7 (index 6)  = 25 ex
-    # Col 8 (index 7)  = 50 ex
-    # Col 9 (index 8)  = 100 ex ("100 (ou palier)")
-    # Col 10 (index 9) = 250 ex
-    # Col 11 (index 10) = 500 ex
-    # Col 12 (index 11) = 1000 ex
-    # Col 13 (index 12) = 2500 ex
-    # Col 14 (index 13) = 5000 ex
-    # Col 15 (index 14) = 10000 ex
+    # Liste des paliers de quantité et leur colonne associée (index 3 à 14) :
+    # (Seuil limite supérieure, index de colonne)
+    # Si qte <= 1 -> col 3 (1 ex)
+    # Si qte <= 5 -> col 4 (5 ex)
+    # Si qte <= 10 -> col 5 (10 ex)
+    # Si qte <= 25 -> col 6 (25 ex)
+    # Si qte <= 50 -> col 7 (50 ex)
+    # Si qte <= 100 -> col 8 (100 ex)
+    # Si qte <= 250 -> col 9 (250 ex)
+    # Si qte <= 500 -> col 10 (500 ex)
+    # Si qte <= 1000 -> col 11 (1000 ex)
+    # Si qte <= 2500 -> col 12 (2500 ex)
+    # Si qte <= 5000 -> col 13 (5000 ex)
+    # Au-delà -> col 14 (10000 ex)
 
-    if qte <= 1:
-        col_cible = 3
-    elif qte <= 5:
-        col_cible = 4
-    elif qte <= 10:
-        col_cible = 5
-    elif qte <= 25:
-        col_cible = 6
-    elif qte <= 50:
-        col_cible = 7
-    elif qte <= 100:
-        col_cible = 8
-    elif qte <= 250:
-        col_cible = 9
-    elif qte <= 500:
-        col_cible = 10
-    elif qte <= 1000:
-        col_cible = 11
-    elif qte <= 2500:
-        col_cible = 12
-    elif qte <= 5000:
-        col_cible = 13
-    else:
-        col_cible = 14
+    paliers_seuils = [
+        (1, 3),
+        (5, 4),
+        (10, 5),
+        (25, 6),
+        (50, 7),
+        (100, 8),
+        (250, 9),
+        (500, 10),
+        (1000, 11),
+        (2500, 12),
+        (5000, 13),
+        (float('inf'), 14)
+    ]
 
-    # 2. Trouver la meilleure ligne correspondant au produit
+    col_cible = 14 # Par défaut au max
+    for seuil, col_idx in paliers_seuils:
+        if qte <= seuil:
+            col_cible = col_idx
+            break
+
+    # 2. Trouver la meilleure ligne correspondant au produit dans le catalogue
     best_row = -1
     max_match = -1
 
@@ -121,19 +118,19 @@ def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
     if best_row == -1 or max_match <= 0:
         return 0.15
 
-    # 3. Extraire le prix exact à l'intersection de la ligne et de la colonne ciblée
+    # 3. Extraire le prix exact de la cellule correspondant au palier actif
     try:
         prix_val = float(df_all.iloc[best_row, col_cible])
         
-        # Si la cellule est vide, recherche de sécurité dans la colonne adjacente
+        # Sécurité si la cellule de la colonne exacte est vide : on cherche le premier prix valide en reculant vers les petites quantités
         if pd.isna(prix_val) or prix_val <= 0:
-            for alt_col in [col_cible + 1, col_cible - 1]:
-                if 3 <= alt_col < df_all.shape[1]:
+            for alt_col in range(col_cible - 1, 2, -1):
+                if alt_col < df_all.shape[1]:
                     alt_val = float(df_all.iloc[best_row, alt_col])
                     if not pd.isna(alt_val) and alt_val > 0:
                         prix_val = alt_val
                         break
-                        
+
         if pd.isna(prix_val) or prix_val <= 0:
             return 0.15
         return round(prix_val, 4)
@@ -295,6 +292,7 @@ for i in range(10):
                 })
                 total_textile_brut += qte * prix_vetement_ht
         else:
+            else:
             # --- SELECTION PRINT & SIGNALETIQUE + OPTION AUTRE (SAISIE LIBRE) ---
             cat_print = st.selectbox(
                 f"Catégorie Print & Signalétique {i+1}",
@@ -308,21 +306,48 @@ for i in range(10):
             )
             
             if "Autre" in cat_print:
+                # Saisie libre pour un produit hors catalogue
+                choix_ref = st.text_input(f"Nom / Désignation du produit libre {i+1}", value="Produit personnalisé", key=f"ref_libre_{i}")
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    qte = st.number_input(f"Quantité (exemplaires) {i+1}", min_value=0, value=1 if i==0 else 0, key=f"qte_print_{i}")
+                    # Prix unitaire en saisie libre pour le hors catalogue
+                    prix_vetement_ht = st.number_input(f"Prix unitaire HT (€) {i+1} (Saisie libre)", min_value=0.0, value=10.00, format="%.4f", key=f"px_libre_{i}")
+                with col2:
+                    st.info("💡 Saisie manuelle active (produit hors catalogue).")
+                    remise_fidelite = st.number_input(f"Remise commerciale (%) {i+1}", min_value=0.0, max_value=100.0, value=0.0, key=f"rem_print_{i}")
+            else:
+                options_articles = {
+                    "Flyers": ["Flyer A6 - 135g couché brillant - Recto", "Flyer A6 - 135g couché brillant - Recto/Verso", "Flyer A6 - 170g couché demi mat - Recto", "Flyer A6 - 170g couché demi mat - Recto/Verso", "Flyer A6 - 250g couché - Recto", "Flyer A6 - 250g couché - Recto/Verso", "Flyer A6 - 350g couché - Recto", "Flyer A6 - 350g couché - Recto/Verso", "Flyer A6 - 115g recyclé - Recto", "Flyer A6 - 115g recyclé - Recto/Verso", "Flyer A5 - 135g couché brillant - Recto", "Flyer A5 - 135g couché brillant - Recto/Verso", "Flyer A5 - 170g couché demi mat - Recto", "Flyer A5 - 170g couché demi mat - Recto/Verso"],
+                    "Dépliants": ["Dépliant A6 fermé / A5 ouvert (1 pli) - 135g couché brillant", "Dépliant A5 fermé / A4 ouvert (1 pli) - 135g couché brillant"],
+                    "Blocs notes": ["Bloc Note collé - Format A6 - 25 Feuilles - 90 Gr Offset", "Bloc Note collé - Format A5 - 50 Feuilles - 90 Gr Offset"],
+                    "Chemises de présentation": ["Chemise de présentation A4 - 300g - 2 rabats"],
+                    "Banderoles": ["Banderole 200 x 80 cm - 510g M1 avec œillets", "Banderole 300 x 100 cm - 510g M1 avec œillets"],
+                    "Panneaux de chantier": ["Panneau Akylux 60 x 40 cm - 3,5mm", "Panneau Akylux 80 x 60 cm - 3,5mm"],
+                    "Roll-Up": ["Roll-Up Eco - Bâche PVC 510g M1 - 85x200cm"],
+                    "Sous bocks": ["Sous bock carton 580g - 9,3x9,3 cm"],
+                    "Adhésifs": ["Adhésif vinyl classique 10x10cm"],
+                    "Cartes de visite": ["Carte de visite standard - 350g - Recto/Verso"],
+                    "Calendriers": ["Calendrier A4 - 250g couché brillant"],
+                    "Menus restaurants": ["Menu restaurant indéchirable 300g - A5"]
+                }
+                
                 choix_ref = st.selectbox(f"Modèle exact {i+1}", options_articles.get(cat_print, ["Article standard"]), key=f"ref_print_{i}")
                 
-                # Calcul automatique instantané du prix unitaire depuis le catalogue Excel
-                prix_unitaire_auto = obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte)
-
                 col1, col2 = st.columns(2)
                 with col1:
                     qte = st.number_input(f"Quantité (exemplaires) {i+1}", min_value=0, value=100 if i==0 else 0, key=f"qte_print_{i}")
                     
-                    # On utilise directement la valeur calculée sans permettre une modification parasite qui bloque le state
-                    st.text_input(f"Prix unitaire HT (€) {i+1} (Catalogue)", value=f"{prix_unitaire_auto:.4f} €", disabled=True, key=f"px_print_display_{i}_{qte}_{choix_ref}")
-                    prix_vetement_ht = prix_unitaire_auto
+                    # --- CALCUL AUTOMATIQUE INSTANTANÉ (PALIERS STRICTS) ---
+                    prix_unitaire_auto = obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte)
+                    prix_vetement_ht = prix_unitaire_auto  # Affectation directe pour le devis
+                    
+                    # Affichage clair et dynamique du prix unitaire calculé selon la tranche
+                    st.metric(label=f"Prix unitaire HT (€) {i+1} (Catalogue auto)", value=f"{prix_unitaire_auto:.4f} €")
                     
                 with col2:
-                    st.success(f"✅ Tarif catalogue appliqué ({qte} ex) : **{prix_unitaire_auto:.4f} € HT**")
+                    st.success(f"✅ Tarif appliqué ({qte} ex) : **{prix_unitaire_auto:.4f} € HT**")
                     remise_fidelite = st.number_input(f"Remise commerciale (%) {i+1}", min_value=0.0, max_value=100.0, value=0.0, key=f"rem_print_{i}")
                     
                     # --- CALCUL AUTOMATIQUE SYNCHRONISÉ ---
