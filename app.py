@@ -283,24 +283,24 @@ nb_articles = st.number_input("Nombre d'articles dans le devis", min_value=1, va
 for i in range(nb_articles):
     st.markdown("---")
     
-    # --- SAISIE TEXTILE (Remettez ou gardez vos champs textiles ici) ---
-    nom_article = st.text_input(f"Nom de l'article textile {i+1}", value=f"Article {i+1}", key=f"nom_art_{i}")
-    qte = st.number_input(f"Quantité textile {i+1}", min_value=0, value=0, key=f"qte_textile_{i}")
-    prix_vetement_ht = st.number_input(f"Prix unitaire textile HT (€) {i+1}", min_value=0.0, value=0.0, format="%.2f", key=f"px_textile_{i}")
+    # --- SAISIE TEXTILE (Clés avec préfixe 'txt_' pour éviter les doublons) ---
+    nom_article = st.text_input(f"Nom de l'article textile {i+1}", value=f"Article {i+1}", key=f"txt_nom_{i}")
+    qte_textile = st.number_input(f"Quantité textile {i+1}", min_value=0, value=0, key=f"txt_qte_{i}")
+    prix_vetement_ht = st.number_input(f"Prix unitaire textile HT (€) {i+1}", min_value=0.0, value=0.0, format="%.2f", key=f"txt_px_{i}")
     
-    sans_marquage = st.checkbox(f"Sans marquage {i+1}", key=f"sans_marq_{i}")
-    marquages = []  # Remplacez par votre liste de marquages si nécessaire
-    option_ensachage = st.checkbox(f"Option ensachage individuel {i+1}", key=f"ens_{i}")
+    sans_marquage = st.checkbox(f"Sans marquage {i+1}", key=f"txt_sans_marq_{i}")
+    marquages = [] 
+    option_ensachage = st.checkbox(f"Option ensachage individuel {i+1}", key=f"txt_ens_{i}")
     type_sachet = "Standard"
-    option_assurance = st.checkbox(f"Option assurance garantie textile {i+1}", key=f"ass_{i}")
-    option_stockage = st.checkbox(f"Option stockage + picking {i+1}", key=f"stock_{i}")
+    option_assurance = st.checkbox(f"Option assurance garantie textile {i+1}", key=f"txt_ass_{i}")
+    option_stockage = st.checkbox(f"Option stockage + picking {i+1}", key=f"txt_stock_{i}")
     remise_fidelite = 0.0
 
-    if qte > 0:
+    if qte_textile > 0:
         articles_saisis.append({
             "type_univers": "textile",
             "nom_article": nom_article,
-            "quantite": qte,
+            "quantite": qte_textile,
             "prix_vet_unit": prix_vetement_ht,
             "sans_marquage": sans_marquage,
             "marquages": marquages,
@@ -310,7 +310,7 @@ for i in range(nb_articles):
             "option_stockage": option_stockage,
             "remise_fidelite": remise_fidelite
         })
-        total_textile_brut += qte * prix_vetement_ht
+        total_textile_brut += qte_textile * prix_vetement_ht
 
     else:
         # --- SELECTION PRINT & SIGNALETIQUE + OPTION AUTRE (DYNAMIQUE) ---
@@ -322,65 +322,49 @@ for i in range(nb_articles):
                 "Adhésifs", "Cartes de visite", "Calendriers", "Menus restaurants",
                 "➕ Autre / Produit hors catalogue (Saisie libre)"
             ],
-            key=f"cat_print_{i}"
+            key=f"print_cat_{i}"
         )
 
         if "Autre" in cat_print:
-            choix_ref = st.text_input(f"Nom / Désignation du produit libre {i+1}", value="Produit personnalisé", key=f"ref_libre_{i}")
+            choix_ref = st.text_input(f"Nom / Désignation du produit libre {i+1}", value="Produit personnalisé", key=f"print_ref_libre_{i}")
             coll, col2 = st.columns(2)
             with coll:
-                qte = st.number_input(f"Quantité (exemplaires) {i+1}", min_value=0, value=1 if i==0 else 0, key=f"qte_print_{i}")
-                prix_vetement_ht = st.number_input(f"Prix unitaire HT (€) {i+1} (Saisie libre)", min_value=0.0, value=10.00, format="%.4f", key=f"px_libre_{i}")
+                qte_print = st.number_input(f"Quantité (exemplaires) {i+1}", min_value=0, value=1 if i==0 else 0, key=f"print_qte_libre_{i}")
+                prix_vetement_ht = st.number_input(f"Prix unitaire HT (€) {i+1} (Saisie libre)", min_value=0.0, value=10.00, format="%.4f", key=f"print_px_libre_{i}")
             with col2:
                 st.info("💡 Saisie manuelle active (produit hors catalogue).")
-                remise_fidelite = st.number_input(f"Remise commerciale (%) {i+1}", min_value=0.0, max_value=100.0, value=0.0, key=f"rem_print_{i}")
+                remise_fidelite = st.number_input(f"Remise commerciale (%) {i+1}", min_value=0.0, max_value=100.0, value=0.0, key=f"print_rem_libre_{i}")
         else:
             options_trouvees = obtenir_modeles_pour_categorie(cat_print)
             
             if not options_trouvees:
                 options_trouvees = ["Article standard"]
 
-            choix_ref = st.selectbox(f"Modèle exact {i+1}", options_trouvees, key=f"ref_print_{i}")
+            choix_ref = st.selectbox(f"Modèle exact {i+1}", options_trouvees, key=f"print_modele_{i}")
 
             coll, col2 = st.columns(2)
             with coll:
-                qte = st.number_input(f"Quantité (exemplaires) {i+1}", min_value=0, value=100 if i==0 else 0, key=f"qte_print_{i}")
+                qte_print = st.number_input(f"Quantité (exemplaires) {i+1}", min_value=0, value=100 if i==0 else 0, key=f"print_qte_cat_{i}")
                 
-                # --- CALCUL AUTOMATIQUE INSTANTANÉ (PALIERS STRICTS) ---
-                prix_unitaire_auto = obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte)
-                prix_vetement_ht = prix_unitaire_auto  # Affectation directe pour le devis
+                # --- CALCUL AUTOMATIQUE INSTANTANÉ ---
+                prix_unitaire_auto = obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte_print)
+                prix_vetement_ht = prix_unitaire_auto  
 
-                # Affichage clair et dynamique du prix unitaire calculé selon la tranche
                 st.metric(label=f"Prix unitaire HT (€) {i+1} (Catalogue auto)", value=f"{prix_unitaire_auto:.4f} €")
 
             with col2:
-                st.success(f"✅ Tarif appliqué ({qte} ex) : **{prix_unitaire_auto:.4f} € HT**")
-                remise_fidelite = st.number_input(f"Remise commerciale (%) {i+1}", min_value=0.0, max_value=100.0, value=0.0, key=f"rem_print_{i}")
+                st.success(f"✅ Tarif appliqué ({qte_print} ex) : **{prix_unitaire_auto:.4f} € HT**")
+                remise_fidelite = st.number_input(f"Remise commerciale (%) {i+1}", min_value=0.0, max_value=100.0, value=0.0, key=f"print_rem_cat_{i}")
         
-        # Enregistrement si c'est un article Print avec une quantité > 0
-        if qte > 0 and "textile" not in str(locals().get('type_univers', '')):
-            articles_saisis.append({
-                "type_univers": "print",
-                "nom_article": f"{cat_print} - {choix_ref}" if "Autre" not in cat_print else choix_ref,
-                "quantite": qte,
-                "prix_vet_unit": prix_vetement_ht,
-                "remise_fidelite": remise_fidelite
-            })
-
-        if qte > 0 and "Autre" in cat_print or (not "textile" in ...): # (gardez bien votre bloc d'enregistrement print en dessous)
-
-            if qte > 0:
+        # Enregistrement si c'est un article Print
+        if qte_textile == 0:
+            qte_effective = qte_print if 'qte_print' in locals() else 0
+            if qte_effective > 0:
                 articles_saisis.append({
                     "type_univers": "print",
                     "nom_article": f"{cat_print} - {choix_ref}" if "Autre" not in cat_print else choix_ref,
-                    "quantite": qte,
+                    "quantite": qte_effective,
                     "prix_vet_unit": prix_vetement_ht,
-                    "sans_marquage": True,
-                    "marquages": [],
-                    "option_ensachage": False,
-                    "type_sachet": "",
-                    "option_assurance": False,
-                    "option_stockage": False,
                     "remise_fidelite": remise_fidelite
                 })
 
