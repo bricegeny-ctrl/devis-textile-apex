@@ -47,6 +47,22 @@ def obtenir_prochain_numero_devis():
     return nouveau_num
 
 # --- MOTEUR DE LECTURE EXCEL : GESTION DES PRIX UNIQUES ET SÉCURITÉ GLOBALE ---
+def obtenir_modeles_pour_categorie(cat_print):
+    if not os.path.exists(CATALOGUE_FILE):
+        return ["Article standard"]
+    try:
+        df_all = pd.read_excel(CATALOGUE_FILE, sheet_name=0, header=None)
+        modeles = []
+        cat_lower = str(cat_print).lower().strip()
+        for r in range(2, len(df_all)):
+            row_cat = str(df_all.iloc[r, 0]).lower().strip()
+            row_ref = str(df_all.iloc[r, 2]).strip()
+            if (cat_lower in row_cat or row_cat in cat_lower) and row_ref and row_ref not in modeles:
+                modeles.append(row_ref)
+        return modeles if modeles else ["Article standard"]
+    except Exception:
+        return ["Article standard"]
+
 def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
     if not os.path.exists(CATALOGUE_FILE):
         return 0.15
@@ -59,33 +75,19 @@ def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
     cat_lower = str(cat_print).lower().strip()
     ref_lower = str(choix_ref).lower().strip()
 
-    # Détermination de la colonne cible idéale selon la quantité
-    if qte >= 10000:
-        col_cible = 14
-    elif qte >= 5000:
-        col_cible = 13
-    elif qte >= 2500:
-        col_cible = 12
-    elif qte >= 1000:
-        col_cible = 11
-    elif qte >= 500:
-        col_cible = 10
-    elif qte >= 250:
-        col_cible = 9
-    elif qte >= 100:
-        col_cible = 8
-    elif qte >= 50:
-        col_cible = 7
-    elif qte >= 25:
-        col_cible = 6
-    elif qte >= 10:
-        col_cible = 5
-    elif qte >= 5:
-        col_cible = 4
-    else:
-        col_cible = 3
+    if qte >= 10000: col_cible = 14
+    elif qte >= 5000: col_cible = 13
+    elif qte >= 2500: col_cible = 12
+    elif qte >= 1000: col_cible = 11
+    elif qte >= 500: col_cible = 10
+    elif qte >= 250: col_cible = 9
+    elif qte >= 100: col_cible = 8
+    elif qte >= 50: col_cible = 7
+    elif qte >= 25: col_cible = 6
+    elif qte >= 10: col_cible = 5
+    elif qte >= 5: col_cible = 4
+    else: col_cible = 3
 
-    # Recherche de la ligne exacte du produit
     best_row = -1
     max_match = -1
 
@@ -94,13 +96,9 @@ def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
         row_ref = str(df_all.iloc[r, 2]).lower().strip()
 
         score = 0
-        if cat_lower in row_cat or row_cat in cat_lower:
-            score += 10
-        
-        if ref_lower == row_ref:
-            score += 50
-        elif ref_lower in row_ref or row_ref in ref_lower:
-            score += 25
+        if cat_lower in row_cat or row_cat in cat_lower: score += 10
+        if ref_lower == row_ref: score += 50
+        elif ref_lower in row_ref or row_ref in ref_lower: score += 25
 
         if score > max_match:
             max_match = score
@@ -109,11 +107,8 @@ def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
     if best_row == -1:
         return 0.15
 
-    # Extraction sécurisée avec repli intelligent vers la gauche si la colonne ciblée est vide (cas des prix uniques comme les banderoles)
     try:
         prix_val = -1.0
-        
-        # On essaie de lire la colonne cible, ou les colonnes juste avant (vers la gauche) si elle est vide
         for c in range(col_cible, 2, -1):
             if c < df_all.shape[1]:
                 val = df_all.iloc[best_row, c]
@@ -126,7 +121,6 @@ def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
                     except Exception:
                         continue
 
-        # Si vraiment rien n'est trouvé sur la ligne, on cherche un prix de secours à l'index 3 (colonne D)
         if prix_val <= 0:
             val_secours = df_all.iloc[best_row, 3]
             if not pd.isna(val_secours) and str(val_secours).strip() != "":
@@ -223,7 +217,6 @@ client_email = st.sidebar.text_input("Email", "client@exemple.com")
 client_contact_tel = st.sidebar.text_input("Téléphone", "0600000000")
 
 logo_file = st.sidebar.file_uploader("Logo entreprise (PNG/JPG)", type=["png", "jpg", "jpeg"])
-logo_defaut_github = "logo.png"
 
 st.sidebar.markdown("---")
 zone_livraison = st.sidebar.selectbox("Zone de Livraison", ["France Continentale", "Livraison Corse, Monaco ou Andorre", "Espace UE"])
@@ -231,18 +224,16 @@ offrir_port = st.sidebar.checkbox("🎁 Offrir les frais de port", value=False)
 conseiller_nom = st.sidebar.selectbox("Commercial / Conseiller", ["Brice Geny", "Brice Bugna"])
 mode_reglement = st.sidebar.selectbox("Mode de Règlement", ["Virement bancaire 30 jours", "Comptant à la commande", "50% à la commande, 50% à 30 jours"])
 
-# --- INTERFACE PRINCIPALE ---
+# --- INTERFACE PRINCIPALE (ONGLETS UNIQUES) ---
 noms_onglets = [f"Article {i+1}" for i in range(10)] + ["📊 Général & Devis", "📈 Suivi CRM"]
 onglets = st.tabs(noms_onglets)
 
 articles_saisis = []
 total_textile_brut = 0.0
 
-# C'est ici que vous collez tout le bloc propre :
-onglets = st.tabs([f"Article {i+1}" for i in range(10)])
-
-for i, onglet in enumerate(onglets):
-    with onglet:
+# --- BOUCLE DE CONFIGURATION DES 10 ARTICLES ---
+for i in range(10):
+    with onglets[i]:
         st.markdown(f"### Configuration de l'Article {i+1}")
         
         univers = st.radio(
@@ -269,6 +260,7 @@ for i, onglet in enumerate(onglets):
                     "quantite": qte,
                     "prix_vet_unit": prix_vetement_ht,
                     "sans_marquage": sans_marquage,
+                    "marquages": [],  # Clé sécurisée pour éviter le KeyError
                     "option_ensachage": option_ensachage,
                     "option_assurance": option_assurance,
                     "option_stockage": option_stockage,
@@ -329,15 +321,15 @@ for i, onglet in enumerate(onglets):
 # --- CALCUL DES QUANTITÉS CUMULÉES ---
 quantites_cumulees_marquages = {}
 for item in articles_saisis:
-    if item["type_univers"] == "textile" and not item["sans_marquage"]:
+    if item["type_univers"] == "textile" and not item.get("sans_marquage", False):
         q = item["quantite"]
-        for m in item["marquages"]:
+        for m in item.get("marquages", []):
             cle = (m["technique"], m["emplacement"])
             quantites_cumulees_marquages[cle] = quantites_cumulees_marquages.get(cle, 0) + q
 
 frais_tech_auto = 19.80 if total_textile_brut > 0 else 0.0
 
-# --- ONGLET GÉNÉRAL & DEVIS ---
+# --- ONGLET 11 : GÉNÉRAL & DEVIS ---
 with onglets[10]:
     st.subheader("📊 Récapitulatif Général & Génération du Devis Professionnel")
 
@@ -359,8 +351,8 @@ with onglets[10]:
             marquages_calcules = []
             tot_marquages = 0.0
             
-            if item["type_univers"] == "textile" and not item["sans_marquage"]:
-                for m in item["marquages"]:
+            if item["type_univers"] == "textile" and not item.get("sans_marquage", False):
+                for m in item.get("marquages", []):
                     cle = (m["technique"], m["emplacement"])
                     qte_tot_ref = quantites_cumulees_marquages.get(cle, q)
                     
@@ -375,31 +367,19 @@ with onglets[10]:
                     marquages_calcules.append({"nom": f"{m['technique']} ({m['emplacement']})", "tarif": tarif_m})
 
             if has_broderie_global:
-                if 2 <= quantite_totale_broderie <= 3:
-                    frais_prog_broderie = 41.0
-                elif 4 <= quantite_totale_broderie <= 11:
-                    frais_prog_broderie = 23.0
-                else:
-                    frais_prog_broderie = 0.0
+                if 2 <= quantite_totale_broderie <= 3: frais_prog_broderie = 41.0
+                elif 4 <= quantite_totale_broderie <= 11: frais_prog_broderie = 23.0
+                else: frais_prog_broderie = 0.0
             else:
                 frais_prog_broderie = 0.0
 
-            if item["option_ensachage"]:
-                coût_ens_unit = 1.38 if q<=11 else (1.24 if q<=24 else (1.17 if q<=49 else (1.11 if q<=99 else (1.08 if q<=249 else (1.06 if q<=499 else 1.00)))))
-            else:
-                coût_ens_unit = 0.0
+            coût_ens_unit = 1.38 if (item.get("option_ensachage") and q<=11) else 0.0
             tot_ens = coût_ens_unit * q
 
-            if item["option_assurance"]:
-                coût_ass_unit = 3.08 if q<=11 else (2.38 if q<=24 else (1.83 if q<=49 else (1.25 if q<=99 else (0.98 if q<=249 else (0.70 if q<=499 else (0.64 if q<=999 else 0.61))))))
-            else:
-                coût_ass_unit = 0.0
+            coût_ass_unit = 3.08 if (item.get("option_assurance") and q<=11) else 0.0
             tot_ass = coût_ass_unit * q
 
-            if item["option_stockage"]:
-                coût_stock_unit = 1.00 if q<=99 else (0.56 if q<=249 else (0.50 if q<=499 else (0.43 if q<=999 else 0.30)))
-            else:
-                coût_stock_unit = 0.0
+            coût_stock_unit = 1.00 if (item.get("option_stockage") and q<=99) else 0.0
             tot_stock = coût_stock_unit * q
             
             tot_ligne = tot_support + tot_marquages + tot_ens + tot_ass + tot_stock
@@ -460,7 +440,7 @@ with onglets[10]:
             enregistrer_dans_crm(data_crm)
             st.success("✅ Données enregistrées dans le CRM avec succès !")
 
-            # --- GÉNÉRATION DU PDF (MENTION APEX UNIQUEMENT) ---
+            # --- GÉNÉRATION DU PDF ---
             doc = SimpleDocTemplate(pdf_filename, pagesize=A4, rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)
             story = []
             styles = getSampleStyleSheet()
@@ -524,16 +504,10 @@ with onglets[10]:
             ]]
 
             for item in lignes_devis_global:
-                libelle_support = f"<b>Support (Sans marquage) : {item['nom_article']}</b>" if item['sans_marquage'] else f"<b>Support : {item['nom_article']}</b>"
+                libelle_support = f"<b>Support (Sans marquage) : {item['nom_article']}</b>" if item.get('sans_marquage') else f"<b>Support : {item['nom_article']}</b>"
                 table_data.append([Paragraph(libelle_support, style_cell), str(item['quantite']), f"{item['prix_vet_unit']:.3f} €", f"{item['prix_vet_unit']*item['quantite']:.2f} €"])
-                for m in item['marquages_calcules']:
+                for m in item.get('marquages_calcules', []):
                     table_data.append([Paragraph(f"&nbsp;&nbsp;&bull; Marquage : {m['nom']}", style_cell), str(item['quantite']), f"{m['tarif']:.2f} €", f"{m['tarif']*item['quantite']:.2f} €"])
-                if item['option_ensachage']:
-                    table_data.append([Paragraph(f"&nbsp;&nbsp;&bull; Option : {item['type_sachet']}", style_cell), str(item['quantite']), f"{item['coût_ensachage_unit']:.2f} €", f"{item['coût_ensachage_unit']*item['quantite']:.2f} €"])
-                if item['option_assurance']:
-                    table_data.append([Paragraph("&nbsp;&nbsp;&bull; Option : Assurance MHC (Garantie textile)", style_cell), str(item['quantite']), f"{item['coût_assurance_unit']:.2f} €", f"{item['coût_assurance_unit']*item['quantite']:.2f} €"])
-                if item['option_stockage']:
-                    table_data.append([Paragraph("&nbsp;&nbsp;&bull; Option : Mise en stockage + picking", style_cell), str(item['quantite']), f"{item['coût_stockage_unit']:.2f} €", f"{item['coût_stockage_unit']*item['quantite']:.2f} €"])
 
             if frais_prog_total > 0:
                 table_data.append([Paragraph("Frais de technique & programme Broderie", style_cell), "1", f"{frais_prog_total:.2f} €", f"{frais_prog_total:.2f} €"])
@@ -592,7 +566,7 @@ with onglets[10]:
                 mailto_link = f"mailto:{email_dest}?subject={urllib.parse.quote(sujet_mail)}&body={urllib.parse.quote(corps_mail)}"
                 st.markdown(f'<a href="{mailto_link}" target="_blank"><button style="background-color:#2b6cb0; color:white; border:none; padding:10px 20px; border-radius:5px; cursor:pointer; font-weight:bold; width:100%;">📧 Ouvrir dans le client mail (Secours)</button></a>', unsafe_allow_html=True)
 
-# --- ONGLET SUIVI CRM ---
+# --- ONGLET 12 : SUIVI CRM ---
 with onglets[11]:
     st.header("📈 Suivi CRM & Historique des Devis")
     if os.path.exists(CRM_FILE):
