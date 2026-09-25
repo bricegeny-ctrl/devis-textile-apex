@@ -46,24 +46,25 @@ def obtenir_prochain_numero_devis():
         json.dump({"dernier_num": nouveau_num}, f)
     return nouveau_num
 
-# --- MOTEUR DE LECTURE EXCEL : RECHERCHE EXACTE PAR EN-TÊTES DE QUANTITÉS ---
+# --- MOTEUR DE LECTURE EXCEL : DEBUG ET RECHERCHE INFaILLIBLE ---
 def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
     if not os.path.exists(CATALOGUE_FILE):
+        print("DEBUG: Fichier catalogue introuvable !")
         return 0.15
     
     try:
         df_all = pd.read_excel(CATALOGUE_FILE, sheet_name=0, header=None)
-    except Exception:
+    except Exception as e:
+        print(f"DEBUG Erreur lecture Excel: {e}")
         return 0.15
 
     cat_lower = str(cat_print).lower().strip()
     ref_lower = str(choix_ref).lower().strip()
 
-    # 1. Récupérer dynamiquement les paliers de quantité depuis la ligne d'en-tête (ligne 1 ou index 1)
-    # On cherche les colonnes qui contiennent des nombres (les paliers) à partir de la colonne 3 (colonne D)
+    # 1. Récupération dynamique des paliers depuis les en-têtes (ligne 1)
     paliers = {}
     for c in range(3, df_all.shape[1]):
-        val_entete = df_all.iloc[1, c] # Ligne 1 d'Excel (index 1)
+        val_entete = df_all.iloc[1, c]
         try:
             val_num = float(val_entete)
             if not pd.isna(val_num):
@@ -71,43 +72,61 @@ def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
         except Exception:
             continue
 
-    # Si on a trouvé des paliers, on sélectionne le palier inférieur ou égal le plus proche (ex: pour 100, on prend le palier 100)
-    # Pour 101, comme 101 >= 100 et < 250, il doit prendre le palier 100.
-    paliers_tries = sorted(paliers.keys()) # Ex: [1, 5, 10, 25, 50, 100, 250, 500, ...]
+    paliers_tries = sorted(paliers.keys())
     
-    col_cible = paliers[paliers_tries[0]] # Par défaut le premier
+    col_cible = paliers[paliers_tries[0]] if paliers_tries else 3
     for p in paliers_tries:
         if qte >= p:
             col_cible = paliers[p]
         else:
             break
 
-    # 2. Trouver la meilleure ligne correspondant au produit dans le catalogue
+    print(f"DEBUG Recherche -> Catégorie: '{cat_lower}' | Modèle: '{ref_lower}' | Qte: {qte} | Col index cible: {col_cible}")
+
+    # 2. Recherche de la meilleure ligne du produit avec tolérance maximale
     best_row = -1
     max_match = -1
 
     for r in range(2, len(df_all)):
-        row_cat = str(df_all.iloc[r, 0]).lower()
-        row_ref = str(df_all.iloc[r, 2]).lower()
+        row_cat = str(df_all.iloc[r, 0]).lower().strip()
+        row_ref = str(df_all.iloc[r, 2]).lower().strip()
 
         score = 0
+        # Correspondance de catégorie souple
         if cat_lower in row_cat or row_cat in cat_lower:
-            score += 2
+            score += 10
         
-        mots_ref = [m for m in ref_lower.split() if len(m) > 2]
-        match_mots = sum(1 for m in mots_ref if m in row_ref)
-        score += match_mots
+        # Correspondance de modèle (contient au moins un mot clé)
+        if ref_lower in row_ref or row_ref in ref_lower:
+            score += 20
+        else:
+            mots_ref = [m for m in ref_lower.split() if len(m) > 2]
+            match_mots = sum(1 for m in mots_ref if m in row_ref)
+            score += match_mots * 5
 
         if score > max_match:
             max_match = score
             best_row = r
 
-    if best_row == -1 or max_match <= 0:
-        return 0.15
+    # Si aucun score pertinent n'est atteint, on force la première ligne de la bonne catégorie
+    if best_row == -1 or max_match < 5:
+        for r in range(2, len(df_all)):
+            row_cat = str(df_all.iloc[r, 0]).lower().strip()
+            if cat_lower in row_cat or row_cat in cat_lower:
+                best_row = r
+                print(f"DEBUG: Secours appliqué, ligne de catégorie trouvée à l'index {r}")
+                break
 
-    # 3. Extraire le prix exact de la cellule correspondante
+    if best_row == -1:
+        print("DEBUG: Aucune ligne correspondante trouvée dans le catalogue.")
+        return 0.15  
+
+    print(f"DEBUG: Ligne Excel sélectionnée -> index {best_row} (Contenu: {df_all.iloc[best_row, 2]})")
+
+    # 3. Extraction sécurisée du prix dans la colonne ciblée
     try:
         prix_val = float(df_all.iloc[best_row, col_cible])
+        print(f"DEBUG: Valeur brute trouvée à la colonne {col_cible}: {prix_val}")
         
         if pd.isna(prix_val) or prix_val <= 0:
             for alt_col in range(col_cible - 1, 2, -1):
@@ -119,8 +138,10 @@ def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
 
         if pd.isna(prix_val) or prix_val <= 0:
             return 0.15
+            
         return round(prix_val, 4)
-    except Exception:
+    except Exception as e:
+        print(f"DEBUG Erreur extraction prix: {e}")
         return 0.15
 
 # --- GRILLES TARIFAIRES OFFICIELLES (MARQUAGE & BRODERIE) ---
