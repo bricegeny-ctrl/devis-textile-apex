@@ -417,7 +417,7 @@ for i in range(10):
                     remise_fidelite = st.number_input(f"Remise commerciale (%) {i+1}", min_value=0.0, max_value=100.0, value=0.0, key=f"rem_print_{i}")
             else:
                 df_all = pd.read_excel(CATALOGUE_FILE, sheet_name=0, header=None)
-        	options_articles = {}
+        	    options_articles = {}
         	for r in range(2, len(df_all)):
             	    cat = str(df_all.iloc[r, 0]).strip() if pd.notna(df_all.iloc[r, 0]) else "Autres"
             	    ref = str(df_all.iloc[r, 2]).strip() if pd.notna(df_all.iloc[r, 2]) else ""
