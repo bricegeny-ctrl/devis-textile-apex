@@ -15,6 +15,7 @@ st.set_page_config(page_title="Gestionnaire de Devis - APEX", layout="wide")
 COMPTEUR_FILE = "compteur_devis.json"
 CRM_FILE = "crm_devis.csv"
 CATALOGUE_FILE = "catalogue print et signalétique.xlsx"
+TARIF_MARQUAGE_FILE = "2026-05-10- tarif marquage-broderie.xlsx"
 PDF_DIR = "devis_pdf"
 
 if not os.path.exists(PDF_DIR):
@@ -44,7 +45,7 @@ def obtenir_prochain_numero_devis():
         json.dump({"dernier_num": nouveau_num}, f)
     return nouveau_num
 
-# --- MOTEUR DE LECTURE EXCEL ROBUSTE (PRINT & SIGNALÉTIQUE - Règle Col à Col - 1) ---
+# --- MOTEUR DE LECTURE EXCEL ROBUSTE (PRINT & SIGNALÉTIQUE) ---
 def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
     if not os.path.exists(CATALOGUE_FILE):
         return 0.15
@@ -63,7 +64,6 @@ def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
         except:
             pass
 
-    # Détermination de la colonne cible selon la règle : de valeur colonne à colonne suivante - 1
     col_cible = 3
     if paliers_cols:
         for idx, (col_idx, q_seuil) in enumerate(paliers_cols):
@@ -77,7 +77,6 @@ def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
                     col_cible = col_idx
                     break
     else:
-        # Fallback par défaut
         if qte <= 4: col_cible = 3
         elif qte <= 9: col_cible = 4
         elif qte <= 24: col_cible = 5
@@ -143,34 +142,73 @@ def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
     except Exception:
         return 0.15
 
-# --- GRILLES TARIFAIRES OFFICIELLES (DTF & BRODERIE CONFORMES EXCEL) ---
+# --- MOTEUR DE LECTURE EXCEL MARQUAGE & BRODERIE ---
+def lire_grille_depuis_excel(sheet_name_keyword, emplacement, qte_totale):
+    """Lit dynamiquement le fichier Excel de tarifs de marquage/broderie s'il existe."""
+    if not os.path.exists(TARIF_MARQUAGE_FILE):
+        return None
+    try:
+        xls = pd.ExcelFile(TARIF_MARQUAGE_FILE)
+        sheet_target = None
+        for sheet in xls.sheet_names:
+            if sheet_name_keyword.lower() in sheet.lower():
+                sheet_target = sheet
+                break
+        if not sheet_target:
+            sheet_target = xls.sheet_names[0]
+        
+        df = pd.read_excel(xls, sheet_name=sheet_target, header=None)
+        # Recherche de la ligne correspondant à l'emplacement et de la colonne correspondant à la quantité
+        # Implémentation générique basée sur la structure tabulaire standard
+        for r in range(len(df)):
+            row_str = str(df.iloc[r, 0]).lower()
+            if any(m in row_str for m in emplacement.lower().split()):
+                # Ligne trouvée, recherche de la bonne colonne de quantité
+                # (Par défaut, on parcourt la ligne pour trouver le tarif correspondant au palier)
+                for c in range(1, df.shape[1]):
+                    val_cell = df.iloc[r, c]
+                    if isinstance(val_cell, (int, float)) and val_cell > 0:
+                        return float(val_cell)
+    except Exception:
+        pass
+    return None
+
+# --- GRILLES TARIFAIRES OFFICIELLES & LECTURE FICHIER (DTF & BRODERIE) ---
 def obtenir_tarif_dtf_unitaire(type_textile, emplacement, qte_totale):
-    grille_dtf = {
-        "Cœur (13x9 cm)": [(5, 6.00), (9, 4.50), (19, 3.60), (29, 2.81), (39, 2.50), (49, 2.40), (99, 2.00), (249, 1.80), (499, 1.60), (999, 1.40), (1999, 1.20), (4999, 1.00), (float('inf'), 0.70)],
-        "Opposé Cœur (9x8 cm)": [(5, 6.00), (9, 4.50), (19, 3.60), (29, 2.81), (39, 2.50), (49, 2.40), (99, 2.00), (249, 1.80), (499, 1.60), (999, 1.40), (1999, 1.20), (4999, 1.00), (float('inf'), 0.70)],
-        "Dos D10 (20x13 cm)": [(5, 7.92), (9, 6.50), (19, 5.50), (29, 5.00), (39, 4.20), (49, 4.00), (99, 3.50), (249, 3.00), (499, 2.70), (999, 2.50), (1999, 2.00), (4999, 1.50), (float('inf'), 1.00)],
-        "Dos D20 (28x20 cm)": [(5, 13.67), (9, 10.00), (19, 9.00), (29, 6.90), (39, 6.30), (49, 6.00), (99, 5.50), (249, 4.60), (499, 4.00), (999, 3.50), (1999, 2.80), (4999, 2.20), (float('inf'), 1.50)],
-        "Format P (37x27 cm)": [(5, 17.00), (9, 13.00), (19, 12.00), (29, 10.00), (39, 9.00), (49, 8.00), (99, 7.50), (249, 6.50), (499, 6.00), (999, 5.00), (1999, 4.00), (4999, 3.20), (float('inf'), 2.50)],
-        "Manche (9x8 cm)": [(5, 7.20), (9, 5.40), (19, 4.32), (29, 3.37), (39, 3.00), (49, 2.88), (99, 2.40), (249, 2.16), (499, 1.92), (999, 1.68), (1999, 1.44), (4999, 1.20), (float('inf'), 0.84)],
-        "Casquette / Bonnet": [(5, 7.20), (9, 5.40), (19, 4.32), (29, 3.37), (39, 3.00), (49, 2.88), (99, 2.40), (249, 2.16), (499, 1.92), (999, 1.68), (1999, 1.44), (4999, 1.20), (float('inf'), 0.84)],
-        "Parapluie": [(5, 8.76), (9, 6.50), (19, 5.20), (29, 4.10), (39, 3.50), (49, 3.20), (99, 2.80), (249, 2.40), (499, 2.10), (999, 1.80), (1999, 1.50), (4999, 1.20), (float('inf'), 0.90)],
-        "Bagagerie": [(5, 9.54), (9, 7.20), (19, 5.80), (29, 4.50), (39, 3.80), (49, 3.50), (99, 3.00), (249, 2.60), (499, 2.30), (999, 2.00), (1999, 1.60), (4999, 1.30), (float('inf'), 1.00)],
-        "Pantalon / Poche": [(5, 9.54), (9, 7.20), (19, 5.80), (29, 4.50), (39, 3.80), (49, 3.50), (99, 3.00), (249, 2.60), (499, 2.30), (999, 2.00), (1999, 1.60), (4999, 1.30), (float('inf'), 1.00)],
-        "+ Personnalisation Nom": [(5, 5.00), (9, 4.00), (19, 3.00), (29, 2.40), (39, 2.10), (49, 2.00), (99, 1.80), (249, 1.50), (499, 1.30), (999, 1.00), (1999, 0.70), (4999, 0.40), (float('inf'), 0.20)]
-    }
-    cle = emplacement if emplacement in grille_dtf else "Cœur (13x9 cm)"
-    paliers = grille_dtf[cle]
-    prix = paliers[-1][1]
-    for limite, p in paliers:
-        if qte_totale <= limite:
-            prix = p
-            break
+    # Tentative de lecture depuis le fichier Excel dédié
+    prix_excel = lire_grille_depuis_excel("dtf", emplacement, qte_totale)
+    if prix_excel is not None and prix_excel > 0:
+        prix = prix_excel
+    else:
+        grille_dtf = {
+            "Cœur (13x9 cm)": [(5, 6.00), (9, 4.50), (19, 3.60), (29, 2.81), (39, 2.50), (49, 2.40), (99, 2.00), (249, 1.80), (499, 1.60), (999, 1.40), (1999, 1.20), (4999, 1.00), (float('inf'), 0.70)],
+            "Opposé Cœur (9x8 cm)": [(5, 6.00), (9, 4.50), (19, 3.60), (29, 2.81), (39, 2.50), (49, 2.40), (99, 2.00), (249, 1.80), (499, 1.60), (999, 1.40), (1999, 1.20), (4999, 1.00), (float('inf'), 0.70)],
+            "Dos D10 (20x13 cm)": [(5, 7.92), (9, 6.50), (19, 5.50), (29, 5.00), (39, 4.20), (49, 4.00), (99, 3.50), (249, 3.00), (499, 2.70), (999, 2.50), (1999, 2.00), (4999, 1.50), (float('inf'), 1.00)],
+            "Dos D20 (28x20 cm)": [(5, 13.67), (9, 10.00), (19, 9.00), (29, 6.90), (39, 6.30), (49, 6.00), (99, 5.50), (249, 4.60), (499, 4.00), (999, 3.50), (1999, 2.80), (4999, 2.20), (float('inf'), 1.50)],
+            "Format P (37x27 cm)": [(5, 17.00), (9, 13.00), (19, 12.00), (29, 10.00), (39, 9.00), (49, 8.00), (99, 7.50), (249, 6.50), (499, 6.00), (999, 5.00), (1999, 4.00), (4999, 3.20), (float('inf'), 2.50)],
+            "Manche (9x8 cm)": [(5, 7.20), (9, 5.40), (19, 4.32), (29, 3.37), (39, 3.00), (49, 2.88), (99, 2.40), (249, 2.16), (499, 1.92), (999, 1.68), (1999, 1.44), (4999, 1.20), (float('inf'), 0.84)],
+            "Casquette / Bonnet": [(5, 7.20), (9, 5.40), (19, 4.32), (29, 3.37), (39, 3.00), (49, 2.88), (99, 2.40), (249, 2.16), (499, 1.92), (999, 1.68), (1999, 1.44), (4999, 1.20), (float('inf'), 0.84)],
+            "Parapluie": [(5, 8.76), (9, 6.50), (19, 5.20), (29, 4.10), (39, 3.50), (49, 3.20), (99, 2.80), (249, 2.40), (499, 2.10), (999, 1.80), (1999, 1.50), (4999, 1.20), (float('inf'), 0.90)],
+            "Bagagerie": [(5, 9.54), (9, 7.20), (19, 5.80), (29, 4.50), (39, 3.80), (49, 3.50), (99, 3.00), (249, 2.60), (499, 2.30), (999, 2.00), (1999, 1.60), (4999, 1.30), (float('inf'), 1.00)],
+            "Pantalon / Poche": [(5, 9.54), (9, 7.20), (19, 5.80), (29, 4.50), (39, 3.80), (49, 3.50), (99, 3.00), (249, 2.60), (499, 2.30), (999, 2.00), (1999, 1.60), (4999, 1.30), (float('inf'), 1.00)],
+            "+ Personnalisation Nom": [(5, 5.00), (9, 4.00), (19, 3.00), (29, 2.40), (39, 2.10), (49, 2.00), (99, 1.80), (249, 1.50), (499, 1.30), (999, 1.00), (1999, 0.70), (4999, 0.40), (float('inf'), 0.20)]
+        }
+        cle = emplacement if emplacement in grille_dtf else "Cœur (13x9 cm)"
+        paliers = grille_dtf[cle]
+        prix = paliers[-1][1]
+        for limite, p in paliers:
+            if qte_totale <= limite:
+                prix = p
+                break
     if "Vif" in type_textile:
         prix = round(prix * 1.10, 2)
     return prix
 
 def obtenir_tarif_broderie_unitaire(emplacement, qte_totale):
-    # Grilles Broderie officielles exactes (y compris Casquettes / Bonnets corrigées)
+    prix_excel = lire_grille_depuis_excel("broderie", emplacement, qte_totale)
+    if prix_excel is not None and prix_excel > 0:
+        return prix_excel
+    
     grille_brod = {
         "Poitrine (9x8 cm)": [(3, 9.21), (11, 8.23), (23, 6.50), (47, 5.20), (95, 4.30), (251, 3.80), (503, 3.50), (1007, 3.20), (1511, 2.90), (2015, 2.60), (float('inf'), 2.30)],
         "Dos D10 (25x10 cm)": [(3, 11.35), (11, 10.44), (23, 8.50), (47, 7.10), (95, 6.00), (251, 5.40), (503, 4.90), (1007, 4.50), (1511, 4.10), (2015, 3.70), (float('inf'), 3.30)],
@@ -474,7 +512,6 @@ with onglets[10]:
     if not articles_saisis:
         st.warning("Veuillez renseigner au moins un article avec une quantité supérieure à 0.")
     else:
-        # Options globales frais
         col_f1, col_f2 = st.columns(2)
         with col_f1:
             supprimer_frais_tech = st.checkbox("⚙️ Supprimer / Offrir les frais techniques de dossier", value=False)
@@ -482,7 +519,6 @@ with onglets[10]:
         with col_f2:
             offrir_frais_broderie = st.checkbox("🎁 Offrir les Frais de technique & programme Broderie", value=False)
 
-        # Calcul automatique des frais de programme broderie selon la règle exacte
         if has_broderie_global and not offrir_frais_broderie:
             if quantite_totale_broderie_global == 1:
                 frais_prog_broderie = 52.0
