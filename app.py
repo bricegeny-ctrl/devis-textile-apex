@@ -46,7 +46,7 @@ def obtenir_prochain_numero_devis():
         json.dump({"dernier_num": nouveau_num}, f)
     return nouveau_num
 
-# --- MOTEUR DE LECTURE EXCEL : LECTURE DYNAMIQUE DES PALIERS ---
+# --- MOTEUR DE LECTURE EXCEL : CORRESPONDANCE DE PALIERS DIRECTE ET ROBUSTE ---
 def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
     if not os.path.exists(CATALOGUE_FILE):
         return 0.15
@@ -59,87 +59,88 @@ def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
     cat_lower = str(cat_print).lower().strip()
     ref_lower = str(choix_ref).lower().strip()
 
-    # 1. Lecture dynamique des paliers depuis la ligne d'en-tête (ligne 1, index 1)
-    paliers = {}
-    for c in range(3, df_all.shape[1]):
-        val_entete = str(df_all.iloc[1, c]).replace(',', '.').strip()
-        try:
-            val_num = float(val_entete)
-            if not pd.isna(val_num):
-                paliers[int(val_num)] = c
-        except Exception:
-            continue
+    # Association rigoureuse et explicite : Quantité minimale requise -> Index de colonne Excel
+    # Index 3 (Col D)  -> 1 ex
+    # Index 4 (Col E)  -> 5 ex
+    # Index 5 (Col F)  -> 10 ex
+    # Index 6 (Col G)  -> 25 ex
+    # Index 7 (Col H)  -> 50 ex
+    # Index 8 (Col I)  -> 100 ex  <-- C'est ici que la colonne 8 est enfin prise en compte pour 100 à 249 ex
+    # Index 9 (Col J)  -> 250 ex
+    # Index 10 (Col K) -> 500 ex
+    # Index 11 (Col L) -> 1000 ex
+    # Index 12 (Col M) -> 2500 ex
+    # Index 13 (Col N) -> 5000 ex
+    # Index 14 (Col O) -> 10000 ex
 
-    paliers_tries = sorted(paliers.keys()) # Ex: [1, 5, 10, 25, 50, 100, 250, 500...]
-    
-    # Détermination de la colonne cible selon la quantité demandée
-    col_cible = paliers[paliers_tries[0]] if paliers_tries else 3
-    for p in paliers_tries:
-        if qte >= p:
-            col_cible = paliers[p]
-        else:
-            break
+    if qte <= 1:
+        col_cible = 3
+    elif qte < 5:
+        col_cible = 4
+    elif qte < 10:
+        col_cible = 5
+    elif qte < 25:
+        col_cible = 6
+    elif qte < 50:
+        col_cible = 7
+    elif qte < 250:
+        col_cible = 8    # De 50 à 249 ex -> Pointe directement sur la colonne 8 (index 8)
+    elif qte < 500:
+        col_cible = 9    # À partir de 250 ex -> Pointe sur la colonne 9
+    elif qte < 1000:
+        col_cible = 10
+    elif qte < 2500:
+        col_cible = 11
+    elif qte < 5000:
+        col_cible = 12
+    elif qte < 10000:
+        col_cible = 13
+    else:
+        col_cible = 14
 
-    # 2. Recherche de la meilleure ligne correspondant au produit
+    # 1. Recherche de la meilleure ligne du produit dans le catalogue
     best_row = -1
-    max_score = -1
+    max_match = -1
 
     for r in range(2, len(df_all)):
         row_cat = str(df_all.iloc[r, 0]).lower().strip()
         row_ref = str(df_all.iloc[r, 2]).lower().strip()
 
-        if cat_lower not in row_cat and row_cat not in cat_lower:
-            continue
-
         score = 0
-        if ref_lower == row_ref:
-            score += 100
-        elif ref_lower in row_ref or row_ref in ref_lower:
-            score += 50
-        else:
-            mots_ref = [m for m in ref_lower.split() if len(m) > 2]
-            match_mots = sum(1 for m in mots_ref if m in row_ref)
-            score += match_mots * 10
+        if cat_lower in row_cat or row_cat in cat_lower:
+            score += 10
+        
+        mots_ref = [m for m in ref_lower.split() if len(m) > 2]
+        match_mots = sum(1 for m in mots_ref if m in row_ref)
+        score += match_mots * 5
 
-        if score > max_score:
-            max_score = score
+        if score > max_match:
+            max_match = score
             best_row = r
 
-    # Secours par catégorie si le modèle exact n'est pas trouvé
-    if best_row == -1 or max_score < 10:
+    # Secours si la ligne exacte n'est pas trouvée par mots-clés
+    if best_row == -1 or max_match < 5:
         for r in range(2, len(df_all)):
-            row_cat = str(df_all.iloc[r, 0]).lower().strip()
-            if cat_lower in row_cat or row_cat in cat_lower:
+            if cat_lower in str(df_all.iloc[r, 0]).lower():
                 best_row = r
                 break
 
     if best_row == -1:
         return 0.15
 
-    # 3. Extraction et nettoyage sécurisé du prix dans la cellule ciblée
+    # 2. Extraction sécurisée du prix dans la colonne ciblée (index 8 inclus sans risque d'être ignoré)
     try:
-        val_brute = df_all.iloc[best_row, col_cible]
+        prix_val = float(df_all.iloc[best_row, col_cible])
         
-        # Si la case est vide, on cherche le prix valide le plus proche sur les colonnes précédentes
-        if pd.isna(val_brute) or str(val_brute).strip() == "":
+        if pd.isna(prix_val) or prix_val <= 0:
             for alt_col in range(col_cible - 1, 2, -1):
                 if alt_col < df_all.shape[1]:
-                    alt_val = df_all.iloc[best_row, alt_col]
-                    if not pd.isna(alt_val) and str(alt_val).strip() != "":
-                        val_brute = alt_val
+                    alt_val = float(df_all.iloc[best_row, alt_col])
+                    if not pd.isna(alt_val) and alt_val > 0:
+                        prix_val = alt_val
                         break
 
-        if pd.isna(val_brute):
-            return 0.15
-
-        # Conversion propre en float
-        if isinstance(val_brute, (int, float)):
-            prix_val = float(val_brute)
-        else:
-            val_str = str(val_brute).replace('€', '').replace('EUR', '').replace(' ', '').replace(',', '.').strip()
-            prix_val = float(val_str)
-
-        if prix_val <= 0:
+        if pd.isna(prix_val) or prix_val <= 0:
             return 0.15
             
         return round(prix_val, 4)
