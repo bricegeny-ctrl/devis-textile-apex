@@ -46,7 +46,7 @@ def obtenir_prochain_numero_devis():
         json.dump({"dernier_num": nouveau_num}, f)
     return nouveau_num
 
-# --- MOTEUR DE LECTURE EXCEL : INDEX CORRIGÉS DEPUIS LA COLONNE D (INDEX 3) ---
+# --- MOTEUR DE LECTURE EXCEL : RECHERCHE EXACTE PAR EN-TÊTES DE QUANTITÉS ---
 def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
     if not os.path.exists(CATALOGUE_FILE):
         return 0.15
@@ -59,33 +59,30 @@ def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
     cat_lower = str(cat_print).lower().strip()
     ref_lower = str(choix_ref).lower().strip()
 
-    # Association stricte : Quantité -> Index de colonne Excel
-    if qte <= 1: 
-        col_cible = 3   # Col D (1 ex)
-    elif qte < 5: 
-        col_cible = 4   # Col E (5 ex)
-    elif qte < 10: 
-        col_cible = 5   # Col F (10 ex)
-    elif qte < 25: 
-        col_cible = 6   # Col G (25 ex)
-    elif qte < 50: 
-        col_cible = 7   # Col H (50 ex)
-    elif qte < 100: 
-        col_cible = 8   # Col I (100 ex)
-    elif qte < 250: 
-        col_cible = 9   # Col J (250 ex) -> 100 à 249 ex = 0.3135 €
-    elif qte < 500: 
-        col_cible = 10  # Col K (500 ex) -> 250 à 499 ex = 0.1386 €
-    elif qte < 1000: 
-        col_cible = 11  # Col L (1000 ex)
-    elif qte < 2500: 
-        col_cible = 12  # Col M (2500 ex)
-    elif qte < 5000: 
-        col_cible = 13  # Col N (5000 ex)
-    else: 
-        col_cible = 14  # Col O (10000 ex)
+    # 1. Récupérer dynamiquement les paliers de quantité depuis la ligne d'en-tête (ligne 1 ou index 1)
+    # On cherche les colonnes qui contiennent des nombres (les paliers) à partir de la colonne 3 (colonne D)
+    paliers = {}
+    for c in range(3, df_all.shape[1]):
+        val_entete = df_all.iloc[1, c] # Ligne 1 d'Excel (index 1)
+        try:
+            val_num = float(val_entete)
+            if not pd.isna(val_num):
+                paliers[int(val_num)] = c
+        except Exception:
+            continue
 
-    # 1. Trouver la meilleure ligne correspondant au produit dans le catalogue
+    # Si on a trouvé des paliers, on sélectionne le palier inférieur ou égal le plus proche (ex: pour 100, on prend le palier 100)
+    # Pour 101, comme 101 >= 100 et < 250, il doit prendre le palier 100.
+    paliers_tries = sorted(paliers.keys()) # Ex: [1, 5, 10, 25, 50, 100, 250, 500, ...]
+    
+    col_cible = paliers[paliers_tries[0]] # Par défaut le premier
+    for p in paliers_tries:
+        if qte >= p:
+            col_cible = paliers[p]
+        else:
+            break
+
+    # 2. Trouver la meilleure ligne correspondant au produit dans le catalogue
     best_row = -1
     max_match = -1
 
@@ -108,7 +105,7 @@ def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
     if best_row == -1 or max_match <= 0:
         return 0.15
 
-    # 2. Extraire le prix exact de la cellule correspondante
+    # 3. Extraire le prix exact de la cellule correspondante
     try:
         prix_val = float(df_all.iloc[best_row, col_cible])
         
