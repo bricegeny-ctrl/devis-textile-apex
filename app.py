@@ -293,6 +293,7 @@ for i in range(10):
                     "remise_fidelite": remise_fidelite
                 })
                 total_textile_brut += qte * prix_vetement_ht
+
             else:
         # --- SELECTION PRINT & SIGNALETIQUE + OPTION AUTRE (DYNAMIQUE) ---
         cat_print = st.selectbox(
