@@ -48,7 +48,7 @@ def obtenir_prochain_numero_devis():
 import pandas as pd
 
 # Charge toutes les feuilles dans un dictionnaire de DataFrames
-excel_path = 'catalogue print et signalétique_2.xlsx'
+excel_path = 'catalogue print et signalétique.xlsx'
 toutes_les_feuilles = pd.read_excel(excel_path, sheet_name=None)
 
 # Pour fusionner toutes les feuilles si elles ont la même structure :
