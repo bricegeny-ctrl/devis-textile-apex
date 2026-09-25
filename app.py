@@ -278,66 +278,66 @@ for i in range(10):
             option_stockage = st.checkbox(f"Option stockage + picking {i+1}", key=f"stock_{i}")
             remise_fidelite = st.number_input(f"Réduction fidélité (%) {i+1}", min_value=0.0, max_value=100.0, value=0.0, key=f"rem_{i}")
 
-            if qte > 0:
-                articles_saisis.append({
-                    "type_univers": "textile",
-                    "nom_article": nom_article,
-                    "quantite": qte,
-                    "prix_vet_unit": prix_vetement_ht,
-                    "sans_marquage": sans_marquage,
-                    "marquages": marquages,
-                    "option_ensachage": option_ensachage,
-                    "type_sachet": type_sachet,
-                    "option_assurance": option_assurance,
-                    "option_stockage": option_stockage,
-                    "remise_fidelite": remise_fidelite
-                })
-                total_textile_brut += qte * prix_vetement_ht
+           if qte > 0:
+            articles_saisis.append({
+                "type_univers": "textile",
+                "nom_article": nom_article,
+                "quantite": qte,
+                "prix_vet_unit": prix_vetement_ht,
+                "sans_marquage": sans_marquage,
+                "marquages": marquages,
+                "option_ensachage": option_ensachage,
+                "type_sachet": type_sachet,
+                "option_assurance": option_assurance,
+                "option_stockage": option_stockage,
+                "remise_fidelite": remise_fidelite
+            })
+            total_textile_brut += qte * prix_vetement_ht
 
-	else:
-        # --- SELECTION PRINT & SIGNALETIQUE + OPTION AUTRE (DYNAMIQUE) ---
-        cat_print = st.selectbox(
-            f"Catégorie Print & Signalétique {i+1}",
-            [
-                "Flyers", "Dépliants", "Blocs notes", "Chemises de présentation",
-                "Banderoles", "Panneaux de chantier", "Roll-up", "Sous bocks",
-                "Adhésifs", "Cartes de visite", "Calendriers", "Menus restaurants",
-                "➕ Autre / Produit hors catalogue (Saisie libre)"
-            ],
-            key=f"cat_print_{i}"
-        )
-
-        if "Autre" in cat_print:
-            choix_ref = st.text_input(f"Nom / Désignation du produit libre {i+1}", value="Produit personnalisé", key=f"ref_libre_{i}")
-            coll, col2 = st.columns(2)
-            with coll:
-                qte = st.number_input(f"Quantité (exemplaires) {i+1}", min_value=0, value=1 if i==0 else 0, key=f"qte_print_{i}")
-                prix_vetement_ht = st.number_input(f"Prix unitaire HT (€) {i+1} (Saisie libre)", min_value=0.0, value=10.00, format="%.4f", key=f"px_libre_{i}")
-            with col2:
-                st.info("💡 Saisie manuelle active (produit hors catalogue).")
-                remise_fidelite = st.number_input(f"Remise commerciale (%) {i+1}", min_value=0.0, max_value=100.0, value=0.0, key=f"rem_print_{i}")
         else:
-            options_trouvees = obtenir_modeles_pour_categorie(cat_print)
-            
-            if not options_trouvees:
-                options_trouvees = ["Article standard"]
+            # --- SELECTION PRINT & SIGNALETIQUE + OPTION AUTRE (DYNAMIQUE) ---
+            cat_print = st.selectbox(
+                f"Catégorie Print & Signalétique {i+1}",
+                [
+                    "Flyers", "Dépliants", "Blocs notes", "Chemises de présentation",
+                    "Banderoles", "Panneaux de chantier", "Roll-up", "Sous bocks",
+                    "Adhésifs", "Cartes de visite", "Calendriers", "Menus restaurants",
+                    "➕ Autre / Produit hors catalogue (Saisie libre)"
+                ],
+                key=f"cat_print_{i}"
+            )
 
-            choix_ref = st.selectbox(f"Modèle exact {i+1}", options_trouvees, key=f"ref_print_{i}")
-
-            coll, col2 = st.columns(2)
-            with coll:
-                qte = st.number_input(f"Quantité (exemplaires) {i+1}", min_value=0, value=100 if i==0 else 0, key=f"qte_print_{i}")
+            if "Autre" in cat_print:
+                choix_ref = st.text_input(f"Nom / Désignation du produit libre {i+1}", value="Produit personnalisé", key=f"ref_libre_{i}")
+                coll, col2 = st.columns(2)
+                with coll:
+                    qte = st.number_input(f"Quantité (exemplaires) {i+1}", min_value=0, value=1 if i==0 else 0, key=f"qte_print_{i}")
+                    prix_vetement_ht = st.number_input(f"Prix unitaire HT (€) {i+1} (Saisie libre)", min_value=0.0, value=10.00, format="%.4f", key=f"px_libre_{i}")
+                with col2:
+                    st.info("💡 Saisie manuelle active (produit hors catalogue).")
+                    remise_fidelite = st.number_input(f"Remise commerciale (%) {i+1}", min_value=0.0, max_value=100.0, value=0.0, key=f"rem_print_{i}")
+            else:
+                options_trouvees = obtenir_modeles_pour_categorie(cat_print)
                 
-                # --- CALCUL AUTOMATIQUE INSTANTANÉ (PALIERS STRICTS) ---
-                prix_unitaire_auto = obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte)
-                prix_vetement_ht = prix_unitaire_auto  # Affectation directe pour le devis
+                if not options_trouvees:
+                    options_trouvees = ["Article standard"]
 
-                # Affichage clair et dynamique du prix unitaire calculé selon la tranche
-                st.metric(label=f"Prix unitaire HT (€) {i+1} (Catalogue auto)", value=f"{prix_unitaire_auto:.4f} €")
+                choix_ref = st.selectbox(f"Modèle exact {i+1}", options_trouvees, key=f"ref_print_{i}")
 
-            with col2:
-                st.success(f"✅ Tarif appliqué ({qte} ex) : **{prix_unitaire_auto:.4f} € HT**")
-                remise_fidelite = st.number_input(f"Remise commerciale (%) {i+1}", min_value=0.0, max_value=100.0, value=0.0, key=f"rem_print_{i}")
+                coll, col2 = st.columns(2)
+                with coll:
+                    qte = st.number_input(f"Quantité (exemplaires) {i+1}", min_value=0, value=100 if i==0 else 0, key=f"qte_print_{i}")
+                    
+                    # --- CALCUL AUTOMATIQUE INSTANTANÉ (PALIERS STRICTS) ---
+                    prix_unitaire_auto = obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte)
+                    prix_vetement_ht = prix_unitaire_auto  # Affectation directe pour le devis
+
+                    # Affichage clair et dynamique du prix unitaire calculé selon la tranche
+                    st.metric(label=f"Prix unitaire HT (€) {i+1} (Catalogue auto)", value=f"{prix_unitaire_auto:.4f} €")
+
+                with col2:
+                    st.success(f"✅ Tarif appliqué ({qte} ex) : **{prix_unitaire_auto:.4f} € HT**")
+                    remise_fidelite = st.number_input(f"Remise commerciale (%) {i+1}", min_value=0.0, max_value=100.0, value=0.0, key=f"rem_print_{i}")
 
             if qte > 0:
                 articles_saisis.append({
