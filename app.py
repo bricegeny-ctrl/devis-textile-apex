@@ -294,7 +294,8 @@ for i in range(10):
                 })
                 total_textile_brut += qte * prix_vetement_ht
         else:
-            # --- SELECTION PRINT & SIGNALETIQUE + OPTION AUTRE (DYNAMIQUE) ---
+
+# --- SELECTION PRINT & SIGNALETIQUE + OPTION AUTRE (DYNAMIQUE) ---
 cat_print = st.selectbox(
     f"Catégorie Print & Signalétique {i+1}",
     [
