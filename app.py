@@ -46,7 +46,7 @@ def obtenir_prochain_numero_devis():
         json.dump({"dernier_num": nouveau_num}, f)
     return nouveau_num
 
-# --- MOTEUR DE LECTURE EXCEL : TRANCHES ET INDEX CORRIGÉS ---
+# --- MOTEUR DE LECTURE EXCEL : INDEX DE COLONNES CORRIGÉS ET ALIGNÉS ---
 def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
     if not os.path.exists(CATALOGUE_FILE):
         return 0.15
@@ -59,7 +59,20 @@ def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
     cat_lower = str(cat_print).lower().strip()
     ref_lower = str(choix_ref).lower().strip()
 
-    # Index de colonnes pour correspondre exactement à vos tranches
+    # Alignement exact des colonnes et des tranches :
+    # Col index 3 (1 ex)      -> qte == 1
+    # Col index 4 (5 ex)      -> qte de 2 à 4
+    # Col index 5 (10 ex)     -> qte de 5 à 9
+    # Col index 6 (25 ex)     -> qte de 10 à 24
+    # Col index 7 (50 ex)     -> qte de 25 à 49
+    # Col index 8 (100 ex)    -> qte de 50 à 99 (et pour 100 pile)
+    # Col index 9 (250 ex)    -> qte de 100 à 249 (Attention: si qte >= 100, on passe sur le palier 250)
+    # Col index 10 (500 ex)   -> qte de 250 à 499
+    # Col index 11 (1000 ex)  -> qte de 500 à 999
+    # Col index 12 (2500 ex)  -> qte de 1000 à 2499
+    # Col index 13 (5000 ex)  -> qte de 2500 à 4999
+    # Col index 14 (10000 ex) -> qte >= 5000
+
     if qte <= 1: 
         col_cible = 3
     elif qte < 5: 
@@ -70,8 +83,8 @@ def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
         col_cible = 6
     elif qte < 50: 
         col_cible = 7
-    elif qte < 100: 
-        col_cible = 8
+    elif qte <= 100: 
+        col_cible = 8    # Le palier de 100 ex couvre de 50 à 100 inclus
     elif qte < 250: 
         col_cible = 9
     elif qte < 500: 
@@ -84,10 +97,6 @@ def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
         col_cible = 13
     else: 
         col_cible = 14
-
-    # Ajustement pour la quantité exacte 100 qui doit pointer sur le bon palier
-    if qte == 100:
-        col_cible = 9
 
     # 1. Trouver la meilleure ligne correspondant au produit dans le catalogue
     best_row = -1
