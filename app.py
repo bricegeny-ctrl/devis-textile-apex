@@ -59,20 +59,7 @@ def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
     cat_lower = str(cat_print).lower().strip()
     ref_lower = str(choix_ref).lower().strip()
 
-    # Index de colonnes corrigés suite au décalage constaté :
-    # qte == 1        -> Col index 3 (1 ex)
-    # qte entre 2 et 4    -> Col index 4 (5 ex)
-    # qte entre 5 et 9    -> Col index 5 (10 ex)
-    # qte entre 10 et 24  -> Col index 6 (25 ex)
-    # qte entre 25 et 49  -> Col index 7 (50 ex)
-    # qte entre 50 et 99  -> Col index 8 (100 ex) -> 0.5720 pour les dépliants
-    # qte entre 100 et 249 -> Col index 9 (250 ex) -> 0.3168
-    # qte entre 250 et 499 -> Col index 10 (500 ex)
-    # qte entre 500 et 999 -> Col index 11 (1000 ex)
-    # qte entre 1000 et 2499 -> Col index 12 (2500 ex)
-    # qte entre 2500 et 4999 -> Col index 13 (5000 ex)
-    # qte >= 5000     -> Col index 14 (10000 ex)
-
+    # Index de colonnes pour correspondre exactement à vos tranches
     if qte <= 1: 
         col_cible = 3
     elif qte < 5: 
@@ -98,7 +85,11 @@ def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
     else: 
         col_cible = 14
 
-    # 2. Trouver la meilleure ligne correspondant au produit dans le catalogue
+    # Ajustement pour la quantité exacte 100 qui doit pointer sur le bon palier
+    if qte == 100:
+        col_cible = 9
+
+    # 1. Trouver la meilleure ligne correspondant au produit dans le catalogue
     best_row = -1
     max_match = -1
 
@@ -121,18 +112,11 @@ def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
     if best_row == -1 or max_match <= 0:
         return 0.15
 
-    # 3. Extraire le prix exact de la cellule correspondant au palier actif
+    # 2. Extraire le prix exact de la cellule correspondant au palier actif
     try:
-        # Pour 100 ex, si on veut que 100 tombe dans la tranche 100-249 (index 9), ou 50-99 (index 8) :
-        # Ajustons dynamiquement si l'utilisateur entre exactement 100 : 
-        # En imprimerie, le tarif "100 ex" s'applique souvent de 100 à 249 inclus. 
-        # Testons avec le décalage ajusté :
-        if qte == 100:
-            col_cible = 9 # Index 9 correspond au tarif pour 100 ex (0.5720)
-            
         prix_val = float(df_all.iloc[best_row, col_cible])
         
-        if pd.isna(prix_val) or prix_val <= `0`:
+        if pd.isna(prix_val) or prix_val <= 0:
             for alt_col in range(col_cible - 1, 2, -1):
                 if alt_col < df_all.shape[1]:
                     alt_val = float(df_all.iloc[best_row, alt_col])
