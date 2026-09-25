@@ -14,7 +14,7 @@ st.set_page_config(page_title="Gestionnaire de Devis - APEX", layout="wide")
 # --- GESTION DES FICHIERS ---
 COMPTEUR_FILE = "compteur_devis.json"
 CRM_FILE = "crm_devis.csv"
-CATALOGUE_FILE = "catalogue print et signalétique.xlsx"
+CATALOGUE_FILE = "catalogue_print.xlsx"
 TARIF_MARQUAGE_FILE = "2026-05-10- tarif marquage-broderie.xlsx"
 PDF_DIR = "devis_pdf"
 
