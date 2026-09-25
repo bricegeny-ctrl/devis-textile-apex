@@ -46,7 +46,7 @@ def obtenir_prochain_numero_devis():
         json.dump({"dernier_num": nouveau_num}, f)
     return nouveau_num
 
-# --- MOTEUR DE LECTURE EXCEL : CORRESPONDANCE DE PALIERS DIRECTE ET ROBUSTE ---
+# --- MOTEUR DE LECTURE EXCEL : CORRIGÉ POUR LES PALIERS EXACTS (25, 50, etc.) ---
 def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
     if not os.path.exists(CATALOGUE_FILE):
         return 0.15
@@ -59,44 +59,31 @@ def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
     cat_lower = str(cat_print).lower().strip()
     ref_lower = str(choix_ref).lower().strip()
 
-    # Association rigoureuse et explicite : Quantité minimale requise -> Index de colonne Excel
-    # Index 3 (Col D)  -> 1 ex
-    # Index 4 (Col E)  -> 5 ex
-    # Index 5 (Col F)  -> 10 ex
-    # Index 6 (Col G)  -> 25 ex
-    # Index 7 (Col H)  -> 50 ex
-    # Index 8 (Col I)  -> 100 ex  <-- C'est ici que la colonne 8 est enfin prise en compte pour 100 à 249 ex
-    # Index 9 (Col J)  -> 250 ex
-    # Index 10 (Col K) -> 500 ex
-    # Index 11 (Col L) -> 1000 ex
-    # Index 12 (Col M) -> 2500 ex
-    # Index 13 (Col N) -> 5000 ex
-    # Index 14 (Col O) -> 10000 ex
-
-    if qte <= 1:
-        col_cible = 3
-    elif qte < 5:
-        col_cible = 4
-    elif qte < 10:
-        col_cible = 5
-    elif qte < 25:
-        col_cible = 6
-    elif qte < 50:
-        col_cible = 7
-    elif qte < 250:
-        col_cible = 8    # De 50 à 249 ex -> Pointe directement sur la colonne 8 (index 8)
-    elif qte < 500:
-        col_cible = 9    # À partir de 250 ex -> Pointe sur la colonne 9
-    elif qte < 1000:
-        col_cible = 10
-    elif qte < 2500:
-        col_cible = 11
-    elif qte < 5000:
-        col_cible = 12
-    elif qte < 10000:
-        col_cible = 13
+    # Association rigoureuse du plus grand au plus petit pour éviter les pièges sur les valeurs exactes (25, 50, 100...)
+    if qte >= 10000:
+        col_cible = 14  # Col O
+    elif qte >= 5000:
+        col_cible = 13  # Col N
+    elif qte >= 2500:
+        col_cible = 12  # Col M
+    elif qte >= 1000:
+        col_cible = 11  # Col L
+    elif qte >= 500:
+        col_cible = 10  # Col K
+    elif qte >= 250:
+        col_cible = 9   # Col J (250 ex)
+    elif qte >= 100:
+        col_cible = 8   # Col I (100 ex)
+    elif qte >= 50:
+        col_cible = 7   # Col H (50 ex)
+    elif qte >= 25:
+        col_cible = 6   # Col G (25 ex)  <-- Vise enfin la bonne colonne pour 25 ex !
+    elif qte >= 10:
+        col_cible = 5   # Col F (10 ex)
+    elif qte >= 5:
+        col_cible = 4   # Col E (5 ex)
     else:
-        col_cible = 14
+        col_cible = 3   # Col D (1 ex)
 
     # 1. Recherche de la meilleure ligne du produit dans le catalogue
     best_row = -1
@@ -128,7 +115,7 @@ def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
     if best_row == -1:
         return 0.15
 
-    # 2. Extraction sécurisée du prix dans la colonne ciblée (index 8 inclus sans risque d'être ignoré)
+    # 2. Extraction sécurisée du prix dans la colonne ciblée
     try:
         prix_val = float(df_all.iloc[best_row, col_cible])
         
