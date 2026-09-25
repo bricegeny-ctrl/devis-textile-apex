@@ -44,7 +44,7 @@ def obtenir_prochain_numero_devis():
         json.dump({"dernier_num": nouveau_num}, f)
     return nouveau_num
 
-# --- MOTEUR DE LECTURE EXCEL ROBUSTE (INDEX 3 À 14) ---
+# --- MOTEUR DE LECTURE EXCEL ROBUSTE (PRINT & SIGNALÉTIQUE) ---
 def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
     if not os.path.exists(CATALOGUE_FILE):
         return 0.15
@@ -57,31 +57,19 @@ def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
     cat_lower = str(cat_print).lower().strip()
     ref_lower = str(choix_ref).lower().strip()
 
-    # Mappage strict des colonnes du catalogue Excel (Indices 3 à 14 correspondants aux paliers de quantité)
-    if qte <= 1:
-        col_cible = 3
-    elif qte <= 5:
-        col_cible = 4
-    elif qte <= 10:
-        col_cible = 5
-    elif qte <= 25:
-        col_cible = 6
-    elif qte <= 50:
-        col_cible = 7
-    elif qte <= 250:
-        col_cible = 8
-    elif qte <= 500:
-        col_cible = 9
-    elif qte <= 1000:
-        col_cible = 10
-    elif qte <= 2500:
-        col_cible = 11
-    elif qte <= 5000:
-        col_cible = 12
-    elif qte <= 10000:
-        col_cible = 13
-    else:
-        col_cible = 14
+    # Mappage strict des colonnes du catalogue Excel (Indices 3 à 14)
+    if qte <= 1: col_cible = 3
+    elif qte <= 5: col_cible = 4
+    elif qte <= 10: col_cible = 5
+    elif qte <= 25: col_cible = 6
+    elif qte <= 50: col_cible = 7
+    elif qte <= 100: col_cible = 8
+    elif qte <= 250: col_cible = 9
+    elif qte <= 500: col_cible = 10
+    elif qte <= 1000: col_cible = 11
+    elif qte <= 2500: col_cible = 12
+    elif qte <= 5000: col_cible = 13
+    else: col_cible = 14
 
     best_row = -1
     max_match = -1
@@ -132,39 +120,45 @@ def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
     except Exception:
         return 0.15
 
-# --- GRILLES TARIFAIRES OFFICIELLES (MARQUAGE & BRODERIE ÉLARGIES) ---
+# --- GRILLES TARIFAIRES OFFICIELLES (DTF & BRODERIE CONFORMES EXCEL) ---
 def obtenir_tarif_dtf_unitaire(type_textile, emplacement, qte_totale):
-    grille_fin = {
-        "Cœur (13x9 cm)": [(5, 6.00), (9, 4.50), (19, 3.60), (29, 2.81), (39, 2.50), (49, 2.40), (99, 2.00), (249, 1.80), (499, 1.60), (999, 1.40), (5000, 1.20), (float('inf'), 0.70)],
-        "Dos D10 (20x13 cm)": [(5, 7.92), (9, 6.50), (19, 5.50), (29, 5.00), (39, 4.20), (49, 4.00), (99, 3.50), (249, 3.00), (499, 2.70), (999, 2.50), (5000, 2.00), (float('inf'), 1.00)],
-        "Dos D20 (28x20 cm)": [(5, 13.67), (9, 10.00), (19, 9.00), (29, 6.90), (39, 6.30), (49, 6.00), (99, 5.50), (249, 4.60), (499, 4.00), (999, 3.50), (5000, 2.50), (float('inf'), 1.50)],
-        "Format P (37x27 cm)": [(5, 17.00), (9, 13.00), (19, 12.00), (29, 10.00), (39, 9.00), (49, 8.00), (99, 7.50), (249, 6.50), (499, 6.00), (999, 5.00), (5000, 4.00), (float('inf'), 2.50)],
-        "Manche (9x8 cm)": [(5, 7.20), (9, 5.40), (19, 4.32), (29, 3.37), (39, 3.00), (49, 2.88), (99, 2.40), (249, 2.16), (499, 1.92), (999, 1.68), (5000, 1.44), (float('inf'), 0.84)],
-        "Casquette / Bonnet / Accessoire": [(5, 8.50), (9, 6.50), (19, 5.20), (29, 4.10), (39, 3.50), (49, 3.20), (99, 2.80), (249, 2.40), (499, 2.10), (999, 1.80), (5000, 1.50), (float('inf'), 1.00)],
-        "+ Personnalisation Nom": [(5, 4.39), (9, 3.50), (19, 2.50), (29, 2.20), (39, 1.90), (49, 1.80), (99, 1.70), (249, 1.50), (499, 1.30), (999, 0.80), (5000, 0.30), (float('inf'), 0.20)]
+    # Grilles DTF officielles (Léger / Vif)
+    grille_dtf = {
+        "Cœur (13x9 cm)": [(5, 6.00), (9, 4.50), (19, 3.60), (29, 2.81), (39, 2.50), (49, 2.40), (99, 2.00), (249, 1.80), (499, 1.60), (999, 1.40), (1999, 1.20), (4999, 1.00), (float('inf'), 0.70)],
+        "Opposé Cœur (9x8 cm)": [(5, 6.00), (9, 4.50), (19, 3.60), (29, 2.81), (39, 2.50), (49, 2.40), (99, 2.00), (249, 1.80), (499, 1.60), (999, 1.40), (1999, 1.20), (4999, 1.00), (float('inf'), 0.70)],
+        "Dos D10 (20x13 cm)": [(5, 7.92), (9, 6.50), (19, 5.50), (29, 5.00), (39, 4.20), (49, 4.00), (99, 3.50), (249, 3.00), (499, 2.70), (999, 2.50), (1999, 2.00), (4999, 1.50), (float('inf'), 1.00)],
+        "Dos D20 (28x20 cm)": [(5, 13.67), (9, 10.00), (19, 9.00), (29, 6.90), (39, 6.30), (49, 6.00), (99, 5.50), (249, 4.60), (499, 4.00), (999, 3.50), (1999, 2.80), (4999, 2.20), (float('inf'), 1.50)],
+        "Format P (37x27 cm)": [(5, 17.00), (9, 13.00), (19, 12.00), (29, 10.00), (39, 9.00), (49, 8.00), (99, 7.50), (249, 6.50), (499, 6.00), (999, 5.00), (1999, 4.00), (4999, 3.20), (float('inf'), 2.50)],
+        "Manche (9x8 cm)": [(5, 7.20), (9, 5.40), (19, 4.32), (29, 3.37), (39, 3.00), (49, 2.88), (99, 2.40), (249, 2.16), (499, 1.92), (999, 1.68), (1999, 1.44), (4999, 1.20), (float('inf'), 0.84)],
+        "Casquette / Bonnet": [(5, 7.20), (9, 5.40), (19, 4.32), (29, 3.37), (39, 3.00), (49, 2.88), (99, 2.40), (249, 2.16), (499, 1.92), (999, 1.68), (1999, 1.44), (4999, 1.20), (float('inf'), 0.84)],
+        "Parapluie": [(5, 8.76), (9, 6.50), (19, 5.20), (29, 4.10), (39, 3.50), (49, 3.20), (99, 2.80), (249, 2.40), (499, 2.10), (999, 1.80), (1999, 1.50), (4999, 1.20), (float('inf'), 0.90)],
+        "Bagagerie": [(5, 9.54), (9, 7.20), (19, 5.80), (29, 4.50), (39, 3.80), (49, 3.50), (99, 3.00), (249, 2.60), (499, 2.30), (999, 2.00), (1999, 1.60), (4999, 1.30), (float('inf'), 1.00)],
+        "Pantalon / Poche": [(5, 9.54), (9, 7.20), (19, 5.80), (29, 4.50), (39, 3.80), (49, 3.50), (99, 3.00), (249, 2.60), (499, 2.30), (999, 2.00), (1999, 1.60), (4999, 1.30), (float('inf'), 1.00)],
+        "+ Personnalisation Nom": [(5, 5.00), (9, 4.00), (19, 3.00), (29, 2.40), (39, 2.10), (49, 2.00), (99, 1.80), (249, 1.50), (499, 1.30), (999, 1.00), (1999, 0.70), (4999, 0.40), (float('inf'), 0.20)]
     }
-    cle = emplacement if emplacement in grille_fin else "Cœur (13x9 cm)"
-    paliers = grille_fin[cle]
+    cle = emplacement if emplacement in grille_dtf else "Cœur (13x9 cm)"
+    paliers = grille_dtf[cle]
     prix = paliers[-1][1]
     for limite, p in paliers:
         if qte_totale <= limite:
             prix = p
             break
-    if "Épais" in type_textile:
+    if "Vif" in type_textile: # Majoration coloris vif si applicable
         prix = round(prix * 1.10, 2)
     return prix
 
 def obtenir_tarif_broderie_unitaire(emplacement, qte_totale):
+    # Grilles Broderie officielles exactes
     grille_brod = {
-        "Poitrine (9x8 cm)": [(3, 15.90), (11, 12.13), (23, 9.20), (47, 6.90), (95, 5.30), (251, 4.80), (503, 4.50), (1007, 4.20), (1511, 3.90), (float('inf'), 3.50)],
-        "Dos D10 (25x10 cm)": [(3, 18.50), (11, 14.60), (23, 11.30), (47, 9.10), (95, 7.60), (251, 7.10), (503, 6.70), (1007, 6.30), (1511, 5.90), (float('inf'), 5.40)],
-        "Dos Large D20 (25x20 cm)": [(3, 23.20), (11, 18.25), (23, 14.20), (47, 11.90), (95, 9.90), (251, 9.30), (503, 8.80), (1007, 8.30), (1511, 7.80), (float('inf'), 7.20)],
-        "Col / Signature (7x2 cm)": [(3, 10.90), (11, 8.37), (23, 6.20), (47, 4.40), (95, 3.10), (251, 2.85), (503, 2.65), (1007, 2.45), (1511, 2.25), (float('inf'), 2.00)],
-        "Casquettes / Bonnets": [(3, 16.10), (11, 12.27), (23, 9.30), (47, 7.10), (95, 5.50), (251, 5.05), (503, 4.75), (1007, 4.45), (1511, 4.15), (float('inf'), 3.75)],
-        "Parapluie / Bagagerie": [(3, 19.50), (11, 15.00), (23, 12.00), (47, 9.50), (95, 8.00), (251, 7.20), (503, 6.50), (1007, 6.00), (1511, 5.50), (float('inf'), 4.80)],
-        "Manche (8x5 cm)": [(3, 16.10), (11, 12.27), (23, 9.30), (47, 7.10), (95, 5.50), (251, 5.05), (503, 4.75), (1007, 4.45), (1511, 4.15), (float('inf'), 3.75)],
-        "Pantalon / Poche": [(3, 18.30), (11, 13.97), (23, 10.90), (47, 8.60), (95, 7.10), (251, 6.60), (503, 6.20), (1007, 5.80), (1511, 5.45), (float('inf'), 4.95)],
-        "+ Perso. Nom (Cœur)": [(3, 6.00), (11, 4.00), (23, 4.00), (47, 3.50), (95, 3.00), (251, 2.80), (503, 2.60), (1007, 2.40), (1511, 2.20), (float('inf'), 2.00)]
+        "Poitrine (9x8 cm)": [(3, 9.21), (11, 8.23), (23, 6.50), (47, 5.20), (95, 4.30), (251, 3.80), (503, 3.50), (1007, 3.20), (1511, 2.90), (2015, 2.60), (float('inf'), 2.30)],
+        "Dos D10 (25x10 cm)": [(3, 11.35), (11, 10.44), (23, 8.50), (47, 7.10), (95, 6.00), (251, 5.40), (503, 4.90), (1007, 4.50), (1511, 4.10), (2015, 3.70), (float('inf'), 3.30)],
+        "Dos Large D20 (25x20 cm)": [(3, 14.21), (11, 13.61), (23, 11.00), (47, 9.20), (95, 7.80), (251, 7.10), (503, 6.50), (1007, 5.90), (1511, 5.30), (2015, 4.80), (float('inf'), 4.20)],
+        "Col / Signature (7x2 cm)": [(3, 6.50), (11, 5.63), (23, 4.50), (47, 3.60), (95, 2.90), (251, 2.60), (503, 2.30), (1007, 2.10), (1511, 1.90), (2015, 1.70), (float('inf'), 1.50)],
+        "Casquettes / Bonnets": [(3, 10.47), (11, 9.54), (23, 7.50), (47, 6.00), (95, 5.00), (251, 4.50), (503, 4.10), (1007, 3.70), (1511, 3.30), (2015, 2.90), (float('inf'), 2.50)],
+        "Parapluie / Bagagerie": [(3, 11.35), (11, 10.44), (23, 8.50), (47, 7.10), (95, 6.00), (251, 5.40), (503, 4.90), (1007, 4.50), (1511, 4.10), (2015, 3.70), (float('inf'), 3.30)],
+        "Manche (8x5 cm)": [(3, 10.47), (11, 9.54), (23, 7.50), (47, 6.00), (95, 5.00), (251, 4.50), (503, 4.10), (1007, 3.70), (1511, 3.30), (2015, 2.90), (float('inf'), 2.50)],
+        "Pantalon / Poche": [(3, 11.07), (11, 10.71), (23, 8.80), (47, 7.40), (95, 6.20), (251, 5.60), (503, 5.10), (1007, 4.60), (1511, 4.20), (2015, 3.80), (float('inf'), 3.40)],
+        "+ Perso. Nom (Cœur)": [(3, 4.39), (11, 4.20), (23, 3.50), (47, 2.80), (95, 2.30), (251, 2.10), (503, 1.90), (1007, 1.70), (1511, 1.50), (2015, 1.30), (float('inf'), 1.10)]
     }
     cle = emplacement if emplacement in grille_brod else "Poitrine (9x8 cm)"
     paliers = grille_brod[cle]
@@ -237,16 +231,16 @@ for i in range(10):
         st.subheader(f"Configuration de l'Article {i+1}")
         metier_type = st.radio(
             f"Univers / Métier pour l'Article {i+1}",
-            ["👕 Textile & Marquage (DTF / Broderie)", "📄 Print, Papeterie & Signalétique (Catalogue APEX)"],
+            ["👕 Textile & Marquage (DTF / Broderie)", "🧢 Casquettes, Bonnets & Accessoires", "📄 Print, Papeterie & Signalétique (Catalogue APEX)"],
             key=f"metier_{i}"
         )
         st.markdown("---")
         
         if "Textile" in metier_type:
-            sans_marquage = st.checkbox(f"Vêtement / Objet sans marquage (fourniture seule) {i+1}", key=f"sans_marq_{i}")
+            sans_marquage = st.checkbox(f"Vêtement sans marquage (fourniture seule) {i+1}", key=f"sans_marq_{i}")
             col1, col2 = st.columns(2)
             with col1:
-                nom_article = st.text_input(f"Référence / Nom du vêtement ou objet {i+1}", value="T-Shirt 100% coton bio" if i==0 else f"Article {i+1}", key=f"nom_textile_{i}")
+                nom_article = st.text_input(f"Référence / Nom du vêtement {i+1}", value="T-Shirt 100% coton bio" if i==0 else f"Article {i+1}", key=f"nom_textile_{i}")
                 qte = st.number_input(f"Quantité (pcs) {i+1}", min_value=0, value=10 if i==0 else 0, key=f"qte_textile_{i}")
                 prix_vetement_ht = st.number_input(f"Prix unitaire HT support (€) {i+1}", min_value=0.0, value=4.92, format="%.2f", key=f"px_textile_{i}")
             with col2:
@@ -257,17 +251,16 @@ for i in range(10):
                 for m in range(nb_marquages):
                     mc1, mc2 = st.columns(2)
                     with mc1:
-                        t_marq = st.selectbox(f"Technique M{m+1}", ["DTF Textile Fin", "DTF Textile Épais", "Broderie HD"], key=f"t_marq_{i}_{m}")
+                        t_marq = st.selectbox(f"Technique M{m+1}", ["DTF Textile Léger", "DTF Textile Vif", "Broderie HD"], key=f"t_marq_{i}_{m}")
                     with mc2:
                         if "Broderie" in t_marq:
-                            emp = st.selectbox(f"Emplacement M{m+1}", ["Poitrine (9x8 cm)", "Dos D10 (25x10 cm)", "Dos Large D20 (25x20 cm)", "Col / Signature (7x2 cm)", "Casquettes / Bonnets", "Parapluie / Bagagerie", "Manche (8x5 cm)", "Pantalon / Poche", "+ Perso. Nom (Cœur)"], key=f"emp_{i}_{m}")
+                            emp = st.selectbox(f"Emplacement M{m+1}", ["Poitrine (9x8 cm)", "Dos D10 (25x10 cm)", "Dos Large D20 (25x20 cm)", "Col / Signature (7x2 cm)", "Manche (8x5 cm)", "Pantalon / Poche", "+ Perso. Nom (Cœur)"], key=f"emp_{i}_{m}")
                         else:
-                            emp = st.selectbox(f"Emplacement M{m+1}", ["Cœur (13x9 cm)", "Dos D10 (20x13 cm)", "Dos D20 (28x20 cm)", "Format P (37x27 cm)", "Manche (9x8 cm)", "Casquette / Bonnet / Accessoire", "+ Personnalisation Nom"], key=f"emp_{i}_{m}")
+                            emp = st.selectbox(f"Emplacement M{m+1}", ["Cœur (13x9 cm)", "Opposé Cœur (9x8 cm)", "Dos D10 (20x13 cm)", "Dos D20 (28x20 cm)", "Format P (37x27 cm)", "Manche (9x8 cm)", "Pantalon / Poche", "+ Personnalisation Nom"], key=f"emp_{i}_{m}")
                     marquages.append({"technique": t_marq, "emplacement": emp})
 
             option_ensachage = st.checkbox(f"Option ensachage individuel {i+1}", key=f"ens_{i}")
             type_sachet = st.selectbox(f"Type de sachet {i+1}", ["Sachet (T-shirt/Polo)", "Sachet (Veste/Sweat)"], key=f"tsach_{i}") if option_ensachage else ""
-            
             option_assurance = st.checkbox(f"Option assurance garantie textile {i+1}", key=f"ass_{i}")
             option_stockage = st.checkbox(f"Option stockage + picking {i+1}", key=f"stock_{i}")
             remise_fidelite = st.number_input(f"Réduction fidélité (%) {i+1}", min_value=0.0, max_value=100.0, value=0.0, key=f"rem_{i}")
@@ -287,6 +280,52 @@ for i in range(10):
                     "remise_fidelite": remise_fidelite
                 })
                 total_textile_brut += qte * prix_vetement_ht
+
+        elif "Casquettes" in metier_type:
+            sans_marquage = st.checkbox(f"Accessoire sans marquage (fourniture seule) {i+1}", key=f"sans_marq_acc_{i}")
+            col1, col2 = st.columns(2)
+            with col1:
+                nom_article = st.text_input(f"Référence / Nom (Casquette, Bonnet, Parapluie, Bagagerie) {i+1}", value="Casquette publicitaire", key=f"nom_acc_{i}")
+                qte = st.number_input(f"Quantité (pcs) {i+1}", min_value=0, value=25 if i==0 else 0, key=f"qte_acc_{i}")
+                prix_vetement_ht = st.number_input(f"Prix unitaire HT support (€) {i+1}", min_value=0.0, value=2.50, format="%.2f", key=f"px_acc_{i}")
+            with col2:
+                nb_marquages = st.selectbox(f"Nombre de marquages {i+1}", [1, 2], key=f"nb_m_acc_{i}") if not sans_marquage else 0
+
+            marquages = []
+            if not sans_marquage:
+                for m in range(nb_marquages):
+                    mc1, mc2 = st.columns(2)
+                    with mc1:
+                        t_marq = st.selectbox(f"Technique M{m+1}", ["DTF Textile Léger", "Broderie HD"], key=f"t_marq_acc_{i}_{m}")
+                    with mc2:
+                        if "Broderie" in t_marq:
+                            emp = st.selectbox(f"Emplacement M{m+1}", ["Casquettes / Bonnets", "Parapluie / Bagagerie"], key=f"emp_acc_{i}_{m}")
+                        else:
+                            emp = st.selectbox(f"Emplacement M{m+1}", ["Casquette / Bonnet", "Parapluie", "Bagagerie"], key=f"emp_acc_{i}_{m}")
+                    marquages.append({"technique": t_marq, "emplacement": emp})
+
+            option_ensachage = False
+            type_sachet = ""
+            option_assurance = st.checkbox(f"Option assurance garantie textile {i+1}", key=f"ass_acc_{i}")
+            option_stockage = st.checkbox(f"Option stockage + picking {i+1}", key=f"stock_acc_{i}")
+            remise_fidelite = st.number_input(f"Réduction fidélité (%) {i+1}", min_value=0.0, max_value=100.0, value=0.0, key=f"rem_acc_{i}")
+
+            if qte > 0:
+                articles_saisis.append({
+                    "type_univers": "textile",
+                    "nom_article": nom_article,
+                    "quantite": qte,
+                    "prix_vet_unit": prix_vetement_ht,
+                    "sans_marquage": sans_marquage,
+                    "marquages": marquages,
+                    "option_ensachage": option_ensachage,
+                    "type_sachet": type_sachet,
+                    "option_assurance": option_assurance,
+                    "option_stockage": option_stockage,
+                    "remise_fidelite": remise_fidelite
+                })
+                total_textile_brut += qte * prix_vetement_ht
+
         else:
             cat_print = st.selectbox(
                 f"Catégorie Print & Signalétique {i+1}",
@@ -438,19 +477,16 @@ with onglets[10]:
                     marquages_calcules.append({"nom": f"{m['technique']} ({m['emplacement']})", "tarif": tarif_m})
 
             if has_broderie_global:
-                if 2 <= quantite_totale_broderie <= 3:
-                    frais_prog_broderie = 41.0
-                elif 4 <= quantite_totale_broderie <= 11:
-                    frais_prog_broderie = 23.0
-                else:
-                    frais_prog_broderie = 0.0
+                if 1 <= quantite_totale_broderie <= 3: frais_prog_broderie = 52.0
+                elif 4 <= quantite_totale_broderie <= 11: frais_prog_broderie = 41.0
+                else: frais_prog_broderie = 23.0
             else:
                 frais_prog_broderie = 0.0
 
-            coût_ens_unit = (1.38 if q<=11 else (1.24 if q<=24 else (1.17 if q<=49 else (1.11 if q<=99 else (1.08 if q<=249 else (1.06 if q<=499 else 1.00)))))) if item["option_ensachage"] else 0.0
+            coût_ens_unit = (1.375 if q<=11 else (1.243 if q<=24 else (1.166 if q<=49 else (1.111 if q<=99 else (1.078 if q<=249 else (1.056 if q<=499 else (1.023 if q<=999 else (1.001 if q<=1999 else 0.979)))))))) if item["option_ensachage"] else 0.0
             tot_ens = coût_ens_unit * q
 
-            coût_ass_unit = (3.08 if q<=11 else (2.38 if q<=24 else (1.83 if q<=49 else (1.25 if q<=99 else (0.98 if q<=249 else (0.70 if q<=499 else (0.64 if q<=999 else 0.61))))))) if item["option_assurance"] else 0.0
+            coût_ass_unit = (3.08 if q<=11 else (2.376 if q<=24 else (1.826 if q<=49 else (1.254 if q<=99 else (0.979 if q<=249 else (0.704 if q<=499 else (0.638 if q<=999 else (0.605 if q<=1999 else 0.55)))))))) if item["option_assurance"] else 0.0
             tot_ass = coût_ass_unit * q
 
             coût_stock_unit = (1.00 if q<=99 else (0.56 if q<=249 else (0.50 if q<=499 else (0.43 if q<=999 else 0.30)))) if item["option_stockage"] else 0.0
