@@ -8,6 +8,10 @@ from reportlab.lib.pagesizes import A4
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image as RLImage
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
+
+# --- DÉFINITION DU FICHIER CATALOGUE EN PREMIER ---
+CATALOGUE_FILE = "catalogue_print.xlsx"  # Remplace par le nom exact de ton fichier sur GitHub si besoin
+
 def obtenir_prix_catalogue_intelligent(categorie, reference, quantite):
     """Fonction intelligente pour chercher le prix dans le catalogue Excel"""
     try:
@@ -17,7 +21,6 @@ def obtenir_prix_catalogue_intelligent(categorie, reference, quantite):
             ref_cell = str(row.iloc[2]).strip() if pd.notna(row.iloc[2]) else ""
             
             if categorie.lower() in cat_cell.lower() and reference.lower() in ref_cell.lower():
-                # On parcourt les colonnes de prix en fonction de la quantité
                 for col_idx in range(3, len(row)):
                     val_cell = row.iloc[col_idx]
                     if pd.notna(val_cell):
