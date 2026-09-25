@@ -45,6 +45,15 @@ def obtenir_prochain_numero_devis():
         json.dump({"dernier_num": nouveau_num}, f)
     return nouveau_num
 
+import pandas as pd
+
+# Charge toutes les feuilles dans un dictionnaire de DataFrames
+excel_path = 'catalogue print et signalétique_2.xlsx'
+toutes_les_feuilles = pd.read_excel(excel_path, sheet_name=None)
+
+# Pour fusionner toutes les feuilles si elles ont la même structure :
+df_global = pd.concat(toutes_les_feuilles.values(), ignore_index=True)
+
 # --- MOTEUR DE LECTURE EXCEL CATALOGUE PRINT & SIGNALÉTIQUE ENTIÈREMENT CORRIGÉ ---
 def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
     if not os.path.exists(CATALOGUE_FILE):
