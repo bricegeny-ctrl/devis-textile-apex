@@ -278,7 +278,7 @@ for i in range(10):
             option_stockage = st.checkbox(f"Option stockage + picking {i+1}", key=f"stock_{i}")
             remise_fidelite = st.number_input(f"Réduction fidélité (%) {i+1}", min_value=0.0, max_value=100.0, value=0.0, key=f"rem_{i}")
 
-           for i in range(nb_articles):
+for i in range(nb_articles):
         # (votre code précédent pour le textile...)
         
         if qte > 0:
