@@ -45,7 +45,7 @@ def obtenir_prochain_numero_devis():
         json.dump({"dernier_num": nouveau_num}, f)
     return nouveau_num
 
-# --- MOTEUR DE LECTURE EXCEL ROBUSTE (PRINT & SIGNALÉTIQUE) ---
+# --- MOTEUR DE LECTURE EXCEL CATALOGUE PRINT & SIGNALÉTIQUE ENTIÈREMENT CORRIGÉ ---
 def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
     if not os.path.exists(CATALOGUE_FILE):
         return 0.15
@@ -55,7 +55,7 @@ def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
     except Exception:
         return 0.15
 
-    # Extraction des paliers de quantité de la ligne 1 (colonnes 3 à 14)
+    # Extraction dynamique des paliers de quantité de la ligne 1 (colonnes 3 à la fin)
     paliers_cols = []
     for c in range(3, df_all.shape[1]):
         val_hdr = df_all.iloc[1, c]
@@ -64,6 +64,7 @@ def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
         except:
             pass
 
+    # Détermination de la colonne cible selon la quantité
     col_cible = 3
     if paliers_cols:
         for idx, (col_idx, q_seuil) in enumerate(paliers_cols):
@@ -90,35 +91,30 @@ def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
         elif qte <= 9999: col_cible = 13
         else: col_cible = 14
 
-    cat_lower = str(cat_print).lower().strip()
     ref_lower = str(choix_ref).lower().strip()
-
     best_row = -1
     max_match = -1
 
+    # Parcours de toutes les lignes du catalogue Excel à partir de la ligne 2
     for r in range(2, len(df_all)):
         row_cat = str(df_all.iloc[r, 0]).lower().strip()
+        row_sub = str(df_all.iloc[r, 1]).lower().strip()
         row_ref = str(df_all.iloc[r, 2]).lower().strip()
+        
+        # Concaténation de tout le texte de la ligne pour maximiser la recherche
+        full_row_text = f"{row_cat} {row_sub} {row_ref}"
 
         score = 0
-        if cat_lower in row_cat or row_cat in cat_lower:
-            score += 10
-        
-        mots_ref = [m for m in ref_lower.split() if len(m) > 2]
-        match_mots = sum(1 for m in mots_ref if m in row_ref)
-        score += match_mots * 5
+        # Vérification des mots-clés de la sélection utilisateur dans la ligne du fichier
+        mots_ref = [m for m in ref_lower.split() if len(m) > 1]
+        match_mots = sum(1 for m in mots_ref if m in full_row_text)
+        score += match_mots * 10
 
         if score > max_match:
             max_match = score
             best_row = r
 
-    if best_row == -1 or max_match < 5:
-        for r in range(2, len(df_all)):
-            if cat_lower in str(df_all.iloc[r, 0]).lower():
-                best_row = r
-                break
-
-    if best_row == -1:
+    if best_row == -1 or max_match <= 0:
         return 0.15
 
     try:
@@ -127,9 +123,10 @@ def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
             
         prix_val = float(df_all.iloc[best_row, col_cible])
         
+        # Fallback si la cellule est vide : recherche de la colonne de prix valide la plus proche
         if pd.isna(prix_val) or prix_val <= 0:
             for alt_col in range(col_cible - 1, 2, -1):
-                if alt_col < df_all.shape[1]:
+                if alt_col < df_all.shape[1] and alt_col >= 0:
                     alt_val = float(df_all.iloc[best_row, alt_col])
                     if not pd.isna(alt_val) and alt_val > 0:
                         prix_val = alt_val
