@@ -76,18 +76,7 @@ def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
                     col_cible = col_idx
                     break
     else:
-        if qte <= 4: col_cible = 3
-        elif qte <= 9: col_cible = 4
-        elif qte <= 24: col_cible = 5
-        elif qte <= 49: col_cible = 6
-        elif qte <= 99: col_cible = 7
-        elif qte <= 249: col_cible = 8
-        elif qte <= 499: col_cible = 9
-        elif qte <= 999: col_cible = 10
-        elif qte <= 2499: col_cible = 11
-        elif qte <= 4999: col_cible = 12
-        elif qte <= 9999: col_cible = 13
-        else: col_cible = 14
+        col_cible = 7 # Défaut sur 99 ex
 
     ref_lower = str(choix_ref).lower().strip()
     cat_lower = str(cat_print).lower().strip()
@@ -95,19 +84,21 @@ def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
     max_match = -1
 
     for r in range(2, len(df_all)):
-        row_cat = str(df_all.iloc[r, 0]) if pd.notna(df_all.iloc[r, 0]) else ""
-        row_sub1 = str(df_all.iloc[r, 1]) if pd.notna(df_all.iloc[r, 1]) else ""
-        row_sub2 = str(df_all.iloc[r, 2]) if pd.notna(df_all.iloc[r, 2]) else ""
+        row_cat = str(df_all.iloc[r, 0]).lower() if pd.notna(df_all.iloc[r, 0]) else ""
+        row_sub1 = str(df_all.iloc[r, 1]).lower() if pd.notna(df_all.iloc[r, 1]) else ""
+        row_sub2 = str(df_all.iloc[r, 2]).lower() if pd.notna(df_all.iloc[r, 2]) else ""
         
-        full_row_text = f"{row_sub1} {row_sub2}".lower()
-
         score = 0
-        if cat_lower in row_cat.lower() or row_cat.lower() in cat_lower:
-            score += 20
+        if cat_lower in row_cat or row_cat in cat_lower:
+            score += 30
 
-        mots_ref = [m for m in ref_lower.split() if len(m) > 1]
-        match_mots = sum(1 for m in mots_ref if m in full_row_text)
-        score += match_mots * 10
+        full_sub = f"{row_sub1} - {row_sub2}".strip()
+        if row_sub1 in ref_lower:
+            score += 20
+        if row_sub2 and row_sub2 in ref_lower:
+            score += 20
+        if full_sub in ref_lower or ref_lower in full_sub:
+            score += 50
 
         if score > max_match:
             max_match = score
@@ -121,7 +112,6 @@ def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
             col_cible = df_all.shape[1] - 1
             
         prix_val = float(df_all.iloc[best_row, col_cible])
-        
         if pd.isna(prix_val) or prix_val <= 0:
             for alt_col in range(col_cible - 1, 2, -1):
                 if 0 <= alt_col < df_all.shape[1]:
@@ -130,10 +120,7 @@ def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
                         prix_val = alt_val
                         break
 
-        if pd.isna(prix_val) or prix_val <= 0:
-            return 0.15
-            
-        return round(prix_val, 4)
+        return round(prix_val, 4) if not pd.isna(prix_val) and prix_val > 0 else 0.15
     except Exception:
         return 0.15
 
@@ -397,49 +384,60 @@ for i in range(10):
                     st.info("💡 Saisie manuelle active (produit hors catalogue).")
                     remise_fidelite = st.number_input(f"Remise commerciale (%) {i+1}", min_value=0.0, max_value=100.0, value=0.0, key=f"rem_print_{i}")
             else:
-                options_articles = {}
+                # Structure hiérarchique stricte : Catégorie -> Sous-cat 1 -> Sous-cat 2
+                arbre_catalogue = {}
                 if os.path.exists(CATALOGUE_FILE):
                     try:
                         df_all = pd.read_excel(CATALOGUE_FILE, sheet_name=0, header=None)
                         for r in range(2, len(df_all)):
-                            cat = str(df_all.iloc[r, 0]).strip() if pd.notna(df_all.iloc[r, 0]) else "Autres"
+                            cat = str(df_all.iloc[r, 0]).strip() if pd.notna(df_all.iloc[r, 0]) else ""
                             sub1 = str(df_all.iloc[r, 1]).strip() if pd.notna(df_all.iloc[r, 1]) else ""
                             sub2 = str(df_all.iloc[r, 2]).strip() if pd.notna(df_all.iloc[r, 2]) else ""
                             
-                            # Combine les sous-catégories 1 et 2 pour l'affichage
-                            if sub1 and sub2:
-                                libelle_complet = f"{sub1} - {sub2}"
-                            elif sub1:
-                                libelle_complet = sub1
-                            elif sub2:
-                                libelle_complet = sub2
-                            else:
+                            if not cat or not sub1:
                                 continue
-
-                            if cat not in options_articles:
-                                options_articles[cat] = []
-                            if libelle_complet not in options_articles[cat]:
-                                options_articles[cat].append(libelle_complet)
+                            
+                            if cat not in arbre_catalogue:
+                                arbre_catalogue[cat] = {}
+                            if sub1 not in arbre_catalogue[cat]:
+                                arbre_catalogue[cat][sub1] = []
+                            if sub2 and sub2 not in arbre_catalogue[cat][sub1]:
+                                arbre_catalogue[cat][sub1].append(sub2)
                     except Exception:
                         pass
-                
-                # Recherche souple des sous-catégories pour la catégorie principale sélectionnée
-                liste_ref_trouvee = []
-                for cat_key, liste_vals in options_articles.items():
-                    if cat_print.lower() in cat_key.lower() or cat_key.lower() in cat_print.lower():
-                        liste_ref_trouvee.extend(liste_vals)
-                
-                if not liste_ref_trouvee:
-                    liste_ref_trouvee = [val for vals in options_articles.values() for val in vals]
-                if not liste_ref_trouvee:
-                    liste_ref_trouvee = ["Article standard"]
 
-                choix_ref = st.selectbox(
-                    f"Sous-catégories exactes {i+1}", 
-                    list(dict.fromkeys(liste_ref_trouvee)), 
-                    key=f"ref_print_{i}"
-                )
+                # Trouver la catégorie correspondante dans l'arbre (correspondance souple)
+                matched_cat = None
+                for c_excel in arbre_catalogue.keys():
+                    if cat_print.lower() in c_excel.lower() or c_excel.lower() in cat_print.lower():
+                        matched_cat = c_excel
+                        break
+
+                sous_cats_1 = list(arbre_catalogue[matched_cat].keys()) if matched_cat and arbre_catalogue[matched_cat] else ["Standard"]
                 
+                # 1er Selectbox : Sous-catégorie 1 exclusive à la catégorie
+                choix_sub1 = st.selectbox(
+                    f"Sous-catégorie 1 ({cat_print}) {i+1}", 
+                    sous_cats_1, 
+                    key=f"sub1_{i}"
+                )
+
+                # Récupération exclusive des Sous-catégories 2 liées à cette Sous-catégorie 1
+                sous_cats_2 = []
+                if matched_cat and choix_sub1 in arbre_catalogue[matched_cat]:
+                    sous_cats_2 = arbre_catalogue[matched_cat][choix_sub1]
+
+                if sous_cats_2:
+                    choix_sub2 = st.selectbox(
+                        f"Sous-catégorie 2 ({choix_sub1}) {i+1}", 
+                        sous_cats_2, 
+                        key=f"sub2_{i}"
+                    )
+                    choix_ref = f"{choix_sub1} - {choix_sub2}"
+                else:
+                    choix_ref = choix_sub1
+                    st.info("ℹ️ Aucune sous-catégorie secondaire pour cette sélection.")
+
                 col1, col2 = st.columns(2)
                 with col1:
                     qte = st.number_input(f"Quantité (exemplaires) {i+1}", min_value=0, value=100 if i==0 else 0, key=f"qte_print_{i}")
