@@ -8,6 +8,23 @@ from reportlab.lib.pagesizes import A4
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image as RLImage
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
+def obtenir_prix_catalogue_intelligent(categorie, reference, quantite):
+    """Fonction intelligente pour chercher le prix dans le catalogue Excel"""
+    try:
+        df_catalogue = pd.read_excel(CATALOGUE_FILE, sheet_name=0, header=None)
+        for idx, row in df_catalogue.iterrows():
+            cat_cell = str(row.iloc[0]).strip() if pd.notna(row.iloc[0]) else ""
+            ref_cell = str(row.iloc[2]).strip() if pd.notna(row.iloc[2]) else ""
+            
+            if categorie.lower() in cat_cell.lower() and reference.lower() in ref_cell.lower():
+                # On parcourt les colonnes de prix en fonction de la quantité
+                for col_idx in range(3, len(row)):
+                    val_cell = row.iloc[col_idx]
+                    if pd.notna(val_cell):
+                        return float(val_cell)
+        return 0.0
+    except Exception as e:
+        return 0.0
 
 st.set_page_config(page_title="Gestionnaire de Devis - APEX", layout="wide")
 
