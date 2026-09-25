@@ -293,7 +293,7 @@ for i in range(10):
                     "remise_fidelite": remise_fidelite
                 })
                 total_textile_brut += qte * prix_vetement_ht
-        else:
+            else:
         # --- SELECTION PRINT & SIGNALETIQUE + OPTION AUTRE (DYNAMIQUE) ---
         cat_print = st.selectbox(
             f"Catégorie Print & Signalétique {i+1}",
@@ -316,10 +316,8 @@ for i in range(10):
                 st.info("💡 Saisie manuelle active (produit hors catalogue).")
                 remise_fidelite = st.number_input(f"Remise commerciale (%) {i+1}", min_value=0.0, max_value=100.0, value=0.0, key=f"rem_print_{i}")
         else:
-            # Récupération automatique et exhaustive de tous les modèles depuis le fichier Excel
             options_trouvees = obtenir_modeles_pour_categorie(cat_print)
             
-            # Sécurité si le fichier Excel ne renvoie rien
             if not options_trouvees:
                 options_trouvees = ["Article standard"]
 
@@ -328,17 +326,17 @@ for i in range(10):
             coll, col2 = st.columns(2)
             with coll:
                 qte = st.number_input(f"Quantité (exemplaires) {i+1}", min_value=0, value=100 if i==0 else 0, key=f"qte_print_{i}")
-                    
-                    # --- CALCUL AUTOMATIQUE INSTANTANÉ (PALIERS STRICTS) ---
-                    prix_unitaire_auto = obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte)
-                    prix_vetement_ht = prix_unitaire_auto  # Affectation directe pour le devis
-                    
-                    # Affichage clair et dynamique du prix unitaire calculé selon la tranche
-                    st.metric(label=f"Prix unitaire HT (€) {i+1} (Catalogue auto)", value=f"{prix_unitaire_auto:.4f} €")
-                    
-                with col2:
-                    st.success(f"✅ Tarif appliqué ({qte} ex) : **{prix_unitaire_auto:.4f} € HT**")
-                    remise_fidelite = st.number_input(f"Remise commerciale (%) {i+1}", min_value=0.0, max_value=100.0, value=0.0, key=f"rem_print_{i}")
+                
+                # --- CALCUL AUTOMATIQUE INSTANTANÉ (PALIERS STRICTS) ---
+                prix_unitaire_auto = obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte)
+                prix_vetement_ht = prix_unitaire_auto  # Affectation directe pour le devis
+
+                # Affichage clair et dynamique du prix unitaire calculé selon la tranche
+                st.metric(label=f"Prix unitaire HT (€) {i+1} (Catalogue auto)", value=f"{prix_unitaire_auto:.4f} €")
+
+            with col2:
+                st.success(f"✅ Tarif appliqué ({qte} ex) : **{prix_unitaire_auto:.4f} € HT**")
+                remise_fidelite = st.number_input(f"Remise commerciale (%) {i+1}", min_value=0.0, max_value=100.0, value=0.0, key=f"rem_print_{i}")
 
             if qte > 0:
                 articles_saisis.append({
