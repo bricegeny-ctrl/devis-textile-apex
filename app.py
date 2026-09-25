@@ -10,10 +10,10 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 
 # --- DÉFINITION DU FICHIER CATALOGUE EN PREMIER ---
-CATALOGUE_FILE = "catalogue_print.xlsx"  # Remplace par le nom exact de ton fichier sur GitHub si besoin
+CATALOGUE_FILE = "catalogue_print.xlsx"  # Vérifiez que c'est bien le nom de votre fichier Excel
 
 def obtenir_prix_catalogue_intelligent(categorie, reference, quantite):
-    """Fonction intelligente pour chercher le prix dans le catalogue Excel"""
+    """Fonction sécurisée pour récupérer le prix catalogue"""
     try:
         df_catalogue = pd.read_excel(CATALOGUE_FILE, sheet_name=0, header=None)
         for idx, row in df_catalogue.iterrows():
@@ -26,7 +26,7 @@ def obtenir_prix_catalogue_intelligent(categorie, reference, quantite):
                     if pd.notna(val_cell):
                         return float(val_cell)
         return 0.0
-    except Exception as e:
+    except Exception:
         return 0.0
 
 st.set_page_config(page_title="Gestionnaire de Devis - APEX", layout="wide")
