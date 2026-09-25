@@ -3,13 +3,11 @@ import pandas as pd
 from datetime import datetime
 import os
 import json
-import smtplib
-from email.message import EmailMessage
+import urllib.parse
 from reportlab.lib.pagesizes import A4
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image as RLImage
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
-import urllib.parse
 
 st.set_page_config(page_title="Gestionnaire de Devis - APEX", layout="wide")
 
@@ -46,7 +44,7 @@ def obtenir_prochain_numero_devis():
         json.dump({"dernier_num": nouveau_num}, f)
     return nouveau_num
 
-# --- MOTEUR DE LECTURE EXCEL : CORRESPONDANCE DE PALIERS DIRECTE ET ROBUSTE ---
+# --- MOTEUR DE LECTURE EXCEL ROBUSTE (INDEX 3 À 14) ---
 def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
     if not os.path.exists(CATALOGUE_FILE):
         return 0.15
@@ -59,33 +57,32 @@ def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
     cat_lower = str(cat_print).lower().strip()
     ref_lower = str(choix_ref).lower().strip()
 
-    # Association rigoureuse et explicite des colonnes Excel (Index 3 à 14)
+    # Mappage strict des colonnes du catalogue Excel (Indices 3 à 14 correspondants aux paliers de quantité)
     if qte <= 1:
         col_cible = 3
-    elif qte < 5:
+    elif qte <= 5:
         col_cible = 4
-    elif qte < 10:
+    elif qte <= 10:
         col_cible = 5
-    elif qte < 25:
+    elif qte <= 25:
         col_cible = 6
-    elif qte < 50:
+    elif qte <= 50:
         col_cible = 7
-    elif qte < 250:
+    elif qte <= 250:
         col_cible = 8
-    elif qte < 500:
+    elif qte <= 500:
         col_cible = 9
-    elif qte < 1000:
+    elif qte <= 1000:
         col_cible = 10
-    elif qte < 2500:
+    elif qte <= 2500:
         col_cible = 11
-    elif qte < 5000:
+    elif qte <= 5000:
         col_cible = 12
-    elif qte < 10000:
+    elif qte <= 10000:
         col_cible = 13
     else:
         col_cible = 14
 
-    # 1. Recherche de la meilleure ligne du produit dans le catalogue
     best_row = -1
     max_match = -1
 
@@ -114,8 +111,10 @@ def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
     if best_row == -1:
         return 0.15
 
-    # 2. Extraction sécurisée du prix dans la colonne ciblée
     try:
+        if col_cible >= df_all.shape[1]:
+            col_cible = df_all.shape[1] - 1
+            
         prix_val = float(df_all.iloc[best_row, col_cible])
         
         if pd.isna(prix_val) or prix_val <= 0:
@@ -133,7 +132,7 @@ def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
     except Exception:
         return 0.15
 
-# --- GRILLES TARIFAIRES OFFICIELLES (MARQUAGE & BRODERIE) ---
+# --- GRILLES TARIFAIRES OFFICIELLES (MARQUAGE & BRODERIE ÉLARGIES) ---
 def obtenir_tarif_dtf_unitaire(type_textile, emplacement, qte_totale):
     grille_fin = {
         "Cœur (13x9 cm)": [(5, 6.00), (9, 4.50), (19, 3.60), (29, 2.81), (39, 2.50), (49, 2.40), (99, 2.00), (249, 1.80), (499, 1.60), (999, 1.40), (5000, 1.20), (float('inf'), 0.70)],
@@ -141,6 +140,7 @@ def obtenir_tarif_dtf_unitaire(type_textile, emplacement, qte_totale):
         "Dos D20 (28x20 cm)": [(5, 13.67), (9, 10.00), (19, 9.00), (29, 6.90), (39, 6.30), (49, 6.00), (99, 5.50), (249, 4.60), (499, 4.00), (999, 3.50), (5000, 2.50), (float('inf'), 1.50)],
         "Format P (37x27 cm)": [(5, 17.00), (9, 13.00), (19, 12.00), (29, 10.00), (39, 9.00), (49, 8.00), (99, 7.50), (249, 6.50), (499, 6.00), (999, 5.00), (5000, 4.00), (float('inf'), 2.50)],
         "Manche (9x8 cm)": [(5, 7.20), (9, 5.40), (19, 4.32), (29, 3.37), (39, 3.00), (49, 2.88), (99, 2.40), (249, 2.16), (499, 1.92), (999, 1.68), (5000, 1.44), (float('inf'), 0.84)],
+        "Casquette / Bonnet / Accessoire": [(5, 8.50), (9, 6.50), (19, 5.20), (29, 4.10), (39, 3.50), (49, 3.20), (99, 2.80), (249, 2.40), (499, 2.10), (999, 1.80), (5000, 1.50), (float('inf'), 1.00)],
         "+ Personnalisation Nom": [(5, 4.39), (9, 3.50), (19, 2.50), (29, 2.20), (39, 1.90), (49, 1.80), (99, 1.70), (249, 1.50), (499, 1.30), (999, 0.80), (5000, 0.30), (float('inf'), 0.20)]
     }
     cle = emplacement if emplacement in grille_fin else "Cœur (13x9 cm)"
@@ -161,6 +161,7 @@ def obtenir_tarif_broderie_unitaire(emplacement, qte_totale):
         "Dos Large D20 (25x20 cm)": [(3, 23.20), (11, 18.25), (23, 14.20), (47, 11.90), (95, 9.90), (251, 9.30), (503, 8.80), (1007, 8.30), (1511, 7.80), (float('inf'), 7.20)],
         "Col / Signature (7x2 cm)": [(3, 10.90), (11, 8.37), (23, 6.20), (47, 4.40), (95, 3.10), (251, 2.85), (503, 2.65), (1007, 2.45), (1511, 2.25), (float('inf'), 2.00)],
         "Casquettes / Bonnets": [(3, 16.10), (11, 12.27), (23, 9.30), (47, 7.10), (95, 5.50), (251, 5.05), (503, 4.75), (1007, 4.45), (1511, 4.15), (float('inf'), 3.75)],
+        "Parapluie / Bagagerie": [(3, 19.50), (11, 15.00), (23, 12.00), (47, 9.50), (95, 8.00), (251, 7.20), (503, 6.50), (1007, 6.00), (1511, 5.50), (float('inf'), 4.80)],
         "Manche (8x5 cm)": [(3, 16.10), (11, 12.27), (23, 9.30), (47, 7.10), (95, 5.50), (251, 5.05), (503, 4.75), (1007, 4.45), (1511, 4.15), (float('inf'), 3.75)],
         "Pantalon / Poche": [(3, 18.30), (11, 13.97), (23, 10.90), (47, 8.60), (95, 7.10), (251, 6.60), (503, 6.20), (1007, 5.80), (1511, 5.45), (float('inf'), 4.95)],
         "+ Perso. Nom (Cœur)": [(3, 6.00), (11, 4.00), (23, 4.00), (47, 3.50), (95, 3.00), (251, 2.80), (503, 2.60), (1007, 2.40), (1511, 2.20), (float('inf'), 2.00)]
@@ -242,10 +243,10 @@ for i in range(10):
         st.markdown("---")
         
         if "Textile" in metier_type:
-            sans_marquage = st.checkbox(f"Vêtement sans marquage (fourniture seule) {i+1}", key=f"sans_marq_{i}")
+            sans_marquage = st.checkbox(f"Vêtement / Objet sans marquage (fourniture seule) {i+1}", key=f"sans_marq_{i}")
             col1, col2 = st.columns(2)
             with col1:
-                nom_article = st.text_input(f"Référence / Nom du vêtement {i+1}", value="T-Shirt 100% coton bio" if i==0 else f"Vêtement {i+1}", key=f"nom_textile_{i}")
+                nom_article = st.text_input(f"Référence / Nom du vêtement ou objet {i+1}", value="T-Shirt 100% coton bio" if i==0 else f"Article {i+1}", key=f"nom_textile_{i}")
                 qte = st.number_input(f"Quantité (pcs) {i+1}", min_value=0, value=10 if i==0 else 0, key=f"qte_textile_{i}")
                 prix_vetement_ht = st.number_input(f"Prix unitaire HT support (€) {i+1}", min_value=0.0, value=4.92, format="%.2f", key=f"px_textile_{i}")
             with col2:
@@ -259,9 +260,9 @@ for i in range(10):
                         t_marq = st.selectbox(f"Technique M{m+1}", ["DTF Textile Fin", "DTF Textile Épais", "Broderie HD"], key=f"t_marq_{i}_{m}")
                     with mc2:
                         if "Broderie" in t_marq:
-                            emp = st.selectbox(f"Emplacement M{m+1}", ["Poitrine (9x8 cm)", "Dos D10 (25x10 cm)", "Dos Large D20 (25x20 cm)", "Col / Signature (7x2 cm)", "Casquettes / Bonnets", "Manche (8x5 cm)", "Pantalon / Poche", "+ Perso. Nom (Cœur)"], key=f"emp_{i}_{m}")
+                            emp = st.selectbox(f"Emplacement M{m+1}", ["Poitrine (9x8 cm)", "Dos D10 (25x10 cm)", "Dos Large D20 (25x20 cm)", "Col / Signature (7x2 cm)", "Casquettes / Bonnets", "Parapluie / Bagagerie", "Manche (8x5 cm)", "Pantalon / Poche", "+ Perso. Nom (Cœur)"], key=f"emp_{i}_{m}")
                         else:
-                            emp = st.selectbox(f"Emplacement M{m+1}", ["Cœur (13x9 cm)", "Dos D10 (20x13 cm)", "Dos D20 (28x20 cm)", "Format P (37x27 cm)", "Manche (9x8 cm)", "+ Personnalisation Nom"], key=f"emp_{i}_{m}")
+                            emp = st.selectbox(f"Emplacement M{m+1}", ["Cœur (13x9 cm)", "Dos D10 (20x13 cm)", "Dos D20 (28x20 cm)", "Format P (37x27 cm)", "Manche (9x8 cm)", "Casquette / Bonnet / Accessoire", "+ Personnalisation Nom"], key=f"emp_{i}_{m}")
                     marquages.append({"technique": t_marq, "emplacement": emp})
 
             option_ensachage = st.checkbox(f"Option ensachage individuel {i+1}", key=f"ens_{i}")
@@ -309,17 +310,55 @@ for i in range(10):
                     remise_fidelite = st.number_input(f"Remise commerciale (%) {i+1}", min_value=0.0, max_value=100.0, value=0.0, key=f"rem_print_{i}")
             else:
                 options_articles = {
-                    "Flyers": ["Flyer A6 - 135g couché brillant - Recto", "Flyer A6 - 135g couché brillant - Recto/Verso", "Flyer A6 - 170g couché demi mat - Recto", "Flyer A6 - 170g couché demi mat - Recto/Verso", "Flyer A6 - 250g couché - Recto", "Flyer A6 - 250g couché - Recto/Verso", "Flyer A6 - 350g couché - Recto", "Flyer A6 - 350g couché - Recto/Verso", "Flyer A6 - 115g recyclé - Recto", "Flyer A6 - 115g recyclé - Recto/Verso", "Flyer A5 - 135g couché brillant - Recto", "Flyer A5 - 135g couché brillant - Recto/Verso", "Flyer A5 - 170g couché demi mat - Recto", "Flyer A5 - 170g couché demi mat - Recto/Verso"],
-                    "Dépliants": ["Dépliant A6 fermé / A5 ouvert (1 pli) - 135g couché brillant", "Dépliant A5 fermé / A4 ouvert (1 pli) - 135g couché brillant"],
-                    "Blocs notes": ["Bloc Note collé - Format A6 - 25 Feuilles - 90 Gr Offset", "Bloc Note collé - Format A5 - 50 Feuilles - 90 Gr Offset"],
+                    "Flyers": [
+                        "Flyer A6 - 135g couché brillant - Recto", "Flyer A6 - 135g couché brillant - Recto/Verso", 
+                        "Flyer A6 - 170g couché demi mat - Recto", "Flyer A6 - 170g couché demi mat - Recto/Verso", 
+                        "Flyer A6 - 250g couché - Recto", "Flyer A6 - 250g couché - Recto/Verso", 
+                        "Flyer A6 - 350g couché - Recto", "Flyer A6 - 350g couché - Recto/Verso", 
+                        "Flyer A6 - 115g recyclé - Recto", "Flyer A6 - 115g recyclé - Recto/Verso",
+                        "Flyer A5 - 135g couché brillant - Recto", "Flyer A5 - 135g couché brillant - Recto/Verso", 
+                        "Flyer A5 - 170g couché demi mat - Recto", "Flyer A5 - 170g couché demi mat - Recto/Verso",
+                        "Flyer A4 - 135g couché brillant - Recto", "Flyer A4 - 135g couché brillant - Recto/Verso"
+                    ],
+                    "Dépliants": [
+                        "Dépliant A6 fermé / A5 ouvert (1 pli) - 135g couché brillant", 
+                        "Dépliant A5 fermé / A4 ouvert (1 pli) - 135g couché brillant",
+                        "Dépliant 3 volets DL - 135g couché brillant"
+                    ],
+                    "Blocs notes": [
+                        "Bloc Note collé - Format A6 - 25 Feuilles - 90 Gr Offset", 
+                        "Bloc Note collé - Format A5 - 50 Feuilles - 90 Gr Offset"
+                    ],
                     "Chemises de présentation": ["Chemise de présentation A4 - 300g - 2 rabats"],
-                    "Banderoles": ["Banderole 200 x 80 cm - 510g M1 avec œillets", "Banderole 300 x 100 cm - 510g M1 avec œillets"],
-                    "Panneaux de chantier": ["Panneau Akylux 60 x 40 cm - 3,5mm", "Panneau Akylux 80 x 60 cm - 3,5mm"],
-                    "Roll-Up": ["Roll-Up Eco - Bâche PVC 510g M1 - 85x200cm"],
+                    "Banderoles": [
+                        "Banderole 200 x 80 cm - 510g M1 avec œillets", 
+                        "Banderole 300 x 100 cm - 510g M1 avec œillets",
+                        "Banderole 400 x 100 cm - 510g M1 avec œillets"
+                    ],
+                    "Panneaux de chantier": [
+                        "Panneau Akylux 60 x 40 cm - 3,5mm", 
+                        "Panneau Akylux 80 x 60 cm - 3,5mm",
+                        "Panneau Dibond 3mm 60 x 40 cm"
+                    ],
+                    "Roll-Up": [
+                        "Roll-Up Eco - Bâche PVC 510g M1 - 85x200cm",
+                        "Roll-Up Premium - Bâche M1 opaque - 85x200cm"
+                    ],
                     "Sous bocks": ["Sous bock carton 580g - 9,3x9,3 cm"],
-                    "Adhésifs": ["Adhésif vinyl classique 10x10cm"],
-                    "Cartes de visite": ["Carte de visite standard - 350g - Recto/Verso"],
-                    "Calendriers": ["Calendrier A4 - 250g couché brillant"],
+                    "Adhésifs": [
+                        "Adhésif vinyl classique 10x10cm",
+                        "Adhésif vinyl grand format au m²",
+                        "Adhésif micro-perforé vitrine"
+                    ],
+                    "Cartes de visite": [
+                        "Carte de visite standard - 350g - Recto", 
+                        "Carte de visite standard - 350g - Recto/Verso",
+                        "Carte de visite pelliculée Soft Touch - Recto/Verso"
+                    ],
+                    "Calendriers": [
+                        "Calendrier A4 - 250g couché brillant",
+                        "Calendrier souple bancaire publicitaire"
+                    ],
                     "Menus restaurants": ["Menu restaurant indéchirable 300g - A5"]
                 }
                 
