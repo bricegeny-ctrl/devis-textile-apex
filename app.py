@@ -416,60 +416,22 @@ for i in range(10):
                     st.info("💡 Saisie manuelle active (produit hors catalogue).")
                     remise_fidelite = st.number_input(f"Remise commerciale (%) {i+1}", min_value=0.0, max_value=100.0, value=0.0, key=f"rem_print_{i}")
             else:
-                options_articles = {
-                    "Flyers": [
-                        "Flyer A6 - 135g couché brillant - Recto", "Flyer A6 - 135g couché brillant - Recto/Verso", 
-                        "Flyer A6 - 170g couché demi mat - Recto", "Flyer A6 - 170g couché demi mat - Recto/Verso", 
-                        "Flyer A6 - 250g couché - Recto", "Flyer A6 - 250g couché - Recto/Verso", 
-                        "Flyer A6 - 350g couché - Recto", "Flyer A6 - 350g couché - Recto/Verso", 
-                        "Flyer A6 - 115g recyclé - Recto", "Flyer A6 - 115g recyclé - Recto/Verso",
-                        "Flyer A5 - 135g couché brillant - Recto", "Flyer A5 - 135g couché brillant - Recto/Verso", 
-                        "Flyer A5 - 170g couché demi mat - Recto", "Flyer A5 - 170g couché demi mat - Recto/Verso",
-                        "Flyer A4 - 135g couché brillant - Recto", "Flyer A4 - 135g couché brillant - Recto/Verso"
-                    ],
-                    "Dépliants": [
-                        "Dépliant A6 fermé / A5 ouvert (1 pli) - 135g couché brillant", 
-                        "Dépliant A5 fermé / A4 ouvert (1 pli) - 135g couché brillant",
-                        "Dépliant 3 volets DL - 135g couché brillant"
-                    ],
-                    "Blocs notes": [
-                        "Bloc Note collé - Format A6 - 25 Feuilles - 90 Gr Offset", 
-                        "Bloc Note collé - Format A5 - 50 Feuilles - 90 Gr Offset"
-                    ],
-                    "Chemises de présentation": ["Chemise de présentation A4 - 300g - 2 rabats"],
-                    "Banderoles": [
-                        "Banderole 200 x 80 cm - 510g M1 avec œillets", 
-                        "Banderole 300 x 100 cm - 510g M1 avec œillets",
-                        "Banderole 400 x 100 cm - 510g M1 avec œillets"
-                    ],
-                    "Panneaux de chantier": [
-                        "Panneau Akylux 60 x 40 cm - 3,5mm", 
-                        "Panneau Akylux 80 x 60 cm - 3,5mm",
-                        "Panneau Dibond 3mm 60 x 40 cm"
-                    ],
-                    "Roll-Up": [
-                        "Roll-Up Eco - Bâche PVC 510g M1 - 85x200cm",
-                        "Roll-Up Premium - Bâche M1 opaque - 85x200cm"
-                    ],
-                    "Sous bocks": ["Sous bock carton 580g - 9,3x9,3 cm"],
-                    "Adhésifs": [
-                        "Adhésif vinyl classique 10x10cm",
-                        "Adhésif vinyl grand format au m²",
-                        "Adhésif micro-perforé vitrine"
-                    ],
-                    "Cartes de visite": [
-                        "Carte de visite standard - 350g - Recto", 
-                        "Carte de visite standard - 350g - Recto/Verso",
-                        "Carte de visite pelliculée Soft Touch - Recto/Verso"
-                    ],
-                    "Calendriers": [
-                        "Calendrier A4 - 250g couché brillant",
-                        "Calendrier souple bancaire publicitaire"
-                    ],
-                    "Menus restaurants": ["Menu restaurant indéchirable 300g - A5"]
-                }
-                
-                choix_ref = st.selectbox(f"Modèle exact {i+1}", options_articles.get(cat_print, ["Article standard"]), key=f"ref_print_{i}")
+                # --- CONSTRUCTION AUTOMATIQUE DEPUIS L'EXCEL ---
+df_all = pd.read_excel(CATALOGUE_FILE, sheet_name=0, header=None)
+
+options_articles = {}
+for r in range(2, len(df_all)):
+    cat = str(df_all.iloc[r, 0]).strip() if pd.notna(df_all.iloc[r, 0]) else "Autres"
+    ref = str(df_all.iloc[r, 2]).strip() if pd.notna(df_all.iloc[r, 2]) else ""
+    
+    if ref:
+        if cat not in options_articles:
+            options_articles[cat] = []
+        if ref not in options_articles[cat]:
+            options_articles[cat].append(ref)
+
+# Puis votre selectbox existant fonctionnera tout seul avec l'Excel :
+choix_ref = st.selectbox(f"Modèle exact {i+1}", options_articles.get(cat_print, ["Article standard"]), key=f"ref_print_{i}")
                 
                 col1, col2 = st.columns(2)
                 with col1:
