@@ -253,7 +253,7 @@ st.sidebar.markdown("---")
 zone_livraison = st.sidebar.selectbox("Zone de Livraison", ["France Continentale", "Livraison Corse, Monaco ou Andorre", "Espace UE"])
 offrir_port = st.sidebar.checkbox("🎁 Offrir les frais de port", value=False)
 conseiller_nom = st.sidebar.selectbox("Commercial / Conseiller", ["Brice Geny", "Brice Bugna"])
-mode_reglement = st.sidebar.selectbox("Mode de Règlement", ["Virement bancaire 30 jours", "Comptant à la commande", "50% à la commande, 50% à 30 jours"])
+mode_reglement = st.sidebar.selectbox("Mode de Règlement", ["Virement bancaire 30 jours", "Comptant à la commande", "50% à la validation du devis, 50% à livraison", "100% à la livraison", " ___ mensualités de ____ €" ])
 
 # --- INTERFACE PRINCIPALE ---
 noms_onglets = [f"Article {i+1}" for i in range(10)] + ["📊 Général & Devis", "📈 Suivi CRM"]
@@ -618,9 +618,9 @@ with onglets[10]:
 
             header_text = Paragraph(
                 "<b>APEX - SOLUTIONS VISUELLES, PRINT & TEXTILE</b><br/>"
-                "Plasne (Jura)<br/>"
+                "70150 Marnay<br/>"
                 "Tél (Brice Geny) : 06 32 69 73 28 &nbsp;|&nbsp; Tél (Brice Bugna) : 06 29 92 94 74<br/>"
-                "Email : contact@apex-visual.fr", 
+                "Email : brice.geny@gmail.com", 
                 style_sub
             )
             if logo_path and os.path.exists(logo_path):
@@ -708,7 +708,7 @@ with onglets[10]:
             story.append(t_totaux)
             story.append(Spacer(1, 15))
 
-            conditions_text = f"<b>Conditions de règlement & Bon pour accord :</b><br/>• Règlement : {mode_reglement}<br/>• Fichiers vectoriels fournis (.AI, .EPS, .PDF).<br/>• Bon pour accord daté et signé requis."
+            conditions_text = f"<b>Conditions de règlement & Bon pour accord :</b><br/>• Règlement : {mode_reglement}<br/>• Bon pour accord daté et signé requis."
             story.append(Paragraph(conditions_text, style_sub))
 
             doc.build(story)
