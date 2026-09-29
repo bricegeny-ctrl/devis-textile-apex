@@ -783,7 +783,6 @@ with onglets[11]:
             st.markdown("---")
             st.subheader("🛠️ Gestion, Modification & Duplication du Devis")
             
-            # Sélection du devis parmi la liste filtrée (ou globale)
             liste_devis_dispo = df_affiche["Numero_Devis"].tolist() if not df_affiche.empty else df_crm["Numero_Devis"].tolist()
             devis_selectionne = st.selectbox("Sélectionner un devis par son numéro", liste_devis_dispo, key="select_crm")
             
@@ -814,29 +813,32 @@ with onglets[11]:
                 
                 with col_dup:
                     st.write("#### 📋 Duplication")
-                    st.write("Créer une copie en brouillon.")
+                    st.write("Créer une copie avec la numérotation officielle.")
                     if st.button("Dupliquer ce devis", key=f"btn_dup_{devis_selectionne}"):
                         nouveau_devis = ligne_dev.copy()
-                        nouveau_num = f"DEV-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+                        # Utilisation de la règle de numérotation générale officielle
+                        nouveau_num = obtenir_prochain_numero_devis()
                         nouveau_devis["Numero_Devis"] = nouveau_num
                         nouveau_devis["Statut"] = "brouillon"
                         nouveau_devis["Date"] = datetime.now().strftime('%Y-%m-%d %H:%M')
                         
                         df_crm = pd.concat([df_crm, pd.DataFrame([nouveau_devis])], ignore_index=True)
                         df_crm.to_csv(CRM_FILE, index=False)
-                        st.success(f"Devis dupliqué ! Nouveau numéro : **{nouveau_num}**")
+                        st.success(f"Devis dupliqué avec succès ! Nouveau numéro : **{nouveau_num}**")
                         st.rerun()
 
                 with col_mod:
-                    st.write("#### ✏️ Modification rapide")
-                    nouveau_client = st.text_input("Client", value=str(ligne_dev.get("Client", "")), key=f"mod_client_{devis_selectionne}")
-                    nouvelle_entreprise = st.text_input("Entreprise", value=str(ligne_dev.get("Entreprise", "")), key=f"mod_ent_{devis_selectionne}")
-                    
-                    if st.button("Enregistrer les modifications", key=f"btn_mod_{devis_selectionne}"):
-                        df_crm.loc[ligne_idx, "Client"] = nouveau_client
-                        df_crm.loc[ligne_idx, "Entreprise"] = nouvelle_entreprise
-                        df_crm.to_csv(CRM_FILE, index=False)
-                        st.success("Informations du devis mises à jour avec succès !")
+                    st.write("#### ✏️ Modification complète")
+                    st.write("Rouvrir ce devis dans l'éditeur pour modifier les articles, quantités et options.")
+                    if st.button("Modifier ce devis", key=f"btn_edit_{devis_selectionne}"):
+                        # Stocker les données dans la session pour pré-remplir l'éditeur ou basculer sur l'onglet général
+                        st.session_state["edit_client"] = ligne_dev.get("Client", "")
+                        st.session_state["edit_entreprise"] = ligne_dev.get("Entreprise", "")
+                        st.session_state["edit_email"] = ligne_dev.get("Email", "")
+                        st.session_state["edit_telephone"] = ligne_dev.get("Telephone", "")
+                        st.session_state["edit_commercial"] = ligne_dev.get("Commercial", "")
+                        st.session_state["numero_devis_en_cours"] = devis_selectionne
+                        st.success(f"Devis {devis_selectionne} chargé. Rendez-vous dans l'onglet '📊 Général & Devis' pour modifier les rubriques.")
                         st.rerun()
 
                 if pd.notna(ligne_dev.get("PDF_Path")) and os.path.exists(str(ligne_dev["PDF_Path"])):
