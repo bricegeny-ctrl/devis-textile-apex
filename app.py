@@ -4,7 +4,8 @@ from datetime import datetime
 import os
 import json
 import urllib.parse
-from reportlab.lib.pagesizes import A4
+import io
+from reportlab.lib.pagesizes import A4, landscape
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image as RLImage
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
@@ -45,7 +46,7 @@ def obtenir_prochain_numero_devis():
         json.dump({"dernier_num": nouveau_num}, f)
     return nouveau_num
 
-# --- MOTEUR DE LECTURE EXCEL CATALOGUE PRINT & SIGNALÉTIQUE (100% FIABLE & INTÉGRAL) ---
+# --- MOTEUR DE LECTURE EXCEL CATALOGUE PRINT & SIGNALÉTIQUE ---
 def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
     if not os.path.exists(CATALOGUE_FILE):
         return 0.15
@@ -76,7 +77,7 @@ def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
                     col_cible = col_idx
                     break
     else:
-        col_cible = 7 # Défaut sur 99 ex
+        col_cible = 7
 
     ref_lower = str(choix_ref).lower().strip()
     cat_lower = str(cat_print).lower().strip()
@@ -150,7 +151,6 @@ def lire_grille_depuis_excel(sheet_name_keyword, emplacement, qte_totale):
         pass
     return None
 
-# --- GRILLES TARIFAIRES OFFICIELLES & LECTURE FICHIER (DTF & BRODERIE) ---
 def obtenir_tarif_dtf_unitaire(type_textile, emplacement, qte_totale):
     prix_excel = lire_grille_depuis_excel("dtf", emplacement, qte_totale)
     if prix_excel is not None and prix_excel > 0:
@@ -384,7 +384,6 @@ for i in range(10):
                     st.info("💡 Saisie manuelle active (produit hors catalogue).")
                     remise_fidelite = st.number_input(f"Remise commerciale (%) {i+1}", min_value=0.0, max_value=100.0, value=0.0, key=f"rem_print_{i}")
             else:
-                # Structure hiérarchique stricte : Catégorie -> Sous-cat 1 -> Sous-cat 2
                 arbre_catalogue = {}
                 if os.path.exists(CATALOGUE_FILE):
                     try:
@@ -406,7 +405,6 @@ for i in range(10):
                     except Exception:
                         pass
 
-                # Trouver la catégorie correspondante dans l'arbre (correspondance souple)
                 matched_cat = None
                 for c_excel in arbre_catalogue.keys():
                     if cat_print.lower() in c_excel.lower() or c_excel.lower() in cat_print.lower():
@@ -415,14 +413,12 @@ for i in range(10):
 
                 sous_cats_1 = list(arbre_catalogue[matched_cat].keys()) if matched_cat and arbre_catalogue[matched_cat] else ["Standard"]
                 
-                # 1er Selectbox : Sous-catégorie 1 exclusive à la catégorie
                 choix_sub1 = st.selectbox(
                     f"Sous-catégorie 1 ({cat_print}) {i+1}", 
                     sous_cats_1, 
                     key=f"sub1_{i}"
                 )
 
-                # Récupération exclusive des Sous-catégories 2 liées à cette Sous-catégorie 1
                 sous_cats_2 = []
                 if matched_cat and choix_sub1 in arbre_catalogue[matched_cat]:
                     sous_cats_2 = arbre_catalogue[matched_cat][choix_sub1]
@@ -595,7 +591,6 @@ with onglets[10]:
             enregistrer_dans_crm(data_crm)
             st.success("✅ Données enregistrées dans le CRM avec succès !")
 
-            # --- GÉNÉRATION DU PDF ---
             doc = SimpleDocTemplate(pdf_filename, pagesize=A4, rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)
             story = []
             styles = getSampleStyleSheet()
@@ -729,14 +724,131 @@ with onglets[10]:
                 mailto_link = f"mailto:{email_dest}?subject={urllib.parse.quote(sujet_mail)}&body={urllib.parse.quote(corps_mail)}"
                 st.markdown(f'<a href="{mailto_link}" target="_blank"><button style="background-color:#2b6cb0; color:white; border:none; padding:10px 20px; border-radius:5px; cursor:pointer; font-weight:bold; width:100%;">📧 Ouvrir dans le client mail (Secours)</button></a>', unsafe_allow_html=True)
 
-# --- ONGLET SUIVI CRM (Index 11) ---
+# --- ONGLET SUIVI CRM (Index 11 - AVEC FILTRES, SOUS-TOTAUX, EXCEL ET PDF) ---
 with onglets[11]:
-    st.header("📈 Suivi CRM & Historique des Devis")
+    st.header("📈 Suivi CRM & Analyse des Devis")
     if os.path.exists(CRM_FILE):
         df_crm = pd.read_csv(CRM_FILE)
         if not df_crm.empty:
-            st.dataframe(df_crm, use_container_width=True)
-            devis_selectionne = st.selectbox("Sélectionner un devis", df_crm["Numero_Devis"].tolist(), key="select_crm")
+            st.markdown("### 🔍 Options de Filtrage")
+            
+            col_f1, col_f2, col_f3 = st.columns(3)
+            with col_f1:
+                clients_dispo = ["Tous"] + sorted(df_crm["Client"].dropna().unique().tolist())
+                filtre_client = st.selectbox("Filtrer par Client", clients_dispo)
+            with col_f2:
+                commerciaux_dispo = ["Tous"] + sorted(df_crm["Commercial"].dropna().unique().tolist())
+                filtre_commercial = st.selectbox("Filtrer par Commercial", commerciaux_dispo)
+            with col_f3:
+                statuts_dispo = ["Tous"] + sorted(df_crm["Statut"].dropna().unique().tolist())
+                filtre_statut = st.selectbox("Filtrer par Statut", statuts_dispo)
+
+            # Application des filtres
+            df_filtre = df_crm.copy()
+            if filtre_client != "Tous":
+                df_filtre = df_filtre[df_filtre["Client"] == filtre_client]
+            if filtre_commercial != "Tous":
+                df_filtre = df_filtre[df_filtre["Commercial"] == filtre_commercial]
+            if filtre_statut != "Tous":
+                df_filtre = df_filtre[df_filtre["Statut"] == filtre_statut]
+
+            st.markdown("---")
+            st.markdown("### 📊 Sous-totaux de la sélection")
+            nb_devis_f = len(df_filtre)
+            total_ht_f = df_filtre["Total_HT"].sum() if "Total_HT" in df_filtre else 0.0
+            total_ttc_f = df_filtre["Total_TTC"].sum() if "Total_TTC" in df_filtre else 0.0
+            qte_tot_f = df_filtre["Quantite_Totale"].sum() if "Quantite_Totale" in df_filtre else 0.0
+
+            m1, m2, m3, m4 = st.columns(4)
+            m1.metric("Nombre de devis", nb_devis_f)
+            m2.metric("Quantité pièces", f"{qte_tot_f:,.0f}")
+            m3.metric("Total HT filtré", f"{total_ht_f:,.2f} €")
+            m4.metric("Total TTC filtré", f"{total_ttc_f:,.2f} €")
+
+            st.markdown("---")
+            st.markdown("### 📋 Tableau détaillé")
+            st.dataframe(df_filtre, use_container_width=True)
+
+            # --- EXPORT EXCEL & PDF DU CRM FILTRÉ ---
+            st.markdown("### 📥 Extraire ou Éditer le CRM filtré")
+            col_exp1, col_exp2 = st.columns(2)
+
+            with col_exp1:
+                output_excel = io.BytesIO()
+                with pd.ExcelWriter(output_excel, engine='xlsxwriter') as writer:
+                    df_filtre.to_excel(writer, sheet_name='CRM_Filtre', index=False)
+                excel_data = output_excel.getvalue()
+                st.download_button(
+                    label="📊 Télécharger en Excel (.xlsx)",
+                    data=excel_data,
+                    file_name=f"CRM_Export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
+
+            with col_exp2:
+                if st.button("📄 Éditer le Rapport PDF du CRM filtré"):
+                    pdf_crm_path = os.path.join(PDF_DIR, f"Rapport_CRM_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf")
+                    doc_crm = SimpleDocTemplate(pdf_crm_path, pagesize=landscape(A4), rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)
+                    story_crm = []
+                    styles_crm = getSampleStyleSheet()
+                    
+                    style_title = ParagraphStyle('TitleCRM', parent=styles_crm['Heading1'], fontSize=15, leading=18, textColor=colors.HexColor('#1a365d'))
+                    style_sub_crm = ParagraphStyle('SubCRM', parent=styles_crm['Normal'], fontSize=8.5, leading=11, textColor=colors.HexColor('#4a5568'))
+                    style_cell_crm = ParagraphStyle('CellCRM', parent=styles_crm['Normal'], fontSize=8, leading=10)
+                    style_cell_bold_crm = ParagraphStyle('CellBoldCRM', parent=styles_crm['Normal'], fontSize=8, leading=10, fontName='Helvetica-Bold')
+
+                    story_crm.append(Paragraph("<b>RAPPORT DE SUIVI CRM - APEX</b>", style_title))
+                    story_crm.append(Paragraph(f"Date d'édition : {datetime.now().strftime('%d/%m/%Y %H:%M')} &nbsp;|&nbsp; Filtres -> Client: {filtre_client} | Commercial: {filtre_commercial} | Statut: {filtre_statut}", style_sub_crm))
+                    story_crm.append(Spacer(1, 8))
+
+                    summary_text = f"<b>Sous-totaux :</b> {nb_devis_f} devis | Quantité totale : {qte_tot_f:,.0f} pcs | Total HT : {total_ht_f:,.2f} € | Total TTC : {total_ttc_f:,.2f} €"
+                    story_crm.append(Paragraph(summary_text, style_sub_crm))
+                    story_crm.append(Spacer(1, 10))
+
+                    crm_table_data = [[
+                        Paragraph("<b>Date</b>", style_cell_bold_crm),
+                        Paragraph("<b>N° Devis</b>", style_cell_bold_crm),
+                        Paragraph("<b>Commercial</b>", style_cell_bold_crm),
+                        Paragraph("<b>Client</b>", style_cell_bold_crm),
+                        Paragraph("<b>Entreprise</b>", style_cell_bold_crm),
+                        Paragraph("<b>Qté</b>", style_cell_bold_crm),
+                        Paragraph("<b>Total HT</b>", style_cell_bold_crm),
+                        Paragraph("<b>Total TTC</b>", style_cell_bold_crm),
+                        Paragraph("<b>Statut</b>", style_cell_bold_crm)
+                    ]]
+
+                    for _, row in df_filtre.iterrows():
+                        crm_table_data.append([
+                            Paragraph(str(row.get("Date", "")), style_cell_crm),
+                            Paragraph(str(row.get("Numero_Devis", "")), style_cell_crm),
+                            Paragraph(str(row.get("Commercial", "")), style_cell_crm),
+                            Paragraph(str(row.get("Client", "")), style_cell_crm),
+                            Paragraph(str(row.get("Entreprise", "")), style_cell_crm),
+                            Paragraph(str(row.get("Quantite_Totale", "")), style_cell_crm),
+                            Paragraph(f"{row.get('Total_HT', 0):.2f} €", style_cell_crm),
+                            Paragraph(f"{row.get('Total_TTC', 0):.2f} €", style_cell_crm),
+                            Paragraph(str(row.get("Statut", "")), style_cell_crm)
+                        ])
+
+                    t_crm_pdf = Table(crm_table_data, colWidths=[75, 95, 75, 85, 85, 45, 65, 65, 65])
+                    t_crm_pdf.setStyle(TableStyle([
+                        ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#edf2f7')),
+                        ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#cbd5e0')),
+                        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+                        ('PADDING', (0,0), (-1,-1), 4),
+                    ]))
+                    story_crm.append(t_crm_pdf)
+                    doc_crm.build(story_crm)
+                    st.success("✅ Rapport PDF du CRM généré avec succès !")
+                    st.session_state['dernier_pdf_crm'] = pdf_crm_path
+
+            if 'dernier_pdf_crm' in st.session_state and os.path.exists(st.session_state['dernier_pdf_crm']):
+                with open(st.session_state['dernier_pdf_crm'], "rb") as f_pdf:
+                    st.download_button("📥 Télécharger le rapport PDF du CRM", f_pdf, file_name=os.path.basename(st.session_state['dernier_pdf_crm']), mime="application/pdf")
+
+            st.markdown("---")
+            st.subheader("🔍 Télécharger le PDF d'un devis spécifique de la sélection")
+            devis_selectionne = st.selectbox("Sélectionner un devis", df_filtre["Numero_Devis"].tolist() if not df_filtre.empty else df_crm["Numero_Devis"].tolist(), key="select_crm")
             ligne_dev = df_crm[df_crm["Numero_Devis"] == devis_selectionne].iloc[0]
             if pd.notna(ligne_dev.get("PDF_Path")) and os.path.exists(str(ligne_dev["PDF_Path"])):
                 with open(ligne_dev["PDF_Path"], "rb") as pdf_file:
