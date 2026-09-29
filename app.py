@@ -223,17 +223,25 @@ def calculer_frais_port(montant_base, zone):
         elif montant_base < 1500.0: return 90.0
         else: return 0.0
 
+CRM_FILE = "crm_devis.csv"
 if not os.path.exists(CRM_FILE):
     pd.DataFrame(columns=[
-        "Numero_Devis", "Date", "Client", "Contact", "Email", "Telephone", 
-        "Total_HT", "Total_TTC", "Statut", "Commercial", "Mode_Reglement", "PDF_Path"
+        "Numero_Devis", "Date", "Client", "Societe", "Total_HT", "Total_TTC", "Statut", "PDF_Path"
     ]).to_csv(CRM_FILE, index=False)
 
 def enregistrer_dans_crm(devis_data):
     df_crm = pd.read_csv(CRM_FILE) if os.path.exists(CRM_FILE) else pd.DataFrame(columns=list(devis_data.keys()))
+    if "Statut" not in df_crm.columns:
+        df_crm["Statut"] = "brouillon"
+        
     if not df_crm[df_crm["Numero_Devis"] == devis_data["Numero_Devis"]].empty:
+        # Conserver le statut existant si mise à jour sans changer le statut
+        statut_actuel = df_crm.loc[df_crm["Numero_Devis"] == devis_data["Numero_Devis"], "Statut"].values[0]
+        devis_data["Statut"] = statut_actuel if pd.notna(statut_actuel) else "brouillon"
         df_crm.loc[df_crm["Numero_Devis"] == devis_data["Numero_Devis"], :] = list(devis_data.values())
     else:
+        if "Statut" not in devis_data:
+            devis_data["Statut"] = "brouillon"
         df_crm = pd.concat([df_crm, pd.DataFrame([devis_data])], ignore_index=True)
     df_crm.to_csv(CRM_FILE, index=False)
 
@@ -726,133 +734,72 @@ with onglets[10]:
 
 # --- ONGLET SUIVI CRM (Index 11 - AVEC FILTRES, SOUS-TOTAUX, EXCEL ET PDF) ---
 with onglets[11]:
-    st.header("📈 Suivi CRM & Analyse des Devis")
+    st.header("📈 Suivi CRM & Historique des Devis")
     if os.path.exists(CRM_FILE):
         df_crm = pd.read_csv(CRM_FILE)
-        if not df_crm.empty:
-            st.markdown("### 🔍 Options de Filtrage")
+        if "Statut" not in df_crm.columns:
+            df_crm["Statut"] = "brouillon"
+            df_crm.to_csv(CRM_FILE, index=False)
             
-            col_f1, col_f2, col_f3 = st.columns(3)
-            with col_f1:
-                clients_dispo = ["Tous"] + sorted(df_crm["Client"].dropna().unique().tolist())
-                filtre_client = st.selectbox("Filtrer par Client", clients_dispo)
-            with col_f2:
-                commerciaux_dispo = ["Tous"] + sorted(df_crm["Commercial"].dropna().unique().tolist())
-                filtre_commercial = st.selectbox("Filtrer par Commercial", commerciaux_dispo)
-            with col_f3:
-                statuts_dispo = ["Tous"] + sorted(df_crm["Statut"].dropna().unique().tolist())
-                filtre_statut = st.selectbox("Filtrer par Statut", statuts_dispo)
-
-            # Application des filtres
-            df_filtre = df_crm.copy()
-            if filtre_client != "Tous":
-                df_filtre = df_filtre[df_filtre["Client"] == filtre_client]
-            if filtre_commercial != "Tous":
-                df_filtre = df_filtre[df_filtre["Commercial"] == filtre_commercial]
-            if filtre_statut != "Tous":
-                df_filtre = df_filtre[df_filtre["Statut"] == filtre_statut]
-
+        if not df_crm.empty:
+            # Filtre optionnel par statut
+            statuts_possibles = ["Tous", "brouillon", "envoyé", "validé", "sans suite", "Refusé", "Annulé", "A modifier"]
+            filtre_statut = st.selectbox("Filtrer par statut", statuts_possibles, key="filtre_statut_crm")
+            
+            df_affiche = df_crm if filtre_statut == "Tous" else df_crm[df_crm["Statut"] == filtre_statut]
+            
+            st.dataframe(df_affiche, use_container_width=True)
+            
             st.markdown("---")
-            st.markdown("### 📊 Sous-totaux de la sélection")
-            nb_devis_f = len(df_filtre)
-            total_ht_f = df_filtre["Total_HT"].sum() if "Total_HT" in df_filtre else 0.0
-            total_ttc_f = df_filtre["Total_TTC"].sum() if "Total_TTC" in df_filtre else 0.0
-            qte_tot_f = df_filtre["Quantite_Totale"].sum() if "Quantite_Totale" in df_filtre else 0.0
-
-            m1, m2, m3, m4 = st.columns(4)
-            m1.metric("Nombre de devis", nb_devis_f)
-            m2.metric("Quantité pièces", f"{qte_tot_f:,.0f}")
-            m3.metric("Total HT filtré", f"{total_ht_f:,.2f} €")
-            m4.metric("Total TTC filtré", f"{total_ttc_f:,.2f} €")
-
-            st.markdown("---")
-            st.markdown("### 📋 Tableau détaillé")
-            st.dataframe(df_filtre, use_container_width=True)
-
-            # --- EXPORT EXCEL & PDF DU CRM FILTRÉ ---
-            st.markdown("### 📥 Extraire ou Éditer le CRM filtré")
-            col_exp1, col_exp2 = st.columns(2)
-
-            with col_exp1:
-                output_excel = io.BytesIO()
-                with pd.ExcelWriter(output_excel, engine='xlsxwriter') as writer:
-                    df_filtre.to_excel(writer, sheet_name='CRM_Filtre', index=False)
-                excel_data = output_excel.getvalue()
-                st.download_button(
-                    label="📊 Télécharger en Excel (.xlsx)",
-                    data=excel_data,
-                    file_name=f"CRM_Export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                )
-
-            with col_exp2:
-                if st.button("📄 Éditer le Rapport PDF du CRM filtré"):
-                    pdf_crm_path = os.path.join(PDF_DIR, f"Rapport_CRM_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf")
-                    doc_crm = SimpleDocTemplate(pdf_crm_path, pagesize=landscape(A4), rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)
-                    story_crm = []
-                    styles_crm = getSampleStyleSheet()
+            st.subheader("🛠️ Gestion, Modification & Duplication du Devis")
+            
+            devis_selectionne = st.selectbox("Sélectionner un devis par son numéro", df_crm["Numero_Devis"].tolist(), key="select_crm")
+            
+            if devis_selectionne:
+                ligne_idx = df_crm[df_crm["Numero_Devis"] == devis_selectionne].index[0]
+                ligne_dev = df_crm.loc[ligne_idx]
+                
+                col_statut, col_dup = st.columns(2)
+                
+                with col_statut:
+                    # Modification du statut
+                    statut_actuel = ligne_dev.get("Statut", "brouillon")
+                    if statut_actuel not in statuts_possibles[1:]:
+                        statut_actuel = "brouillon"
+                        
+                    nouveau_statut = st.selectbox(
+                        "Modifier le statut du devis", 
+                        statuts_possibles[1:], 
+                        index=statuts_possibles[1:].index(statut_actuel),
+                        key=f"status_select_{devis_selectionne}"
+                    )
                     
-                    style_title = ParagraphStyle('TitleCRM', parent=styles_crm['Heading1'], fontSize=15, leading=18, textColor=colors.HexColor('#1a365d'))
-                    style_sub_crm = ParagraphStyle('SubCRM', parent=styles_crm['Normal'], fontSize=8.5, leading=11, textColor=colors.HexColor('#4a5568'))
-                    style_cell_crm = ParagraphStyle('CellCRM', parent=styles_crm['Normal'], fontSize=8, leading=10)
-                    style_cell_bold_crm = ParagraphStyle('CellBoldCRM', parent=styles_crm['Normal'], fontSize=8, leading=10, fontName='Helvetica-Bold')
+                    if st.button("Mettre à jour le statut"):
+                        df_crm.loc[ligne_idx, "Statut"] = nouveau_statut
+                        df_crm.to_csv(CRM_FILE, index=False)
+                        st.success(f"Statut du devis {devis_selectionne} mis à jour : **{nouveau_statut}** !")
+                        st.rerun()
+                
+                with col_dup:
+                    st.write("### Duplication")
+                    st.write("Créez une copie de ce devis avec le statut **brouillon**.")
+                    if st.button("📋 Dupliquer ce devis", key=f"btn_dup_{devis_selectionne}"):
+                        nouveau_devis = ligne_dev.copy()
+                        # Générer un nouveau numéro unique basé sur le timestamp
+                        nouveau_num = f"DEV-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+                        nouveau_devis["Numero_Devis"] = nouveau_num
+                        nouveau_devis["Statut"] = "brouillon"
+                        nouveau_devis["Date"] = datetime.now().strftime('%Y-%m-%d')
+                        
+                        # Ajouter au DataFrame
+                        df_crm = pd.concat([df_crm, pd.DataFrame([nouveau_devis])], ignore_index=True)
+                        df_crm.to_csv(CRM_FILE, index=False)
+                        st.success(f"Devis dupliqué avec succès ! Nouveau numéro : **{nouveau_num}**")
+                        st.rerun()
 
-                    story_crm.append(Paragraph("<b>RAPPORT DE SUIVI CRM - APEX</b>", style_title))
-                    story_crm.append(Paragraph(f"Date d'édition : {datetime.now().strftime('%d/%m/%Y %H:%M')} &nbsp;|&nbsp; Filtres -> Client: {filtre_client} | Commercial: {filtre_commercial} | Statut: {filtre_statut}", style_sub_crm))
-                    story_crm.append(Spacer(1, 8))
-
-                    summary_text = f"<b>Sous-totaux :</b> {nb_devis_f} devis | Quantité totale : {qte_tot_f:,.0f} pcs | Total HT : {total_ht_f:,.2f} € | Total TTC : {total_ttc_f:,.2f} €"
-                    story_crm.append(Paragraph(summary_text, style_sub_crm))
-                    story_crm.append(Spacer(1, 10))
-
-                    crm_table_data = [[
-                        Paragraph("<b>Date</b>", style_cell_bold_crm),
-                        Paragraph("<b>N° Devis</b>", style_cell_bold_crm),
-                        Paragraph("<b>Commercial</b>", style_cell_bold_crm),
-                        Paragraph("<b>Client</b>", style_cell_bold_crm),
-                        Paragraph("<b>Entreprise</b>", style_cell_bold_crm),
-                        Paragraph("<b>Qté</b>", style_cell_bold_crm),
-                        Paragraph("<b>Total HT</b>", style_cell_bold_crm),
-                        Paragraph("<b>Total TTC</b>", style_cell_bold_crm),
-                        Paragraph("<b>Statut</b>", style_cell_bold_crm)
-                    ]]
-
-                    for _, row in df_filtre.iterrows():
-                        crm_table_data.append([
-                            Paragraph(str(row.get("Date", "")), style_cell_crm),
-                            Paragraph(str(row.get("Numero_Devis", "")), style_cell_crm),
-                            Paragraph(str(row.get("Commercial", "")), style_cell_crm),
-                            Paragraph(str(row.get("Client", "")), style_cell_crm),
-                            Paragraph(str(row.get("Entreprise", "")), style_cell_crm),
-                            Paragraph(str(row.get("Quantite_Totale", "")), style_cell_crm),
-                            Paragraph(f"{row.get('Total_HT', 0):.2f} €", style_cell_crm),
-                            Paragraph(f"{row.get('Total_TTC', 0):.2f} €", style_cell_crm),
-                            Paragraph(str(row.get("Statut", "")), style_cell_crm)
-                        ])
-
-                    t_crm_pdf = Table(crm_table_data, colWidths=[75, 95, 75, 85, 85, 45, 65, 65, 65])
-                    t_crm_pdf.setStyle(TableStyle([
-                        ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#edf2f7')),
-                        ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#cbd5e0')),
-                        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-                        ('PADDING', (0,0), (-1,-1), 4),
-                    ]))
-                    story_crm.append(t_crm_pdf)
-                    doc_crm.build(story_crm)
-                    st.success("✅ Rapport PDF du CRM généré avec succès !")
-                    st.session_state['dernier_pdf_crm'] = pdf_crm_path
-
-            if 'dernier_pdf_crm' in st.session_state and os.path.exists(st.session_state['dernier_pdf_crm']):
-                with open(st.session_state['dernier_pdf_crm'], "rb") as f_pdf:
-                    st.download_button("📥 Télécharger le rapport PDF du CRM", f_pdf, file_name=os.path.basename(st.session_state['dernier_pdf_crm']), mime="application/pdf")
-
-            st.markdown("---")
-            st.subheader("🔍 Télécharger le PDF d'un devis spécifique de la sélection")
-            devis_selectionne = st.selectbox("Sélectionner un devis", df_filtre["Numero_Devis"].tolist() if not df_filtre.empty else df_crm["Numero_Devis"].tolist(), key="select_crm")
-            ligne_dev = df_crm[df_crm["Numero_Devis"] == devis_selectionne].iloc[0]
-            if pd.notna(ligne_dev.get("PDF_Path")) and os.path.exists(str(ligne_dev["PDF_Path"])):
-                with open(ligne_dev["PDF_Path"], "rb") as pdf_file:
-                    st.download_button("📥 Télécharger le PDF de ce devis", pdf_file, file_name=os.path.basename(ligne_dev["PDF_Path"]), mime="application/pdf")
+                if pd.notna(ligne_dev.get("PDF_Path")) and os.path.exists(str(ligne_dev["PDF_Path"])):
+                    with open(ligne_dev["PDF_Path"], "rb") as pdf_file:
+                        st.download_button("📥 Télécharger le PDF de ce devis", pdf_file, file_name=os.path.basename(ligne_dev["PDF_Path"]), mime="application/pdf")
         else:
             st.info("Aucun devis dans le CRM.")
     else:
