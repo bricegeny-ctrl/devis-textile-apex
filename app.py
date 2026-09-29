@@ -245,22 +245,35 @@ def enregistrer_dans_crm(devis_data):
         df_crm = pd.concat([df_crm, pd.DataFrame([devis_data])], ignore_index=True)
     df_crm.to_csv(CRM_FILE, index=False)
 
-# --- SIDEBAR ---
+# --- SIDEBAR (Gestion des valeurs par défaut / édition CRM) ---
 st.sidebar.title("📋 Infos Client & Expédition")
-client_nom = st.sidebar.text_input("Nom du Client", "Client Exemple")
-client_entreprise = st.sidebar.text_input("Société / Entreprise", "")
+
+# Récupération depuis la session si un devis est en cours de modification
+def_client = st.session_state.get("edit_client", "Client Exemple")
+def_entreprise = st.session_state.get("edit_entreprise", "")
+def_email = st.session_state.get("edit_email", "client@exemple.com")
+def_tel = st.session_state.get("edit_telephone", "0600000000")
+def_commercial = st.session_state.get("edit_commercial", "Brice Geny")
+
+client_nom = st.sidebar.text_input("Nom du Client", value=def_client)
+client_entreprise = st.sidebar.text_input("Société / Entreprise", value=def_entreprise)
 client_siret = st.sidebar.text_input("SIRET", "")
 client_contact = st.sidebar.text_input("Nom de contact", "")
 client_adresse = st.sidebar.text_area("Adresse complète", "1 rue de l'Exemple\n70000 Vesoul")
-client_email = st.sidebar.text_input("Email", "client@exemple.com")
-client_contact_tel = st.sidebar.text_input("Téléphone", "0600000000")
+client_email = st.sidebar.text_input("Email", value=def_email)
+client_contact_tel = st.sidebar.text_input("Téléphone", value=def_tel)
 
 logo_file = st.sidebar.file_uploader("Logo entreprise (PNG/JPG)", type=["png", "jpg", "jpeg"])
 
 st.sidebar.markdown("---")
 zone_livraison = st.sidebar.selectbox("Zone de Livraison", ["France Continentale", "Livraison Corse, Monaco ou Andorre", "Espace UE"])
 offrir_port = st.sidebar.checkbox("🎁 Offrir les frais de port", value=False)
-conseiller_nom = st.sidebar.selectbox("Commercial / Conseiller", ["Brice Geny", "Brice Bugna"])
+
+# Gestion de l'index du commercial pour le selectbox
+liste_commerciaux = ["Brice Geny", "Brice Bugna"]
+index_com = liste_commerciaux.index(def_commercial) if def_commercial in liste_commerciaux else 0
+conseiller_nom = st.sidebar.selectbox("Commercial / Conseiller", liste_commerciaux, index=index_com)
+
 mode_reglement = st.sidebar.selectbox("Mode de Règlement", ["Virement bancaire 30 jours", "Comptant à la commande", "50% à la validation du devis, 50% à livraison", "100% à la livraison", " ___ mensualités de ____ €" ])
 
 # --- INTERFACE PRINCIPALE ---
@@ -829,16 +842,17 @@ with onglets[11]:
 
                 with col_mod:
                     st.write("#### ✏️ Modification complète")
-                    st.write("Rouvrir ce devis dans l'éditeur pour modifier les articles, quantités et options.")
+                    st.write("Charger ce devis pour modification.")
                     if st.button("Modifier ce devis", key=f"btn_edit_{devis_selectionne}"):
-                        # Stocker les données dans la session pour pré-remplir l'éditeur ou basculer sur l'onglet général
-                        st.session_state["edit_client"] = ligne_dev.get("Client", "")
-                        st.session_state["edit_entreprise"] = ligne_dev.get("Entreprise", "")
-                        st.session_state["edit_email"] = ligne_dev.get("Email", "")
-                        st.session_state["edit_telephone"] = ligne_dev.get("Telephone", "")
-                        st.session_state["edit_commercial"] = ligne_dev.get("Commercial", "")
+                        # Injection des données du devis dans le session_state
+                        st.session_state["edit_client"] = str(ligne_dev.get("Client", ""))
+                        st.session_state["edit_entreprise"] = str(ligne_dev.get("Entreprise", ""))
+                        st.session_state["edit_email"] = str(ligne_dev.get("Email", ""))
+                        st.session_state["edit_telephone"] = str(ligne_dev.get("Telephone", ""))
+                        st.session_state["edit_commercial"] = str(ligne_dev.get("Commercial", "Brice Geny"))
                         st.session_state["numero_devis_en_cours"] = devis_selectionne
-                        st.success(f"Devis {devis_selectionne} chargé. Rendez-vous dans l'onglet '📊 Général & Devis' pour modifier les rubriques.")
+                        
+                        st.success(f"Devis {devis_selectionne} chargé avec succès dans l'éditeur !")
                         st.rerun()
 
                 if pd.notna(ligne_dev.get("PDF_Path")) and os.path.exists(str(ligne_dev["PDF_Path"])):
