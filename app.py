@@ -737,70 +737,112 @@ with onglets[11]:
     st.header("📈 Suivi CRM & Historique des Devis")
     if os.path.exists(CRM_FILE):
         df_crm = pd.read_csv(CRM_FILE)
-        if "Statut" not in df_crm.columns:
-            df_crm["Statut"] = "brouillon"
-            df_crm.to_csv(CRM_FILE, index=False)
+        
+        # S'assurer que les colonnes indispensables existent
+        cols_requises = ["Numero_Devis", "Date", "Client", "Entreprise", "Commercial", "Statut", "Total_HT", "Total_TTC"]
+        for col in cols_requises:
+            if col not in df_crm.columns:
+                df_crm[col] = ""
+        df_crm["Statut"] = df_crm["Statut"].fillna("brouillon")
+        df_crm.to_csv(CRM_FILE, index=False)
             
         if not df_crm.empty:
-            # Filtre optionnel par statut
-            statuts_possibles = ["Tous", "brouillon", "envoyé", "validé", "sans suite", "Refusé", "Annulé", "A modifier"]
-            filtre_statut = st.selectbox("Filtrer par statut", statuts_possibles, key="filtre_statut_crm")
+            st.markdown("### 🔍 Filtres de recherche")
+            col_f1, col_f2, col_f3, col_f4 = st.columns(4)
             
-            df_affiche = df_crm if filtre_statut == "Tous" else df_crm[df_crm["Statut"] == filtre_statut]
+            with col_f1:
+                statuts_possibles = ["Tous", "brouillon", "envoyé", "validé", "sans suite", "Refusé", "Annulé", "A modifier"]
+                filtre_statut = st.selectbox("Statut", statuts_possibles, key="filtre_statut_crm")
             
+            with col_f2:
+                clients_possibles = ["Tous"] + sorted(df_crm["Client"].dropna().astype(str).unique().tolist())
+                filtre_client = st.selectbox("Client", clients_possibles, key="filtre_client_crm")
+                
+            with col_f3:
+                entreprises_possibles = ["Tous"] + sorted(df_crm["Entreprise"].dropna().astype(str).unique().tolist())
+                filtre_entreprise = st.selectbox("Entreprise", entreprises_possibles, key="filtre_entreprise_crm")
+                
+            with col_f4:
+                commerciaux_possibles = ["Tous"] + sorted(df_crm["Commercial"].dropna().astype(str).unique().tolist())
+                filtre_commercial = st.selectbox("Commercial", commerciaux_possibles, key="filtre_commercial_crm")
+            
+            # Application des filtres
+            df_affiche = df_crm.copy()
+            if filtre_statut != "Tous":
+                df_affiche = df_affiche[df_affiche["Statut"] == filtre_statut]
+            if filtre_client != "Tous":
+                df_affiche = df_affiche[df_affiche["Client"] == filtre_client]
+            if filtre_entreprise != "Tous":
+                df_affiche = df_affiche[df_affiche["Entreprise"] == filtre_entreprise]
+            if filtre_commercial != "Tous":
+                df_affiche = df_affiche[df_affiche["Commercial"] == filtre_commercial]
+                
             st.dataframe(df_affiche, use_container_width=True)
+            st.info(f"Affichage de {len(df_affiche)} devis sur {len(df_crm)} au total.")
             
             st.markdown("---")
             st.subheader("🛠️ Gestion, Modification & Duplication du Devis")
             
-            devis_selectionne = st.selectbox("Sélectionner un devis par son numéro", df_crm["Numero_Devis"].tolist(), key="select_crm")
+            # Sélection du devis parmi la liste filtrée (ou globale)
+            liste_devis_dispo = df_affiche["Numero_Devis"].tolist() if not df_affiche.empty else df_crm["Numero_Devis"].tolist()
+            devis_selectionne = st.selectbox("Sélectionner un devis par son numéro", liste_devis_dispo, key="select_crm")
             
             if devis_selectionne:
                 ligne_idx = df_crm[df_crm["Numero_Devis"] == devis_selectionne].index[0]
                 ligne_dev = df_crm.loc[ligne_idx]
                 
-                col_statut, col_dup = st.columns(2)
+                col_statut, col_dup, col_mod = st.columns(3)
                 
                 with col_statut:
-                    # Modification du statut
+                    st.write("#### 📌 Statut")
                     statut_actuel = ligne_dev.get("Statut", "brouillon")
                     if statut_actuel not in statuts_possibles[1:]:
                         statut_actuel = "brouillon"
                         
                     nouveau_statut = st.selectbox(
-                        "Modifier le statut du devis", 
+                        "Modifier le statut", 
                         statuts_possibles[1:], 
                         index=statuts_possibles[1:].index(statut_actuel),
                         key=f"status_select_{devis_selectionne}"
                     )
                     
-                    if st.button("Mettre à jour le statut"):
+                    if st.button("Mettre à jour le statut", key=f"btn_stat_{devis_selectionne}"):
                         df_crm.loc[ligne_idx, "Statut"] = nouveau_statut
                         df_crm.to_csv(CRM_FILE, index=False)
-                        st.success(f"Statut du devis {devis_selectionne} mis à jour : **{nouveau_statut}** !")
+                        st.success(f"Statut mis à jour : **{nouveau_statut}** !")
                         st.rerun()
                 
                 with col_dup:
-                    st.write("### Duplication")
-                    st.write("Créez une copie de ce devis avec le statut **brouillon**.")
-                    if st.button("📋 Dupliquer ce devis", key=f"btn_dup_{devis_selectionne}"):
+                    st.write("#### 📋 Duplication")
+                    st.write("Créer une copie en brouillon.")
+                    if st.button("Dupliquer ce devis", key=f"btn_dup_{devis_selectionne}"):
                         nouveau_devis = ligne_dev.copy()
-                        # Générer un nouveau numéro unique basé sur le timestamp
                         nouveau_num = f"DEV-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
                         nouveau_devis["Numero_Devis"] = nouveau_num
                         nouveau_devis["Statut"] = "brouillon"
-                        nouveau_devis["Date"] = datetime.now().strftime('%Y-%m-%d')
+                        nouveau_devis["Date"] = datetime.now().strftime('%Y-%m-%d %H:%M')
                         
-                        # Ajouter au DataFrame
                         df_crm = pd.concat([df_crm, pd.DataFrame([nouveau_devis])], ignore_index=True)
                         df_crm.to_csv(CRM_FILE, index=False)
-                        st.success(f"Devis dupliqué avec succès ! Nouveau numéro : **{nouveau_num}**")
+                        st.success(f"Devis dupliqué ! Nouveau numéro : **{nouveau_num}**")
+                        st.rerun()
+
+                with col_mod:
+                    st.write("#### ✏️ Modification rapide")
+                    nouveau_client = st.text_input("Client", value=str(ligne_dev.get("Client", "")), key=f"mod_client_{devis_selectionne}")
+                    nouvelle_entreprise = st.text_input("Entreprise", value=str(ligne_dev.get("Entreprise", "")), key=f"mod_ent_{devis_selectionne}")
+                    
+                    if st.button("Enregistrer les modifications", key=f"btn_mod_{devis_selectionne}"):
+                        df_crm.loc[ligne_idx, "Client"] = nouveau_client
+                        df_crm.loc[ligne_idx, "Entreprise"] = nouvelle_entreprise
+                        df_crm.to_csv(CRM_FILE, index=False)
+                        st.success("Informations du devis mises à jour avec succès !")
                         st.rerun()
 
                 if pd.notna(ligne_dev.get("PDF_Path")) and os.path.exists(str(ligne_dev["PDF_Path"])):
                     with open(ligne_dev["PDF_Path"], "rb") as pdf_file:
-                        st.download_button("📥 Télécharger le PDF de ce devis", pdf_file, file_name=os.path.basename(ligne_dev["PDF_Path"]), mime="application/pdf")
+                        st.download_button("📥 Télécharger le PDF de ce devis", pdf_file, file_name=os.path.basename(ligne_dev["PDF_Path"]), mime="application/pdf", key=f"dl_pdf_{devis_selectionne}")
         else:
-            st.info("Aucun devis dans le CRM.")
+            st.info("Aucun devis ne correspond aux filtres sélectionnés.")
     else:
         st.info("CRM vide.")
