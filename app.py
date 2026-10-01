@@ -68,7 +68,9 @@ def obtenir_prochain_numero_devis():
 
 
 # --- MOTEUR DE LECTURE EXCEL CATALOGUE PRINT & SIGNALÉTIQUE ---
-def obtenir_prix_catalogue_intelligent(cat_choisie, sub1_choisie, sub2_choisie, qte):
+def obtenir_prix_catalogue_intelligent(
+    cat_raw_cible, sub1_cible, sub2_cible, qte
+):
   if not os.path.exists(CATALOGUE_FILE):
     return 0.15
 
@@ -77,7 +79,7 @@ def obtenir_prix_catalogue_intelligent(cat_choisie, sub1_choisie, sub2_choisie, 
   except Exception:
     return 0.15
 
-  # Détection des colonnes de quantités (à partir de la colonne 3 / index 3)
+  # Détection des colonnes de quantités (à partir de la colonne 3)
   qty_cols = {}
   for c in range(3, df_all.shape[1]):
     val = df_all.iloc[0, c]
@@ -111,28 +113,19 @@ def obtenir_prix_catalogue_intelligent(cat_choisie, sub1_choisie, sub2_choisie, 
         else ""
     )
 
-    # Correspondance exacte ou assouplie sur la catégorie
     match_c0 = (
-        not cat_choisie
-        or (cat_choisie.lower() in c0.lower())
-        or (c0.lower() in cat_choisie.lower())
+        not cat_raw_cible
+        or (c0 == cat_raw_cible)
+        or (cat_raw_cible.lower() in c0.lower())
     )
-    match_c1 = (
-        not sub1_choisie
-        or (sub1_choisie.lower() in c1.lower())
-        or (c1.lower() in sub1_choisie.lower())
-    )
-    match_c2 = (
-        not sub2_choisie
-        or (sub2_choisie.lower() in c2.lower())
-        or (c2.lower() in sub2_choisie.lower())
-    )
+    match_c1 = not sub1_cible or (c1.lower() == sub1_cible.lower())
+    match_c2 = not sub2_cible or (c2.lower() == sub2_cible.lower())
 
     if match_c0 and match_c1 and match_c2:
       best_row = r
       break
 
-  # Fallback si correspondance exacte introuvable
+  # Second passage souple si correspondance exacte introuvable
   if best_row == -1:
     for r in range(1, len(df_all)):
       c0 = (
@@ -140,7 +133,28 @@ def obtenir_prix_catalogue_intelligent(cat_choisie, sub1_choisie, sub2_choisie, 
           if df_all.shape[1] > 0 and pd.notna(df_all.iloc[r, 0])
           else ""
       )
-      if cat_choisie and cat_choisie.lower() in c0.lower():
+      c1 = (
+          str(df_all.iloc[r, 1]).strip()
+          if df_all.shape[1] > 1 and pd.notna(df_all.iloc[r, 1])
+          else ""
+      )
+      if (
+          cat_raw_cible
+          and cat_raw_cible.lower() in c0.lower()
+          and sub1_cible
+          and sub1_cible.lower() in c1.lower()
+      ):
+        best_row = r
+        break
+
+  if best_row == -1:
+    for r in range(1, len(df_all)):
+      c0 = (
+          str(df_all.iloc[r, 0]).strip()
+          if df_all.shape[1] > 0 and pd.notna(df_all.iloc[r, 0])
+          else ""
+      )
+      if cat_raw_cible and cat_raw_cible.lower() in c0.lower():
         best_row = r
         break
 
@@ -865,13 +879,13 @@ for i in range(10):
         total_textile_brut += qte * prix_vetement_ht
 
     else:
-      # --- LECTURE Hiérarchique CATALOGUE PRINT (Col 1, Col 2, Col 3) ---
-      mapping_categories = {}
+      # --- LECTURE Hiérarchique EXACTE CATALOGUE PRINT ---
+      catalogue_structure = {}
       if os.path.exists(CATALOGUE_FILE):
         try:
           df_all = pd.read_excel(CATALOGUE_FILE, header=None)
           for r in range(1, len(df_all)):
-            c0_raw = (
+            c0 = (
                 str(df_all.iloc[r, 0]).strip()
                 if pd.notna(df_all.iloc[r, 0])
                 else ""
@@ -886,64 +900,48 @@ for i in range(10):
                 if pd.notna(df_all.iloc[r, 2])
                 else ""
             )
-            if not c0_raw or c0_raw.lower() == "catégorie":
-              continue
-            # Simplification du nom de la catégorie principale pour l'affichage
-            c0_clean = (
-                c0_raw.split(" - ")[0]
-                .split(" (")[0]
-                .split("  ")[0]
-                .strip()
-            )
-            if len(c0_clean) > 40:
-              c0_clean = c0_clean[:40] + "..."
 
-            if c0_clean not in mapping_categories:
-              mapping_categories[c0_clean] = {
-                  "raw_name": c0_raw,
-                  "sub1": {},
-              }
+            if not c0 or c0.lower() == "catégorie":
+              continue
+
+            if c0 not in catalogue_structure:
+              catalogue_structure[c0] = {}
 
             if c1 and c1.lower() != "sous catégorie":
-              if c1 not in mapping_categories[c0_clean]["sub1"]:
-                mapping_categories[c0_clean]["sub1"][c1] = []
+              if c1 not in catalogue_structure[c0]:
+                catalogue_structure[c0][c1] = []
               if (
                   c2
                   and c2.lower() != "modèle / référence exacte"
-                  and c2 not in mapping_categories[c0_clean]["sub1"][c1]
+                  and c2 not in catalogue_structure[c0][c1]
               ):
-                mapping_categories[c0_clean]["sub1"][c1].append(c2)
+                catalogue_structure[c0][c1].append(c2)
         except Exception:
           pass
 
-      liste_cat = (
-          list(mapping_categories.keys())
-          if mapping_categories
+      liste_categories_brutes = (
+          list(catalogue_structure.keys())
+          if catalogue_structure
           else ["Panneaux de chantier"]
       )
 
       st.write("📂 **Sélection Catalogue Print & Signalétique**")
-      choix_cat_clean = st.selectbox(
+
+      # Menu déroulant propre avec libellé court mais valeur exacte stockée
+      choix_cat_brute = st.selectbox(
           f"Article Print / Catégorie (Colonne 1) {i+1}",
-          liste_cat,
-          key=f"cat_{i}",
+          liste_categories_brutes,
+          format_func=lambda x: x.split(" - ")[0].split(" (")[0],
+          key=f"cat_brute_{i}",
       )
 
-      choix_cat_raw = (
-          mapping_categories[choix_cat_clean]["raw_name"]
-          if choix_cat_clean in mapping_categories
-          else choix_cat_clean
-      )
-
-      # Récupération des sous-catégories (Col 1) associées
+      # Récupération des sous-catégories (Col 1)
       liste_sub1 = []
       if (
-          choix_cat_clean in mapping_categories
-          and mapping_categories[choix_cat_clean]["sub1"]
+          choix_cat_brute in catalogue_structure
+          and catalogue_structure[choix_cat_brute]
       ):
-        liste_sub1 = list(
-            mapping_categories[choix_cat_clean]["sub1"].keys()
-        )
+        liste_sub1 = list(catalogue_structure[choix_cat_brute].keys())
       if not liste_sub1:
         liste_sub1 = ["Sous-catégorie par défaut"]
 
@@ -953,13 +951,13 @@ for i in range(10):
           key=f"sub1_{i}",
       )
 
-      # Récupération des modèles / finitions (Col 2) associés
+      # Récupération des finitions (Col 2)
       liste_sub2 = []
       if (
-          choix_cat_clean in mapping_categories
-          and choix_sub1 in mapping_categories[choix_cat_clean]["sub1"]
+          choix_cat_brute in catalogue_structure
+          and choix_sub1 in catalogue_structure[choix_cat_brute]
       ):
-        liste_sub2 = mapping_categories[choix_cat_clean]["sub1"][choix_sub1]
+        liste_sub2 = catalogue_structure[choix_cat_brute][choix_sub1]
       if not liste_sub2:
         liste_sub2 = ["Référence par défaut"]
 
@@ -969,7 +967,7 @@ for i in range(10):
           key=f"sub2_{i}",
       )
 
-      choix_ref = f"{choix_cat_clean} - {choix_sub1} - {choix_sub2}".strip(
+      choix_ref = f"{choix_cat_brute.split(' (')[0]} - {choix_sub1} - {choix_sub2}".strip(
           " -"
       )
 
@@ -982,7 +980,7 @@ for i in range(10):
             key=f"qte_print_{i}",
         )
         prix_unitaire_auto = obtenir_prix_catalogue_intelligent(
-            choix_cat_raw, choix_sub1, choix_sub2, qte
+            choix_cat_brute, choix_sub1, choix_sub2, qte
         )
         prix_vetement_ht = prix_unitaire_auto
       with col2:
