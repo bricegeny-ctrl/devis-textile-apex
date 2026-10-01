@@ -860,5 +860,3 @@ with onglets[11]:
             st.info("Aucun devis dans le CRM.")
     else:
         st.info("CRM vide.")
-    else:
-        st.info("CRM vide.")
