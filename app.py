@@ -65,6 +65,7 @@ def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
     except Exception:
         return 0.15
 
+    # Détection dynamique des paliers de quantité situés à partir de la ligne 1 (en-têtes)
     paliers_cols = []
     for c in range(3, df_all.shape[1]):
         val_hdr = df_all.iloc[1, c]
@@ -93,6 +94,7 @@ def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
     best_row = -1
     max_match = -1
 
+    # Analyse fine des colonnes 0 (Catégorie), 1 (Sous-catégorie 1), 2 (Modèle/Référence exacte)
     for r in range(2, len(df_all)):
         row_cat = str(df_all.iloc[r, 0]).lower() if pd.notna(df_all.iloc[r, 0]) else ""
         row_sub1 = str(df_all.iloc[r, 1]).lower() if pd.notna(df_all.iloc[r, 1]) else ""
@@ -464,7 +466,7 @@ for i in range(10):
                     choix_ref = f"{choix_sub1} - {choix_sub2}"
                 else:
                     choix_ref = choix_sub1
-                    st.info("ℹ️ Aucune sous-catégorie secondaire pour cette sélection.")
+                    st.info("ℹ️️ Aucune sous-catégorie secondaire pour cette sélection.")
 
                 col1, col2 = st.columns(2)
                 with col1:
@@ -762,7 +764,6 @@ with onglets[11]:
     if os.path.exists(CRM_FILE):
         df_crm = pd.read_csv(CRM_FILE)
         
-        # Migration automatique et robustesse des colonnes
         if "Societe" in df_crm.columns and "Entreprise" not in df_crm.columns:
             df_crm["Entreprise"] = df_crm["Societe"]
         elif "Societe" in df_crm.columns and "Entreprise" in df_crm.columns:
