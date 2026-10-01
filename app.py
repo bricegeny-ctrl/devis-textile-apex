@@ -111,10 +111,28 @@ def obtenir_prix_catalogue_intelligent(cat_choisie, sub1_choisie, sub2_choisie, 
         else ""
     )
 
-    if c0 == cat_choisie and c1 == sub1_choisie and c2 == sub2_choisie:
+    # Correspondance exacte ou assouplie sur la catégorie
+    match_c0 = (
+        not cat_choisie
+        or (cat_choisie.lower() in c0.lower())
+        or (c0.lower() in cat_choisie.lower())
+    )
+    match_c1 = (
+        not sub1_choisie
+        or (sub1_choisie.lower() in c1.lower())
+        or (c1.lower() in sub1_choisie.lower())
+    )
+    match_c2 = (
+        not sub2_choisie
+        or (sub2_choisie.lower() in c2.lower())
+        or (c2.lower() in sub2_choisie.lower())
+    )
+
+    if match_c0 and match_c1 and match_c2:
       best_row = r
       break
 
+  # Fallback si correspondance exacte introuvable
   if best_row == -1:
     for r in range(1, len(df_all)):
       c0 = (
@@ -848,67 +866,12 @@ for i in range(10):
 
     else:
       # --- LECTURE Hiérarchique CATALOGUE PRINT (Col 1, Col 2, Col 3) ---
-      liste_cat = []
+      mapping_categories = {}
       if os.path.exists(CATALOGUE_FILE):
         try:
           df_all = pd.read_excel(CATALOGUE_FILE, header=None)
           for r in range(1, len(df_all)):
-            c0 = (
-                str(df_all.iloc[r, 0]).strip()
-                if pd.notna(df_all.iloc[r, 0])
-                else ""
-            )
-            if c0 and c0 not in liste_cat:
-              liste_cat.append(c0)
-        except Exception:
-          pass
-
-      if not liste_cat:
-        liste_cat = ["Panneaux de chantier"]
-
-      st.write("📂 **Sélection Catalogue Print & Signalétique**")
-      choix_cat = st.selectbox(
-          f"Article Print / Catégorie (Colonne 1) {i+1}",
-          liste_cat,
-          key=f"cat_{i}",
-      )
-
-      # Filtrer les sous-catégories (Colonne 2) en fonction de l'article choisi (Colonne 1)
-      liste_sub1 = []
-      if os.path.exists(CATALOGUE_FILE):
-        try:
-          df_all = pd.read_excel(CATALOGUE_FILE, header=None)
-          for r in range(1, len(df_all)):
-            c0 = (
-                str(df_all.iloc[r, 0]).strip()
-                if pd.notna(df_all.iloc[r, 0])
-                else ""
-            )
-            c1 = (
-                str(df_all.iloc[r, 1]).strip()
-                if pd.notna(df_all.iloc[r, 1])
-                else ""
-            )
-            if c0 == choix_cat and c1 and c1 not in liste_sub1:
-              liste_sub1.append(c1)
-        except Exception:
-          pass
-      if not liste_sub1:
-        liste_sub1 = ["Sous-catégorie par défaut"]
-
-      choix_sub1 = st.selectbox(
-          f"Déclinaison Optionnelle 1 (Colonne 2) {i+1}",
-          liste_sub1,
-          key=f"sub1_{i}",
-      )
-
-      # Filtrer les modèles/références (Colonne 3) en fonction de Col 1 et Col 2
-      liste_sub2 = []
-      if os.path.exists(CATALOGUE_FILE):
-        try:
-          df_all = pd.read_excel(CATALOGUE_FILE, header=None)
-          for r in range(1, len(df_all)):
-            c0 = (
+            c0_raw = (
                 str(df_all.iloc[r, 0]).strip()
                 if pd.notna(df_all.iloc[r, 0])
                 else ""
@@ -923,15 +886,80 @@ for i in range(10):
                 if pd.notna(df_all.iloc[r, 2])
                 else ""
             )
-            if (
-                c0 == choix_cat
-                and c1 == choix_sub1
-                and c2
-                and c2 not in liste_sub2
-            ):
-              liste_sub2.append(c2)
+            if not c0_raw or c0_raw.lower() == "catégorie":
+              continue
+            # Simplification du nom de la catégorie principale pour l'affichage
+            c0_clean = (
+                c0_raw.split(" - ")[0]
+                .split(" (")[0]
+                .split("  ")[0]
+                .strip()
+            )
+            if len(c0_clean) > 40:
+              c0_clean = c0_clean[:40] + "..."
+
+            if c0_clean not in mapping_categories:
+              mapping_categories[c0_clean] = {
+                  "raw_name": c0_raw,
+                  "sub1": {},
+              }
+
+            if c1 and c1.lower() != "sous catégorie":
+              if c1 not in mapping_categories[c0_clean]["sub1"]:
+                mapping_categories[c0_clean]["sub1"][c1] = []
+              if (
+                  c2
+                  and c2.lower() != "modèle / référence exacte"
+                  and c2 not in mapping_categories[c0_clean]["sub1"][c1]
+              ):
+                mapping_categories[c0_clean]["sub1"][c1].append(c2)
         except Exception:
           pass
+
+      liste_cat = (
+          list(mapping_categories.keys())
+          if mapping_categories
+          else ["Panneaux de chantier"]
+      )
+
+      st.write("📂 **Sélection Catalogue Print & Signalétique**")
+      choix_cat_clean = st.selectbox(
+          f"Article Print / Catégorie (Colonne 1) {i+1}",
+          liste_cat,
+          key=f"cat_{i}",
+      )
+
+      choix_cat_raw = (
+          mapping_categories[choix_cat_clean]["raw_name"]
+          if choix_cat_clean in mapping_categories
+          else choix_cat_clean
+      )
+
+      # Récupération des sous-catégories (Col 1) associées
+      liste_sub1 = []
+      if (
+          choix_cat_clean in mapping_categories
+          and mapping_categories[choix_cat_clean]["sub1"]
+      ):
+        liste_sub1 = list(
+            mapping_categories[choix_cat_clean]["sub1"].keys()
+        )
+      if not liste_sub1:
+        liste_sub1 = ["Sous-catégorie par défaut"]
+
+      choix_sub1 = st.selectbox(
+          f"Déclinaison Optionnelle 1 (Colonne 2) {i+1}",
+          liste_sub1,
+          key=f"sub1_{i}",
+      )
+
+      # Récupération des modèles / finitions (Col 2) associés
+      liste_sub2 = []
+      if (
+          choix_cat_clean in mapping_categories
+          and choix_sub1 in mapping_categories[choix_cat_clean]["sub1"]
+      ):
+        liste_sub2 = mapping_categories[choix_cat_clean]["sub1"][choix_sub1]
       if not liste_sub2:
         liste_sub2 = ["Référence par défaut"]
 
@@ -941,7 +969,9 @@ for i in range(10):
           key=f"sub2_{i}",
       )
 
-      choix_ref = f"{choix_cat} - {choix_sub1} - {choix_sub2}".strip(" -")
+      choix_ref = f"{choix_cat_clean} - {choix_sub1} - {choix_sub2}".strip(
+          " -"
+      )
 
       col1, col2 = st.columns(2)
       with col1:
@@ -952,7 +982,7 @@ for i in range(10):
             key=f"qte_print_{i}",
         )
         prix_unitaire_auto = obtenir_prix_catalogue_intelligent(
-            choix_cat, choix_sub1, choix_sub2, qte
+            choix_cat_raw, choix_sub1, choix_sub2, qte
         )
         prix_vetement_ht = prix_unitaire_auto
       with col2:
@@ -1296,8 +1326,8 @@ with onglets[10]:
       header_text = Paragraph(
           "<b>APEX - SOLUTIONS VISUELLES, PRINT & TEXTILE</b><br/>"
           "70150 Marnay<br/>"
-          "Tél (Brice Geny) : 06 32 69 73 28 &nbsp;|&nbsp; Tél (Brice Bugna) :"
-          " 06 29 92 94 74<br/>"
+          "Tél (Brice Geny) : 06 32 69 73 28 &nbsp;|&nbsp; Tél (Brice Bugna)"
+          " : 06 29 92 94 74<br/>"
           "Email : brice.geny@gmail.com",
           style_sub,
       )
