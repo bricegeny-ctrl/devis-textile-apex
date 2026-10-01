@@ -22,6 +22,15 @@ PDF_DIR = "devis_pdf"
 if not os.path.exists(PDF_DIR):
     os.makedirs(PDF_DIR)
 
+COLS_CRM_DEFAUT = [
+    "Numero_Devis", "Date", "Commercial", "Client", "Entreprise", 
+    "Email", "Telephone", "Quantite_Totale", "Total_HT", "Total_TTC", 
+    "Statut", "Mode_Reglement", "PDF_Path"
+]
+
+if not os.path.exists(CRM_FILE):
+    pd.DataFrame(columns=COLS_CRM_DEFAUT).to_csv(CRM_FILE, index=False)
+
 def obtenir_prochain_numero_devis():
     annee_courante = datetime.now().strftime("%Y")
     mois_courant = datetime.now().strftime("%m")
@@ -223,24 +232,28 @@ def calculer_frais_port(montant_base, zone):
         elif montant_base < 1500.0: return 90.0
         else: return 0.0
 
-CRM_FILE = "crm_devis.csv"
-if not os.path.exists(CRM_FILE):
-    pd.DataFrame(columns=[
-        "Numero_Devis", "Date", "Client", "Societe", "Total_HT", "Total_TTC", "Statut", "PDF_Path"
-    ]).to_csv(CRM_FILE, index=False)
-
 def enregistrer_dans_crm(devis_data):
-    df_crm = pd.read_csv(CRM_FILE) if os.path.exists(CRM_FILE) else pd.DataFrame(columns=list(devis_data.keys()))
-    if "Statut" not in df_crm.columns:
+    if os.path.exists(CRM_FILE):
+        df_crm = pd.read_csv(CRM_FILE)
+    else:
+        df_crm = pd.DataFrame(columns=COLS_CRM_DEFAUT)
+        
+    for col in COLS_CRM_DEFAUT:
+        if col not in df_crm.columns:
+            df_crm[col] = ""
+            
+    if "Statut" not in df_crm.columns or df_crm["Statut"].isna().all():
         df_crm["Statut"] = "brouillon"
         
-    if not df_crm[df_crm["Numero_Devis"] == devis_data["Numero_Devis"]].empty:
-        # Conserver le statut existant si mise à jour sans changer le statut
-        statut_actuel = df_crm.loc[df_crm["Numero_Devis"] == devis_data["Numero_Devis"], "Statut"].values[0]
-        devis_data["Statut"] = statut_actuel if pd.notna(statut_actuel) else "brouillon"
-        df_crm.loc[df_crm["Numero_Devis"] == devis_data["Numero_Devis"], :] = list(devis_data.values())
+    mask = df_crm["Numero_Devis"] == devis_data["Numero_Devis"]
+    if not df_crm[mask].empty:
+        statut_actuel = df_crm.loc[mask, "Statut"].values[0]
+        devis_data["Statut"] = statut_actuel if pd.notna(statut_actuel) and statut_actuel != "" else "brouillon"
+        for k, v in devis_data.items():
+            if k in df_crm.columns:
+                df_crm.loc[mask, k] = v
     else:
-        if "Statut" not in devis_data:
+        if "Statut" not in devis_data or not devis_data["Statut"]:
             devis_data["Statut"] = "brouillon"
         df_crm = pd.concat([df_crm, pd.DataFrame([devis_data])], ignore_index=True)
     df_crm.to_csv(CRM_FILE, index=False)
@@ -248,7 +261,6 @@ def enregistrer_dans_crm(devis_data):
 # --- SIDEBAR (Gestion des valeurs par défaut / édition CRM) ---
 st.sidebar.title("📋 Infos Client & Expédition")
 
-# Récupération depuis la session si un devis est en cours de modification
 def_client = st.session_state.get("edit_client", "Client Exemple")
 def_entreprise = st.session_state.get("edit_entreprise", "")
 def_email = st.session_state.get("edit_email", "client@exemple.com")
@@ -269,7 +281,6 @@ st.sidebar.markdown("---")
 zone_livraison = st.sidebar.selectbox("Zone de Livraison", ["France Continentale", "Livraison Corse, Monaco ou Andorre", "Espace UE"])
 offrir_port = st.sidebar.checkbox("🎁 Offrir les frais de port", value=False)
 
-# Gestion de l'index du commercial pour le selectbox
 liste_commerciaux = ["Brice Geny", "Brice Bugna"]
 index_com = liste_commerciaux.index(def_commercial) if def_commercial in liste_commerciaux else 0
 conseiller_nom = st.sidebar.selectbox("Commercial / Conseiller", liste_commerciaux, index=index_com)
@@ -751,11 +762,16 @@ with onglets[11]:
     if os.path.exists(CRM_FILE):
         df_crm = pd.read_csv(CRM_FILE)
         
-        # S'assurer que les colonnes indispensables existent
-        cols_requises = ["Numero_Devis", "Date", "Client", "Entreprise", "Commercial", "Statut", "Total_HT", "Total_TTC"]
-        for col in cols_requises:
+        # Migration automatique et robustesse des colonnes
+        if "Societe" in df_crm.columns and "Entreprise" not in df_crm.columns:
+            df_crm["Entreprise"] = df_crm["Societe"]
+        elif "Societe" in df_crm.columns and "Entreprise" in df_crm.columns:
+            df_crm["Entreprise"] = df_crm["Entreprise"].fillna(df_crm["Societe"])
+
+        for col in COLS_CRM_DEFAUT:
             if col not in df_crm.columns:
                 df_crm[col] = ""
+                
         df_crm["Statut"] = df_crm["Statut"].fillna("brouillon")
         df_crm.to_csv(CRM_FILE, index=False)
             
@@ -777,7 +793,6 @@ with onglets[11]:
             with col_f4:
                 filtre_commercial = st.selectbox("Commercial", commerciaux_possibles, index=0, key="filtre_commercial_crm")
             
-            # Application des filtres
             df_affiche = df_crm.copy()
             if filtre_statut != "Tous":
                 df_affiche = df_affiche[df_affiche["Statut"] == filtre_statut]
@@ -827,7 +842,7 @@ with onglets[11]:
                         st.write("#### 📋 Duplication")
                         st.write("Créer une copie (numérotation officielle).")
                         if st.button("Dupliquer ce devis", key=f"btn_dup_{devis_selectionne}"):
-                            nouveau_devis = ligne_dev.copy()
+                            nouveau_devis = ligne_dev.to_dict()
                             nouveau_num = obtenir_prochain_numero_devis()
                             nouveau_devis["Numero_Devis"] = nouveau_num
                             nouveau_devis["Statut"] = "brouillon"
