@@ -55,8 +55,8 @@ def obtenir_prochain_numero_devis():
         json.dump({"dernier_num": nouveau_num}, f)
     return nouveau_num
 
-# --- MOTEUR DE LECTURE EXCEL CATALOGUE PRINT & SIGNALÉTIQUE ---
-def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
+# --- MOTEUR DE LECTURE EXCEL CATALOGUE PRINT & SIGNALÉTIQUE CORRIGÉ ---
+def obtenir_prix_catalogue_intelligent(choix_col1, choix_col2, choix_col3, qte):
     if not os.path.exists(CATALOGUE_FILE):
         return 0.15
     
@@ -65,16 +65,27 @@ def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
     except Exception:
         return 0.15
 
-    # Détection dynamique des paliers de quantité situés à partir de la ligne 1 (en-têtes)
+    # Détection dynamique des paliers de quantité situés sur la ligne d'en-tête (ligne 0 ou 1)
+    # On cherche la ligne qui contient des nombres ou des seuils de quantité
+    header_row_idx = 0
+    for r in range(min(3, len(df_all))):
+        val = df_all.iloc[r, 4] if df_all.shape[1] > 4 else None
+        try:
+            float(val)
+            header_row_idx = r
+            break
+        except:
+            pass
+
     paliers_cols = []
-    for c in range(4, df_all.shape[1]):
-        val_hdr = df_all.iloc[1, c]
+    for c in range(3, df_all.shape[1]):
+        val_hdr = df_all.iloc[header_row_idx, c]
         try:
             paliers_cols.append((c, float(val_hdr)))
         except:
             pass
 
-    col_cible = 4
+    col_cible = 4 if df_all.shape[1] > 4 else 3
     if paliers_cols:
         for idx, (col_idx, q_seuil) in enumerate(paliers_cols):
             if idx < len(paliers_cols) - 1:
@@ -86,40 +97,48 @@ def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
                 if qte >= q_seuil:
                     col_cible = col_idx
                     break
-    else:
-        col_cible = 7
 
-    ref_lower = str(choix_ref).lower().strip()
-    cat_lower = str(cat_print).lower().strip()
     best_row = -1
     max_match = -1
 
-    # Analyse fine des colonnes 0 (Catégorie), 1 (Col 1), 2 (Col 2), 3 (Col 3)
-    for r in range(2, len(df_all)):
-        row_cat = str(df_all.iloc[r, 0]).lower() if pd.notna(df_all.iloc[r, 0]) else ""
-        row_sub1 = str(df_all.iloc[r, 1]).lower() if pd.notna(df_all.iloc[r, 1]) else ""
-        row_sub2 = str(df_all.iloc[r, 2]).lower() if pd.notna(df_all.iloc[r, 2]) else ""
-        row_sub3 = str(df_all.iloc[r, 3]).lower() if pd.notna(df_all.iloc[r, 3]) else ""
+    # Recherche de la ligne correspondant aux colonnes 1, 2 et 3
+    start_row = header_row_idx + 1
+    for r in range(start_row, len(df_all)):
+        c1 = str(df_all.iloc[r, 1]).strip() if df_all.shape[1] > 1 and pd.notna(df_all.iloc[r, 1]) else ""
+        c2 = str(df_all.iloc[r, 2]).strip() if df_all.shape[1] > 2 and pd.notna(df_all.iloc[r, 2]) else ""
+        c3 = str(df_all.iloc[r, 3]).strip() if df_all.shape[1] > 3 and pd.notna(df_all.iloc[r, 3]) else ""
         
-        score = 0
-        if cat_lower in row_cat or row_cat in cat_lower:
-            score += 30
+        if not c1 and not c2 and not c3:
+            continue
 
-        full_sub = f"{row_sub1} - {row_sub2} - {row_sub3}".strip()
-        if row_sub1 and row_sub1 in ref_lower:
+        score = 0
+        if choix_col1 and c1.lower() == choix_col1.lower():
+            score += 30
+        elif choix_col1 and choix_col1.lower() in c1.lower():
             score += 15
-        if row_sub2 and row_sub2 in ref_lower:
+
+        if choix_col2 and c2.lower() == choix_col2.lower():
+            score += 40
+        elif choix_col2 and choix_col2.lower() in c2.lower():
             score += 20
-        if row_sub3 and row_sub3 in ref_lower:
-            score += 25
-        if full_sub in ref_lower or ref_lower in full_sub:
+
+        if choix_col3 and c3.lower() == choix_col3.lower():
             score += 50
+        elif choix_col3 and choix_col3.lower() in c3.lower():
+            score += 25
 
         if score > max_match:
             max_match = score
             best_row = r
 
     if best_row == -1 or max_match <= 0:
+        # Recherche de secours sur la première ligne valide de données
+        for r in range(start_row, len(df_all)):
+            if pd.notna(df_all.iloc[r, 1]):
+                best_row = r
+                break
+
+    if best_row == -1:
         return 0.15
 
     try:
@@ -128,7 +147,7 @@ def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
             
         prix_val = float(df_all.iloc[best_row, col_cible])
         if pd.isna(prix_val) or prix_val <= 0:
-            for alt_col in range(col_cible - 1, 3, -1):
+            for alt_col in range(col_cible - 1, 2, -1):
                 if 0 <= alt_col < df_all.shape[1]:
                     alt_val = float(df_all.iloc[best_row, alt_col])
                     if not pd.isna(alt_val) and alt_val > 0:
@@ -263,7 +282,7 @@ def enregistrer_dans_crm(devis_data):
         df_crm = pd.concat([df_crm, pd.DataFrame([devis_data])], ignore_index=True)
     df_crm.to_csv(CRM_FILE, index=False)
 
-# --- SIDEBAR (Gestion des valeurs par défaut / édition CRM) ---
+# --- SIDEBAR ---
 st.sidebar.title("📋 Infos Client & Expédition")
 
 def_client = st.session_state.get("edit_client", "Client Exemple")
@@ -400,109 +419,71 @@ for i in range(10):
                 total_textile_brut += qte * prix_vetement_ht
 
         else:
-            cat_print = st.selectbox(
-                f"Catégorie Print & Signalétique {i+1}",
-                [
-                    "Flyers", "Dépliants", "Blocs notes", "Chemises de présentation", 
-                    "Banderoles", "Panneaux de chantier", "Roll-Up", "Sous bocks", 
-                    "Adhésifs", "Cartes de visite", "Calendriers", "Menus restaurants",
-                    "➕ Autre / Produit hors catalogue (Saisie libre)"
-                ],
-                key=f"cat_print_{i}"
-            )
+            # --- LECTURE DIRECTE DES COLONNES 1, 2 et 3 DU CATALOGUE ---
+            liste_col1 = []
+            liste_col2 = []
+            liste_col3 = []
             
-            if "Autre" in cat_print:
-                choix_ref = st.text_input(f"Nom / Désignation du produit libre {i+1}", value="Produit personnalisé", key=f"ref_libre_{i}")
-                col1, col2 = st.columns(2)
-                with col1:
-                    qte = st.number_input(f"Quantité (exemplaires) {i+1}", min_value=0, value=1 if i==0 else 0, key=f"qte_print_{i}")
-                    prix_vetement_ht = st.number_input(f"Prix unitaire HT (€) {i+1} (Saisie libre)", min_value=0.0, value=10.00, format="%.4f", key=f"px_libre_{i}")
-                with col2:
-                    st.info("💡 Saisie manuelle active (produit hors catalogue).")
-                    remise_fidelite = st.number_input(f"Remise commerciale (%) {i+1}", min_value=0.0, max_value=100.0, value=0.0, key=f"rem_print_{i}")
-            else:
-                arbre_catalogue = {}
-                if os.path.exists(CATALOGUE_FILE):
-                    try:
-                        df_all = pd.read_excel(CATALOGUE_FILE, sheet_name=0, header=None)
-                        for r in range(2, len(df_all)):
-                            cat = str(df_all.iloc[r, 0]).strip() if pd.notna(df_all.iloc[r, 0]) else ""
-                            sub1 = str(df_all.iloc[r, 1]).strip() if pd.notna(df_all.iloc[r, 1]) else ""
-                            sub2 = str(df_all.iloc[r, 2]).strip() if pd.notna(df_all.iloc[r, 2]) else ""
-                            sub3 = str(df_all.iloc[r, 3]).strip() if pd.notna(df_all.iloc[r, 3]) else ""
-                            
-                            if not cat or not sub1:
-                                continue
-                            
-                            if cat not in arbre_catalogue:
-                                arbre_catalogue[cat] = {}
-                            if sub1 not in arbre_catalogue[cat]:
-                                arbre_catalogue[cat][sub1] = {}
-                            if sub2 not in arbre_catalogue[cat][sub1]:
-                                arbre_catalogue[cat][sub1][sub2] = []
-                            if sub3 and sub3 not in arbre_catalogue[cat][sub1][sub2]:
-                                arbre_catalogue[cat][sub1][sub2].append(sub3)
-                    except Exception:
-                        pass
+            if os.path.exists(CATALOGUE_FILE):
+                try:
+                    df_all = pd.read_excel(CATALOGUE_FILE, sheet_name=0, header=None)
+                    # Trouver la ligne de départ (en ignorant les en-têtes)
+                    start_r = 1
+                    for r in range(min(3, len(df_all))):
+                        val = df_all.iloc[r, 4] if df_all.shape[1] > 4 else None
+                        try:
+                            float(val)
+                            start_r = r + 1
+                            break
+                        except:
+                            pass
 
-                matched_cat = None
-                for c_excel in arbre_catalogue.keys():
-                    if cat_print.lower() in c_excel.lower() or c_excel.lower() in cat_print.lower():
-                        matched_cat = c_excel
-                        break
+                    for r in range(start_r, len(df_all)):
+                        c1 = str(df_all.iloc[r, 1]).strip() if df_all.shape[1] > 1 and pd.notna(df_all.iloc[r, 1]) else ""
+                        c2 = str(df_all.iloc[r, 2]).strip() if df_all.shape[1] > 2 and pd.notna(df_all.iloc[r, 2]) else ""
+                        c3 = str(df_all.iloc[r, 3]).strip() if df_all.shape[1] > 3 and pd.notna(df_all.iloc[r, 3]) else ""
+                        
+                        if c1 and c1 not in liste_col1 and c1.lower() != "nan":
+                            liste_col1.append(c1)
+                        if c2 and c2 not in liste_col2 and c2.lower() != "nan":
+                            liste_col2.append(c2)
+                        if c3 and c3 not in liste_col3 and c3.lower() != "nan":
+                            liste_col3.append(c3)
+                except Exception:
+                    pass
 
-                sous_cats_1 = list(arbre_catalogue[matched_cat].keys()) if matched_cat and arbre_catalogue[matched_cat] else ["Standard"]
-                
-                choix_sub1 = st.selectbox(
-                    f"Colonne 1 / Sous-catégorie 1 ({cat_print}) {i+1}", 
-                    sous_cats_1, 
-                    key=f"sub1_{i}"
-                )
+            if not liste_col1: liste_col1 = ["Standard"]
+            if not liste_col2: liste_col2 = ["Standard"]
+            if not liste_col3: liste_col3 = ["Standard"]
 
-                sous_cats_2 = []
-                if matched_cat and choix_sub1 in arbre_catalogue[matched_cat]:
-                    sous_cats_2 = list(arbre_catalogue[matched_cat][choix_sub1].keys())
+            st.write("#### 📂 Sélection Print (Colonnes 1, 2 et 3)")
+            col_c1, col_c2, col_c3 = st.columns(3)
+            with col_c1:
+                choix_col1 = st.selectbox(f"Colonne 1 {i+1}", liste_col1, key=f"col1_{i}")
+            with col_c2:
+                choix_col2 = st.selectbox(f"Colonne 2 {i+1}", liste_col2, key=f"col2_{i}")
+            with col_c3:
+                choix_col3 = st.selectbox(f"Colonne 3 {i+1}", liste_col3, key=f"col3_{i}")
 
-                if sous_cats_2:
-                    choix_sub2 = st.selectbox(
-                        f"Colonne 2 / Sous-catégorie 2 ({choix_sub1}) {i+1}", 
-                        sous_cats_2, 
-                        key=f"sub2_{i}"
-                    )
-                else:
-                    choix_sub2 = ""
+            parties_ref = [choix_col1, choix_col2, choix_col3]
+            choix_ref = " - ".join([p for p in parties_ref if p and p != "Standard" and p != "nan"])
+            if not choix_ref:
+                choix_ref = choix_col1
 
-                sous_cats_3 = []
-                if matched_cat and choix_sub1 in arbre_catalogue[matched_cat] and choix_sub2 in arbre_catalogue[matched_cat][choix_sub1]:
-                    sous_cats_3 = arbre_catalogue[matched_cat][choix_sub1][choix_sub2]
-
-                if sous_cats_3:
-                    choix_sub3 = st.selectbox(
-                        f"Colonne 3 / Sous-catégorie 3 ({choix_sub2}) {i+1}", 
-                        sous_cats_3, 
-                        key=f"sub3_{i}"
-                    )
-                else:
-                    choix_sub3 = ""
-
-                # Construction de la référence combinée pour la recherche de prix
-                parties_ref = [choix_sub1, choix_sub2, choix_sub3]
-                choix_ref = " - ".join([p for p in parties_ref if p and p != "nan"])
-
-                col1, col2 = st.columns(2)
-                with col1:
-                    qte = st.number_input(f"Quantité (exemplaires) {i+1}", min_value=0, value=100 if i==0 else 0, key=f"qte_print_{i}")
-                    prix_unitaire_auto = obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte)
-                    prix_vetement_ht = prix_unitaire_auto
-                    st.metric(label=f"Prix unitaire HT (€) {i+1} (Catalogue auto)", value=f"{prix_unitaire_auto:.4f} €")
-                with col2:
-                    st.success(f"✔ Tarif appliqué ({qte} ex) : **{prix_unitaire_auto:.4f} € HT**")
-                    remise_fidelite = st.number_input(f"Remise commerciale (%) {i+1}", min_value=0.0, max_value=100.0, value=0.0, key=f"rem_print_{i}")
+            col1, col2 = st.columns(2)
+            with col1:
+                qte = st.number_input(f"Quantité (exemplaires) {i+1}", min_value=0, value=100 if i==0 else 0, key=f"qte_print_{i}")
+                prix_unitaire_auto = obtenir_prix_catalogue_intelligent(choix_col1, choix_col2, choix_col3, qte)
+                prix_vetement_ht = prix_unitaire_auto
+                st.metric(label=f"Prix unitaire HT (€) {i+1}", value=f"{prix_unitaire_auto:.4f} €")
+            with col2:
+                st.success(f"✔ Tarif appliqué ({qte} ex) : **{prix_unitaire_auto:.4f} € HT**")
+                remise_fidelite = st.number_input(f"Remise commerciale (%) {i+1}", min_value=0.0, max_value=100.0, value=0.0, key=f"rem_print_{i}")
 
             if qte > 0:
                 articles_saisis.append({
                     "type_univers": "print",
-                    "nom_article": f"{cat_print} - {choix_ref}" if "Autre" not in cat_print else choix_ref,
+                    "nom_article": f"{choix_col1} - {choix_col2} - {choix_col3}".strip(" -"),
                     "quantite": qte,
                     "prix_vet_unit": prix_vetement_ht,
                     "sans_marquage": True,
@@ -769,15 +750,6 @@ with onglets[10]:
             if os.path.exists(pdf_filename):
                 with open(pdf_filename, "rb") as f:
                     st.download_button("📥 Télécharger le PDF du devis", f, file_name=os.path.basename(pdf_filename), mime="application/pdf")
-                
-                st.markdown("---")
-                st.subheader("✉️ Envoi direct du devis par e-mail en 1 clic")
-                email_dest = st.text_input("Destinataire de l'e-mail", value=client_email)
-                sujet_mail = st.text_input("Objet de l'e-mail", value=f"Devis {st.session_state.get('dernier_num', '')} - APEX")
-                corps_mail = st.text_area("Message", value=f"Bonjour {client_nom},\n\nVeuillez trouver ci-joint votre devis établi par APEX.\n\nCordialement,\n{conseiller_nom}\nAPEX")
-
-                mailto_link = f"mailto:{email_dest}?subject={urllib.parse.quote(sujet_mail)}&body={urllib.parse.quote(corps_mail)}"
-                st.markdown(f'<a href="{mailto_link}" target="_blank"><button style="background-color:#2b6cb0; color:white; border:none; padding:10px 20px; border-radius:5px; cursor:pointer; font-weight:bold; width:100%;">📧 Ouvrir dans le client mail (Secours)</button></a>', unsafe_allow_html=True)
 
 # --- ONGLET SUIVI CRM (Index 11) ---
 with onglets[11]:
@@ -827,73 +799,3 @@ with onglets[11]:
                 
             st.dataframe(df_affiche, use_container_width=True)
             st.info(f"Affichage de {len(df_affiche)} devis sur {len(df_crm)} au total.")
-            
-            st.markdown("---")
-            st.subheader("🛠️ Gestion, Modification & Duplication du Devis")
-            
-            liste_devis_dispo = df_affiche["Numero_Devis"].tolist() if not df_affiche.empty else df_crm["Numero_Devis"].tolist()
-            if liste_devis_dispo:
-                devis_selectionne = st.selectbox("Sélectionner un devis par son numéro", liste_devis_dispo, key="select_crm")
-                
-                if devis_selectionne:
-                    ligne_idx = df_crm[df_crm["Numero_Devis"] == devis_selectionne].index[0]
-                    ligne_dev = df_crm.loc[ligne_idx]
-                    
-                    col_statut, col_dup, col_mod = st.columns(3)
-                    
-                    with col_statut:
-                        st.write("#### 📌 Statut")
-                        statut_actuel = ligne_dev.get("Statut", "brouillon")
-                        if statut_actuel not in statuts_possibles[1:]:
-                            statut_actuel = "brouillon"
-                            
-                        nouveau_statut = st.selectbox(
-                            "Modifier le statut", 
-                            statuts_possibles[1:], 
-                            index=statuts_possibles[1:].index(statut_actuel) if statut_actuel in statuts_possibles[1:] else 0,
-                            key=f"status_select_{devis_selectionne}"
-                        )
-                        
-                        if st.button("Mettre à jour le statut", key=f"btn_stat_{devis_selectionne}"):
-                            df_crm.loc[ligne_idx, "Statut"] = nouveau_statut
-                            df_crm.to_csv(CRM_FILE, index=False)
-                            st.success(f"Statut mis à jour : **{nouveau_statut}** !")
-                            st.rerun()
-                    
-                    with col_dup:
-                        st.write("#### 📋 Duplication")
-                        st.write("Créer une copie (numérotation officielle).")
-                        if st.button("Dupliquer ce devis", key=f"btn_dup_{devis_selectionne}"):
-                            nouveau_devis = ligne_dev.to_dict()
-                            nouveau_num = obtenir_prochain_numero_devis()
-                            nouveau_devis["Numero_Devis"] = nouveau_num
-                            nouveau_devis["Statut"] = "brouillon"
-                            nouveau_devis["Date"] = datetime.now().strftime('%Y-%m-%d %H:%M')
-                            
-                            df_crm = pd.concat([df_crm, pd.DataFrame([nouveau_devis])], ignore_index=True)
-                            df_crm.to_csv(CRM_FILE, index=False)
-                            st.success(f"Devis dupliqué ! Nouveau numéro : **{nouveau_num}**")
-                            st.rerun()
-
-                    with col_mod:
-                        st.write("#### ✏️ Modification complète")
-                        st.write("Charger ce devis pour modifier les articles.")
-                        if st.button("Modifier ce devis", key=f"btn_edit_{devis_selectionne}"):
-                            st.session_state["edit_client"] = str(ligne_dev.get("Client", ""))
-                            st.session_state["edit_entreprise"] = str(ligne_dev.get("Entreprise", ""))
-                            st.session_state["edit_email"] = str(ligne_dev.get("Email", ""))
-                            st.session_state["edit_telephone"] = str(ligne_dev.get("Telephone", ""))
-                            st.session_state["edit_commercial"] = str(ligne_dev.get("Commercial", "Brice Geny"))
-                            st.session_state["numero_devis_en_cours"] = devis_selectionne
-                            st.success(f"Devis {devis_selectionne} chargé ! Allez dans l'onglet '📊 Général & Devis'.")
-                            st.rerun()
-
-                    if pd.notna(ligne_dev.get("PDF_Path")) and os.path.exists(str(ligne_dev["PDF_Path"])):
-                        with open(ligne_dev["PDF_Path"], "rb") as pdf_file:
-                            st.download_button("📥 Télécharger le PDF de ce devis", pdf_file, file_name=os.path.basename(ligne_dev["PDF_Path"]), mime="application/pdf", key=f"dl_pdf_{devis_selectionne}")
-            else:
-                st.info("Aucun devis disponible pour les filtres sélectionnés.")
-        else:
-            st.info("Aucun devis dans le CRM.")
-    else:
-        st.info("CRM vide.")
