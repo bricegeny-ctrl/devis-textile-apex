@@ -56,7 +56,7 @@ def obtenir_prochain_numero_devis():
     return nouveau_num
 
 # --- MOTEUR DE LECTURE EXCEL CATALOGUE PRINT & SIGNALÉTIQUE CORRIGÉ ---
-def obtenir_prix_catalogue_intelligent(choix_col1, choix_col2, choix_col3, qte):
+def obtenir_prix_catalogue_intelligent(cat_choisie, sub1_choisie, sub2_choisie, qte):
     if not os.path.exists(CATALOGUE_FILE):
         return 0.15
     
@@ -65,10 +65,9 @@ def obtenir_prix_catalogue_intelligent(choix_col1, choix_col2, choix_col3, qte):
     except Exception:
         return 0.15
 
-    # Détection dynamique des paliers de quantité situés sur la ligne d'en-tête (ligne 0 ou 1)
-    # On cherche la ligne qui contient des nombres ou des seuils de quantité
-    header_row_idx = 0
-    for r in range(min(3, len(df_all))):
+    # Détection de la ligne d'en-tête des quantités (ligne contenant les paliers numériques)
+    header_row_idx = 1
+    for r in range(min(4, len(df_all))):
         val = df_all.iloc[r, 4] if df_all.shape[1] > 4 else None
         try:
             float(val)
@@ -100,41 +99,31 @@ def obtenir_prix_catalogue_intelligent(choix_col1, choix_col2, choix_col3, qte):
 
     best_row = -1
     max_match = -1
-
-    # Recherche de la ligne correspondant aux colonnes 1, 2 et 3
     start_row = header_row_idx + 1
+
     for r in range(start_row, len(df_all)):
+        c0 = str(df_all.iloc[r, 0]).strip() if df_all.shape[1] > 0 and pd.notna(df_all.iloc[r, 0]) else ""
         c1 = str(df_all.iloc[r, 1]).strip() if df_all.shape[1] > 1 and pd.notna(df_all.iloc[r, 1]) else ""
         c2 = str(df_all.iloc[r, 2]).strip() if df_all.shape[1] > 2 and pd.notna(df_all.iloc[r, 2]) else ""
-        c3 = str(df_all.iloc[r, 3]).strip() if df_all.shape[1] > 3 and pd.notna(df_all.iloc[r, 3]) else ""
         
-        if not c1 and not c2 and not c3:
+        if not c0 and not c1 and not c2:
             continue
 
         score = 0
-        if choix_col1 and c1.lower() == choix_col1.lower():
+        if cat_choisie and cat_choisie.lower() in c0.lower():
             score += 30
-        elif choix_col1 and choix_col1.lower() in c1.lower():
-            score += 15
-
-        if choix_col2 and c2.lower() == choix_col2.lower():
+        if sub1_choisie and sub1_choisie.lower() in c1.lower():
             score += 40
-        elif choix_col2 and choix_col2.lower() in c2.lower():
-            score += 20
-
-        if choix_col3 and c3.lower() == choix_col3.lower():
+        if sub2_choisie and sub2_choisie.lower() in c2.lower():
             score += 50
-        elif choix_col3 and choix_col3.lower() in c3.lower():
-            score += 25
 
         if score > max_match:
             max_match = score
             best_row = r
 
     if best_row == -1 or max_match <= 0:
-        # Recherche de secours sur la première ligne valide de données
         for r in range(start_row, len(df_all)):
-            if pd.notna(df_all.iloc[r, 1]):
+            if pd.notna(df_all.iloc[r, 2]):
                 best_row = r
                 break
 
@@ -419,61 +408,57 @@ for i in range(10):
                 total_textile_brut += qte * prix_vetement_ht
 
         else:
-            # --- LECTURE DIRECTE DES COLONNES 1, 2 et 3 DU CATALOGUE ---
-            liste_col1 = []
-            liste_col2 = []
-            liste_col3 = []
+            # --- LECTURE EXACTE DES COLONNES 0, 1 ET 2 DU CATALOGUE EXCEL ---
+            liste_cat = []
+            liste_sub1 = []
+            liste_sub2 = []
             
             if os.path.exists(CATALOGUE_FILE):
                 try:
                     df_all = pd.read_excel(CATALOGUE_FILE, sheet_name=0, header=None)
-                    # Trouver la ligne de départ (en ignorant les en-têtes)
-                    start_r = 1
-                    for r in range(min(3, len(df_all))):
+                    start_r = 2
+                    for r in range(min(4, len(df_all))):
                         val = df_all.iloc[r, 4] if df_all.shape[1] > 4 else None
                         try:
                             float(val)
-                            start_r = r + 1
+                            start_r = r
                             break
                         except:
                             pass
 
                     for r in range(start_r, len(df_all)):
+                        c0 = str(df_all.iloc[r, 0]).strip() if df_all.shape[1] > 0 and pd.notna(df_all.iloc[r, 0]) else ""
                         c1 = str(df_all.iloc[r, 1]).strip() if df_all.shape[1] > 1 and pd.notna(df_all.iloc[r, 1]) else ""
                         c2 = str(df_all.iloc[r, 2]).strip() if df_all.shape[1] > 2 and pd.notna(df_all.iloc[r, 2]) else ""
-                        c3 = str(df_all.iloc[r, 3]).strip() if df_all.shape[1] > 3 and pd.notna(df_all.iloc[r, 3]) else ""
                         
-                        if c1 and c1 not in liste_col1 and c1.lower() != "nan":
-                            liste_col1.append(c1)
-                        if c2 and c2 not in liste_col2 and c2.lower() != "nan":
-                            liste_col2.append(c2)
-                        if c3 and c3 not in liste_col3 and c3.lower() != "nan":
-                            liste_col3.append(c3)
+                        if c0 and c0 not in liste_cat and c0.lower() != "nan" and c0.lower() != "catégorie":
+                            liste_cat.append(c0)
+                        if c1 and c1 not in liste_sub1 and c1.lower() != "nan" and c1.lower() != "sous catégorie":
+                            liste_sub1.append(c1)
+                        if c2 and c2 not in liste_sub2 and c2.lower() != "nan" and c2.lower() != "modèle / référence exacte":
+                            liste_sub2.append(c2)
                 except Exception:
                     pass
 
-            if not liste_col1: liste_col1 = ["Standard"]
-            if not liste_col2: liste_col2 = ["Standard"]
-            if not liste_col3: liste_col3 = ["Standard"]
+            if not liste_cat: liste_cat = ["Standard"]
+            if not liste_sub1: liste_sub1 = ["Standard"]
+            if not liste_sub2: liste_sub2 = ["Standard"]
 
-            st.write("#### 📂 Sélection Print (Colonnes 1, 2 et 3)")
+            st.write("#### 📂 Sélection Catalogue Print (Colonnes 0, 1 et 2)")
             col_c1, col_c2, col_c3 = st.columns(3)
             with col_c1:
-                choix_col1 = st.selectbox(f"Colonne 1 {i+1}", liste_col1, key=f"col1_{i}")
+                choix_cat = st.selectbox(f"Catégorie (Col 0) {i+1}", liste_cat, key=f"cat_{i}")
             with col_c2:
-                choix_col2 = st.selectbox(f"Colonne 2 {i+1}", liste_col2, key=f"col2_{i}")
+                choix_sub1 = st.selectbox(f"Sous-catégorie (Col 1) {i+1}", liste_sub1, key=f"sub1_{i}")
             with col_c3:
-                choix_col3 = st.selectbox(f"Colonne 3 {i+1}", liste_col3, key=f"col3_{i}")
+                choix_sub2 = st.selectbox(f"Modèle / Référence (Col 2) {i+1}", liste_sub2, key=f"sub2_{i}")
 
-            parties_ref = [choix_col1, choix_col2, choix_col3]
-            choix_ref = " - ".join([p for p in parties_ref if p and p != "Standard" and p != "nan"])
-            if not choix_ref:
-                choix_ref = choix_col1
+            choix_ref = f"{choix_cat} - {choix_sub1} - {choix_sub2}".strip(" -")
 
             col1, col2 = st.columns(2)
             with col1:
                 qte = st.number_input(f"Quantité (exemplaires) {i+1}", min_value=0, value=100 if i==0 else 0, key=f"qte_print_{i}")
-                prix_unitaire_auto = obtenir_prix_catalogue_intelligent(choix_col1, choix_col2, choix_col3, qte)
+                prix_unitaire_auto = obtenir_prix_catalogue_intelligent(choix_cat, choix_sub1, choix_sub2, qte)
                 prix_vetement_ht = prix_unitaire_auto
                 st.metric(label=f"Prix unitaire HT (€) {i+1}", value=f"{prix_unitaire_auto:.4f} €")
             with col2:
@@ -483,7 +468,7 @@ for i in range(10):
             if qte > 0:
                 articles_saisis.append({
                     "type_univers": "print",
-                    "nom_article": f"{choix_col1} - {choix_col2} - {choix_col3}".strip(" -"),
+                    "nom_article": choix_ref,
                     "quantite": qte,
                     "prix_vet_unit": prix_vetement_ht,
                     "sans_marquage": True,
