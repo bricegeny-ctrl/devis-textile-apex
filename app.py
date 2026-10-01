@@ -745,7 +745,7 @@ with onglets[10]:
                 mailto_link = f"mailto:{email_dest}?subject={urllib.parse.quote(sujet_mail)}&body={urllib.parse.quote(corps_mail)}"
                 st.markdown(f'<a href="{mailto_link}" target="_blank"><button style="background-color:#2b6cb0; color:white; border:none; padding:10px 20px; border-radius:5px; cursor:pointer; font-weight:bold; width:100%;">📧 Ouvrir dans le client mail (Secours)</button></a>', unsafe_allow_html=True)
 
-# --- ONGLET SUIVI CRM (Index 11 - AVEC FILTRES, SOUS-TOTAUX, EXCEL ET PDF) ---
+# --- ONGLET SUIVI CRM (Index 11) ---
 with onglets[11]:
     st.header("📈 Suivi CRM & Historique des Devis")
     if os.path.exists(CRM_FILE):
@@ -855,7 +855,7 @@ with onglets[11]:
                         with open(ligne_dev["PDF_Path"], "rb") as pdf_file:
                             st.download_button("📥 Télécharger le PDF de ce devis", pdf_file, file_name=os.path.basename(ligne_dev["PDF_Path"]), mime="application/pdf", key=f"dl_pdf_{devis_selectionne}")
             else:
-                st.info("Aucun devis disponible pour les filtres sélectionnés. Essayez de réinitialiser les filtres sur 'Tous'.")
+                st.info("Aucun devis disponible pour les filtres sélectionnés.")
         else:
             st.info("Aucun devis dans le CRM.")
     else:
