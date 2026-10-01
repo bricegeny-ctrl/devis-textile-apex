@@ -67,14 +67,14 @@ def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
 
     # Détection dynamique des paliers de quantité situés à partir de la ligne 1 (en-têtes)
     paliers_cols = []
-    for c in range(3, df_all.shape[1]):
+    for c in range(4, df_all.shape[1]):
         val_hdr = df_all.iloc[1, c]
         try:
             paliers_cols.append((c, float(val_hdr)))
         except:
             pass
 
-    col_cible = 3
+    col_cible = 4
     if paliers_cols:
         for idx, (col_idx, q_seuil) in enumerate(paliers_cols):
             if idx < len(paliers_cols) - 1:
@@ -94,21 +94,24 @@ def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
     best_row = -1
     max_match = -1
 
-    # Analyse fine des colonnes 0 (Catégorie), 1 (Sous-catégorie 1), 2 (Modèle/Référence exacte)
+    # Analyse fine des colonnes 0 (Catégorie), 1 (Col 1), 2 (Col 2), 3 (Col 3)
     for r in range(2, len(df_all)):
         row_cat = str(df_all.iloc[r, 0]).lower() if pd.notna(df_all.iloc[r, 0]) else ""
         row_sub1 = str(df_all.iloc[r, 1]).lower() if pd.notna(df_all.iloc[r, 1]) else ""
         row_sub2 = str(df_all.iloc[r, 2]).lower() if pd.notna(df_all.iloc[r, 2]) else ""
+        row_sub3 = str(df_all.iloc[r, 3]).lower() if pd.notna(df_all.iloc[r, 3]) else ""
         
         score = 0
         if cat_lower in row_cat or row_cat in cat_lower:
             score += 30
 
-        full_sub = f"{row_sub1} - {row_sub2}".strip()
-        if row_sub1 in ref_lower:
-            score += 20
+        full_sub = f"{row_sub1} - {row_sub2} - {row_sub3}".strip()
+        if row_sub1 and row_sub1 in ref_lower:
+            score += 15
         if row_sub2 and row_sub2 in ref_lower:
             score += 20
+        if row_sub3 and row_sub3 in ref_lower:
+            score += 25
         if full_sub in ref_lower or ref_lower in full_sub:
             score += 50
 
@@ -125,7 +128,7 @@ def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
             
         prix_val = float(df_all.iloc[best_row, col_cible])
         if pd.isna(prix_val) or prix_val <= 0:
-            for alt_col in range(col_cible - 1, 2, -1):
+            for alt_col in range(col_cible - 1, 3, -1):
                 if 0 <= alt_col < df_all.shape[1]:
                     alt_val = float(df_all.iloc[best_row, alt_col])
                     if not pd.isna(alt_val) and alt_val > 0:
@@ -426,6 +429,7 @@ for i in range(10):
                             cat = str(df_all.iloc[r, 0]).strip() if pd.notna(df_all.iloc[r, 0]) else ""
                             sub1 = str(df_all.iloc[r, 1]).strip() if pd.notna(df_all.iloc[r, 1]) else ""
                             sub2 = str(df_all.iloc[r, 2]).strip() if pd.notna(df_all.iloc[r, 2]) else ""
+                            sub3 = str(df_all.iloc[r, 3]).strip() if pd.notna(df_all.iloc[r, 3]) else ""
                             
                             if not cat or not sub1:
                                 continue
@@ -433,9 +437,11 @@ for i in range(10):
                             if cat not in arbre_catalogue:
                                 arbre_catalogue[cat] = {}
                             if sub1 not in arbre_catalogue[cat]:
-                                arbre_catalogue[cat][sub1] = []
-                            if sub2 and sub2 not in arbre_catalogue[cat][sub1]:
-                                arbre_catalogue[cat][sub1].append(sub2)
+                                arbre_catalogue[cat][sub1] = {}
+                            if sub2 not in arbre_catalogue[cat][sub1]:
+                                arbre_catalogue[cat][sub1][sub2] = []
+                            if sub3 and sub3 not in arbre_catalogue[cat][sub1][sub2]:
+                                arbre_catalogue[cat][sub1][sub2].append(sub3)
                     except Exception:
                         pass
 
@@ -448,25 +454,40 @@ for i in range(10):
                 sous_cats_1 = list(arbre_catalogue[matched_cat].keys()) if matched_cat and arbre_catalogue[matched_cat] else ["Standard"]
                 
                 choix_sub1 = st.selectbox(
-                    f"Sous-catégorie 1 ({cat_print}) {i+1}", 
+                    f"Colonne 1 / Sous-catégorie 1 ({cat_print}) {i+1}", 
                     sous_cats_1, 
                     key=f"sub1_{i}"
                 )
 
                 sous_cats_2 = []
                 if matched_cat and choix_sub1 in arbre_catalogue[matched_cat]:
-                    sous_cats_2 = arbre_catalogue[matched_cat][choix_sub1]
+                    sous_cats_2 = list(arbre_catalogue[matched_cat][choix_sub1].keys())
 
                 if sous_cats_2:
                     choix_sub2 = st.selectbox(
-                        f"Sous-catégorie 2 ({choix_sub1}) {i+1}", 
+                        f"Colonne 2 / Sous-catégorie 2 ({choix_sub1}) {i+1}", 
                         sous_cats_2, 
                         key=f"sub2_{i}"
                     )
-                    choix_ref = f"{choix_sub1} - {choix_sub2}"
                 else:
-                    choix_ref = choix_sub1
-                    st.info("ℹ️️ Aucune sous-catégorie secondaire pour cette sélection.")
+                    choix_sub2 = ""
+
+                sous_cats_3 = []
+                if matched_cat and choix_sub1 in arbre_catalogue[matched_cat] and choix_sub2 in arbre_catalogue[matched_cat][choix_sub1]:
+                    sous_cats_3 = arbre_catalogue[matched_cat][choix_sub1][choix_sub2]
+
+                if sous_cats_3:
+                    choix_sub3 = st.selectbox(
+                        f"Colonne 3 / Sous-catégorie 3 ({choix_sub2}) {i+1}", 
+                        sous_cats_3, 
+                        key=f"sub3_{i}"
+                    )
+                else:
+                    choix_sub3 = ""
+
+                # Construction de la référence combinée pour la recherche de prix
+                parties_ref = [choix_sub1, choix_sub2, choix_sub3]
+                choix_ref = " - ".join([p for p in parties_ref if p and p != "nan"])
 
                 col1, col2 = st.columns(2)
                 with col1:
