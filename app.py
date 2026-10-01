@@ -55,7 +55,7 @@ def obtenir_prochain_numero_devis():
         json.dump({"dernier_num": nouveau_num}, f)
     return nouveau_num
 
-# --- MOTEUR DE LECTURE EXCEL CATALOGUE PRINT & SIGNALÉTIQUE CORRIGÉ ---
+# --- MOTEUR DE LECTURE EXCEL CATALOGUE PRINT & SIGNALÉTIQUE ---
 def obtenir_prix_catalogue_intelligent(cat_choisie, sub1_choisie, sub2_choisie, qte):
     if not os.path.exists(CATALOGUE_FILE):
         return 0.15
@@ -65,16 +65,17 @@ def obtenir_prix_catalogue_intelligent(cat_choisie, sub1_choisie, sub2_choisie, 
     except Exception:
         return 0.15
 
-    # Détection de la ligne d'en-tête des quantités (ligne contenant les paliers numériques)
+    # Détection de la ligne d'en-tête des quantités
     header_row_idx = 1
     for r in range(min(4, len(df_all))):
-        val = df_all.iloc[r, 4] if df_all.shape[1] > 4 else None
-        try:
-            float(val)
-            header_row_idx = r
-            break
-        except:
-            pass
+        for c in range(3, df_all.shape[1]):
+            val = df_all.iloc[r, c]
+            try:
+                if float(val) > 0:
+                    header_row_idx = r
+                    break
+            except:
+                pass
 
     paliers_cols = []
     for c in range(3, df_all.shape[1]):
@@ -84,8 +85,9 @@ def obtenir_prix_catalogue_intelligent(cat_choisie, sub1_choisie, sub2_choisie, 
         except:
             pass
 
-    col_cible = 4 if df_all.shape[1] > 4 else 3
+    col_cible = 8 if df_all.shape[1] > 8 else (df_all.shape[1] - 1)
     if paliers_cols:
+        paliers_cols.sort(key=lambda x: x[1])
         for idx, (col_idx, q_seuil) in enumerate(paliers_cols):
             if idx < len(paliers_cols) - 1:
                 q_prochain = paliers_cols[idx + 1][1]
@@ -121,12 +123,6 @@ def obtenir_prix_catalogue_intelligent(cat_choisie, sub1_choisie, sub2_choisie, 
             max_match = score
             best_row = r
 
-    if best_row == -1 or max_match <= 0:
-        for r in range(start_row, len(df_all)):
-            if pd.notna(df_all.iloc[r, 2]):
-                best_row = r
-                break
-
     if best_row == -1:
         return 0.15
 
@@ -136,12 +132,11 @@ def obtenir_prix_catalogue_intelligent(cat_choisie, sub1_choisie, sub2_choisie, 
             
         prix_val = float(df_all.iloc[best_row, col_cible])
         if pd.isna(prix_val) or prix_val <= 0:
-            for alt_col in range(col_cible - 1, 2, -1):
-                if 0 <= alt_col < df_all.shape[1]:
-                    alt_val = float(df_all.iloc[best_row, alt_col])
-                    if not pd.isna(alt_val) and alt_val > 0:
-                        prix_val = alt_val
-                        break
+            for alt_col in range(df_all.shape[1] - 1, 2, -1):
+                alt_val = float(df_all.iloc[best_row, alt_col])
+                if not pd.isna(alt_val) and alt_val > 0:
+                    prix_val = alt_val
+                    break
 
         return round(prix_val, 4) if not pd.isna(prix_val) and prix_val > 0 else 0.15
     except Exception:
@@ -408,7 +403,7 @@ for i in range(10):
                 total_textile_brut += qte * prix_vetement_ht
 
         else:
-            # --- LECTURE EXACTE DES COLONNES 0, 1 ET 2 DU CATALOGUE EXCEL ---
+            # --- LECTURE PROPRE DE LA GRILLE CATALOGUE PRINT ---
             liste_cat = []
             liste_sub1 = []
             liste_sub2 = []
@@ -418,33 +413,33 @@ for i in range(10):
                     df_all = pd.read_excel(CATALOGUE_FILE, sheet_name=0, header=None)
                     start_r = 2
                     for r in range(min(4, len(df_all))):
-                        val = df_all.iloc[r, 4] if df_all.shape[1] > 4 else None
-                        try:
-                            float(val)
-                            start_r = r
-                            break
-                        except:
-                            pass
+                        for c in range(3, df_all.shape[1]):
+                            try:
+                                if float(df_all.iloc[r, c]) > 0:
+                                    start_r = r + 1
+                                    break
+                            except:
+                                pass
 
                     for r in range(start_r, len(df_all)):
                         c0 = str(df_all.iloc[r, 0]).strip() if df_all.shape[1] > 0 and pd.notna(df_all.iloc[r, 0]) else ""
                         c1 = str(df_all.iloc[r, 1]).strip() if df_all.shape[1] > 1 and pd.notna(df_all.iloc[r, 1]) else ""
                         c2 = str(df_all.iloc[r, 2]).strip() if df_all.shape[1] > 2 and pd.notna(df_all.iloc[r, 2]) else ""
                         
-                        if c0 and c0 not in liste_cat and c0.lower() != "nan" and c0.lower() != "catégorie":
+                        if c0 and c0 not in liste_cat and c0.lower() not in ["nan", "catégorie", "colonne a"]:
                             liste_cat.append(c0)
-                        if c1 and c1 not in liste_sub1 and c1.lower() != "nan" and c1.lower() != "sous catégorie":
+                        if c1 and c1 not in liste_sub1 and c1.lower() not in ["nan", "sous catégorie"]:
                             liste_sub1.append(c1)
-                        if c2 and c2 not in liste_sub2 and c2.lower() != "nan" and c2.lower() != "modèle / référence exacte":
+                        if c2 and c2 not in liste_sub2 and c2.lower() not in ["nan", "modèle / référence exacte"]:
                             liste_sub2.append(c2)
                 except Exception:
                     pass
 
-            if not liste_cat: liste_cat = ["Standard"]
-            if not liste_sub1: liste_sub1 = ["Standard"]
-            if not liste_sub2: liste_sub2 = ["Standard"]
+            if not liste_cat: liste_cat = ["Flyer", "Roll up", "Panneaux de chantier"]
+            if not liste_sub1: liste_sub1 = ["A6 - 135g couché brillant", "Roll-Up Eco"]
+            if not liste_sub2: liste_sub2 = ["Recto", "Recto-verso"]
 
-            st.write("#### 📂 Sélection Catalogue Print (Colonnes 0, 1 et 2)")
+            st.write("#### 📂 Sélection Catalogue Print & Signalétique")
             col_c1, col_c2, col_c3 = st.columns(3)
             with col_c1:
                 choix_cat = st.selectbox(f"Catégorie (Col 0) {i+1}", liste_cat, key=f"cat_{i}")
@@ -460,7 +455,6 @@ for i in range(10):
                 qte = st.number_input(f"Quantité (exemplaires) {i+1}", min_value=0, value=100 if i==0 else 0, key=f"qte_print_{i}")
                 prix_unitaire_auto = obtenir_prix_catalogue_intelligent(choix_cat, choix_sub1, choix_sub2, qte)
                 prix_vetement_ht = prix_unitaire_auto
-                st.metric(label=f"Prix unitaire HT (€) {i+1}", value=f"{prix_unitaire_auto:.4f} €")
             with col2:
                 st.success(f"✔ Tarif appliqué ({qte} ex) : **{prix_unitaire_auto:.4f} € HT**")
                 remise_fidelite = st.number_input(f"Remise commerciale (%) {i+1}", min_value=0.0, max_value=100.0, value=0.0, key=f"rem_print_{i}")
@@ -497,7 +491,7 @@ for item in articles_saisis:
 
 frais_tech_auto = 19.80 if total_textile_brut > 0 else 0.0
 
-# --- ONGLET GÉNÉRAL & DEVIS (Index 10) ---
+# --- ONGLET GÉNÉRAL & DEVIS ---
 with onglets[10]:
     st.subheader("📊 Récapitulatif Général & Génération du Devis Professionnel")
 
@@ -676,7 +670,7 @@ with onglets[10]:
 
             for item in lignes_devis_global:
                 libelle_support = f"<b>Support (Sans marquage) : {item['nom_article']}</b>" if item['sans_marquage'] else f"<b>Support : {item['nom_article']}</b>"
-                table_data.append([Paragraph(libelle_support, style_cell), str(item['quantite']), f"{item['prix_vet_unit']:.3f} €", f"{item['prix_vet_unit']*item['quantite']:.2f} €"])
+                table_data.append([Paragraph(libelle_support, style_cell), str(item['quantite']), f"{item['prix_vet_unit']:.4f} €", f"{item['prix_vet_unit']*item['quantite']:.2f} €"])
                 for m in item['marquages_calcules']:
                     table_data.append([Paragraph(f"&nbsp;&nbsp;&bull; Marquage : {m['nom']}", style_cell), str(item['quantite']), f"{m['tarif']:.2f} €", f"{m['tarif']*item['quantite']:.2f} €"])
                 if item['option_ensachage']:
@@ -713,7 +707,7 @@ with onglets[10]:
                 ["", Paragraph("Sous-Total HT :", style_right_normal), Paragraph(f"{total_general_ht:.2f} €", style_right_normal)],
                 ["", Paragraph("TVA (20%) :", style_right_normal), Paragraph(f"{tva:.2f} €", style_right_normal)],
                 ["", Paragraph("TOTAL TTC :", style_right_bold), Paragraph(f"{total_ttc:.2f} €", style_right_bold)],
-                ["", Paragraph("Coût unitaire HT / pièce :", style_right_normal), Paragraph(f"{cout_unitaire_moyen:.3f} €", style_right_normal)]
+                ["", Paragraph("Coût unitaire HT / pièce :", style_right_normal), Paragraph(f"{cout_unitaire_moyen:.4f} €", style_right_normal)]
             ]
             t_totaux = Table(totaux_data, colWidths=[240, 160, 140])
             t_totaux.setStyle(TableStyle([
@@ -736,7 +730,7 @@ with onglets[10]:
                 with open(pdf_filename, "rb") as f:
                     st.download_button("📥 Télécharger le PDF du devis", f, file_name=os.path.basename(pdf_filename), mime="application/pdf")
 
-# --- ONGLET SUIVI CRM (Index 11) ---
+# --- ONGLET SUIVI CRM ---
 with onglets[11]:
     st.header("📈 Suivi CRM & Historique des Devis")
     if os.path.exists(CRM_FILE):
