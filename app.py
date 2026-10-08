@@ -323,9 +323,43 @@ def synchroniser_avec_hubspot(client_data):
     except:
       pass
 
+  if contact_id and company_id:
+    assoc_url = f"https://api.hubapi.com/crm/v3/objects/contacts/{contact_id}/associations/companies/{company_id}/contact_to_company"
+    try:
+      requests.put(assoc_url, headers=headers, timeout=5)
+    except:
+      pass
+
+  # --- AJOUTEZ LE BLOC DEAL ICI ---
+  if company_id:
+    deal_url = "https://api.hubapi.com/crm/v3/objects/deals"
+    deal_payload = {
+        "properties": {
+            "dealname": (
+                f"Devis {client_data.get('Numero_Devis')} -"
+                f" {client_data.get('Entreprise')}"
+            ),
+            "amount": str(client_data.get("Total_HT", 0)),
+            "dealstage": "appointmentscheduled",
+            "pipeline": "default",
+        }
+    }
+    try:
+      resp_deal = requests.post(
+          deal_url, headers=headers, json=deal_payload, timeout=5
+      )
+      if resp_deal.status_code in [200, 201]:
+        deal_id = resp_deal.json().get("id")
+        assoc_deal_url = f"https://api.hubapi.com/crm/v3/objects/deals/{deal_id}/associations/companies/{company_id}/deal_to_company"
+        requests.put(assoc_deal_url, headers=headers, timeout=5)
+    except:
+      pass
+  # --------------------------------
+
+  return True
   return True
 
-
+    
 # --- GRILLES TARIFAIRES OFFICIELLES ---
 def obtenir_tarif_dtf_unitaire(type_textile, emplacement, qte_totale):
   grille_fin = {
