@@ -473,4 +473,33 @@ for i in range(10):
             "👕 Textile & Marquage (DTF / Broderie)",
             "📄 Print, Papeterie & Signalétique (Catalogue APEX)",
         ],
-        key
+        key=f"metier_{i}",
+    )
+    st.markdown("---")
+
+    if "Textile" in metier_type:
+      sans_marquage = st.checkbox(
+          f"Vêtement sans marquage (fourniture seule) {i+1}",
+          key=f"sans_marq_{i}",
+      )
+      col1, col2 = st.columns(2)
+      with col1:
+        nom_article = st.text_input(
+            f"Référence / Nom du vêtement {i+1}",
+            value="T-Shirt 100% coton bio" if i == 0 else f"Vêtement {i+1}",
+            key=f"nom_textile_{i}",
+        )
+        qte = st.number_input(
+            f"Quantité (pcs) {i+1}",
+            min_value=0,
+            value=10 if i == 0 else 0,
+            key=f"qte_textile_{i}",
+        )
+        prix_vetement_ht = st.number_input(
+            f"Prix unitaire HT support (€) {i+1}",
+            min_value=0.0,
+            value=4.92,
+            format="%.2f",
+            key=f"px_textile_{i}",
+        )
+      with col
