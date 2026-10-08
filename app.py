@@ -53,6 +53,15 @@ def charger_catalogue_print():
     return None
   try:
     df_all = pd.read_excel(CATALOGUE_FILE, sheet_name=0, header=0)
+    # Nettoyage des colonnes texte pour éviter les sauts de ligne intempestifs
+    for col in [0, 1, 2]:
+      if col < df_all.shape[1]:
+        df_all.iloc[:, col] = (
+            df_all.iloc[:, col]
+            .astype(str)
+            .str.replace("\n", " ")
+            .str.strip()
+        )
     return df_all
   except Exception as e:
     return None
@@ -602,7 +611,7 @@ for i in range(10):
             df_catalogue.iloc[:, 0]
             .dropna()
             .astype(str)
-            .apply(lambda x: x.strip())
+            .str.strip()
             .unique()
             .tolist()
         )
@@ -655,7 +664,7 @@ for i in range(10):
             .iloc[:, 1]
             .dropna()
             .astype(str)
-            .apply(lambda x: x.strip())
+            .str.strip()
             .unique()
             .tolist()
             if df_catalogue is not None
@@ -679,7 +688,7 @@ for i in range(10):
             .iloc[:, 2]
             .dropna()
             .astype(str)
-            .apply(lambda x: x.strip())
+            .str.strip()
             .unique()
             .tolist()
             if df_catalogue is not None
