@@ -175,6 +175,43 @@ def obtenir_prix_catalogue_exact_robuste(
 
 
 # --- SYNCHRONISATION HUBSPOT ---
+def chercher_entreprise_hubspot_par_siret(siret):
+  siret_9 = "".join(filter(str.isdigit, str(siret)))[:9]
+  if len(siret_9) < 9:
+    return None
+
+  hubspot_token = st.secrets.get("HUBSPOT_TOKEN", "")
+  if not hubspot_token:
+    return None
+
+  headers = {
+      "Authorization": f"Bearer {hubspot_token}",
+      "Content-Type": "application/json",
+  }
+  search_url = "https://api.hubapi.com/crm/v3/objects/companies/search"
+  search_payload = {
+      "filterGroups": [{
+          "filters": [{
+              "propertyName": "siret",
+              "operator": "EQ",
+              "value": siret_9,
+          }]
+      }],
+      "properties": ["name", "address", "city", "zip", "phone"],
+  }
+
+  try:
+    response = requests.post(
+        search_url, headers=headers, json=search_payload, timeout=5
+    )
+    if response.status_code == 200:
+      results = response.json().get("results", [])
+      if results:
+        return results[0]["properties"]
+  except:
+    pass
+  return None
+  
 def synchroniser_avec_hubspot(client_data):
   # Remplacez par votre token d'accès privé HubSpot ou stockez-le dans st.secrets["HUBSPOT_TOKEN"]
   hubspot_token = st.secrets.get("HUBSPOT_TOKEN", "")
@@ -574,17 +611,60 @@ def enregistrer_dans_crm(devis_data):
     st.error(f"Erreur CRM : {e}")
 
 
-# --- SIDEBAR ---
+# --- SIDEBAR & SESSION STATE POUR AUTOCOMPLÉTION ---
+if "client_entreprise_val" not in st.session_state:
+  st.session_state["client_entreprise_val"] = ""
+if "client_adresse_val" not in st.session_state:
+  st.session_state["client_adresse_val"] = ""
+if "client_tel_val" not in st.session_state:
+  st.session_state["client_tel_val"] = ""
+if "client_nom_val" not in st.session_state:
+  st.session_state["client_nom_val"] = ""
+if "client_email_val" not in st.session_state:
+  st.session_state["client_email_val"] = ""
+
 st.sidebar.title("📋 Infos Client & Expédition")
-client_nom = st.sidebar.text_input("Nom du Client", "Client Exemple")
-client_entreprise = st.sidebar.text_input("Société / Entreprise", "")
-client_siret = st.sidebar.text_input("SIRET (Vérif 9 premiers chiffres)", "")
+
+client_siret = st.sidebar.text_input("SIRET", "")
+
+# Bouton pour déclencher la recherche HubSpot
+if st.sidebar.button("🔍 Rechercher le client via le SIRET"):
+  if client_siret:
+    infos_hs = chercher_entreprise_hubspot_par_siret(client_siret)
+    if infos_hs:
+      st.sidebar.success("✅ Entreprise trouvée dans HubSpot !")
+      st.session_state["client_entreprise_val"] = infos_hs.get("name", "")
+      adresse_ligne = infos_hs.get("address", "")
+      ville = infos_hs.get("city", "")
+      cp = infos_hs.get("zip", "")
+      st.session_state["client_adresse_val"] = (
+          f"{adresse_ligne}\n{cp} {ville}".strip()
+      )
+      if infos_hs.get("phone"):
+        st.session_state["client_tel_val"] = infos_hs.get("phone")
+      st.rerun()
+    else:
+      st.sidebar.warning(
+          "⚠️ Aucun client trouvé dans HubSpot avec ce SIRET."
+      )
+
+client_nom = st.sidebar.text_input(
+    "Nom du Client",
+    value=st.session_state.get("client_nom_val", "Client Exemple"),
+)
+client_entreprise = st.sidebar.text_input(
+    "Société / Entreprise", value=st.session_state["client_entreprise_val"]
+)
 client_contact = st.sidebar.text_input("Nom de contact", "")
 client_adresse = st.sidebar.text_area(
-    "Adresse complète", "1 rue de l'Exemple\n70000 Vesoul"
+    "Adresse complète", value=st.session_state["client_adresse_val"]
 )
-client_email = st.sidebar.text_input("Email", "client@exemple.com")
-client_contact_tel = st.sidebar.text_input("Téléphone", "0600000000")
+client_email = st.sidebar.text_input(
+    "Email", value=st.session_state.get("client_email_val", "client@exemple.com")
+)
+client_contact_tel = st.sidebar.text_input(
+    "Téléphone", value=st.session_state["client_tel_val"]
+)
 logo_file = st.sidebar.file_uploader(
     "Logo entreprise (PNG/JPG)", type=["png", "jpg", "jpeg"]
 )
