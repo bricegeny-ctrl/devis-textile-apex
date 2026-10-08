@@ -188,29 +188,23 @@ def chercher_entreprise_hubspot_par_siret(siret):
       "Authorization": f"Bearer {hubspot_token}",
       "Content-Type": "application/json",
   }
-  search_url = "https://api.hubapi.com/crm/v3/objects/companies/search"
-  siret_9 = siret_nettoye[:9]
-
-  # Recherche flexible avec CONTAINS_TOKEN sur les 9 premiers chiffres
-  search_payload = {
-      "filterGroups": [{
-          "filters": [{
-              "propertyName": "siret",
-              "operator": "CONTAINS_TOKEN",
-              "value": siret_9,
-          }]
-      }],
-      "properties": ["name", "address", "city", "zip", "phone", "siret"],
-  }
+  
+  # On récupère les entreprises de HubSpot pour les comparer directement
+  url = "https://api.hubapi.com/crm/v3/objects/companies?limit=100&properties=name,address,city,zip,phone,siret"
 
   try:
-    response = requests.post(
-        search_url, headers=headers, json=search_payload, timeout=5
-    )
+    response = requests.get(url, headers=headers, timeout=5)
     if response.status_code == 200:
-      results = response.json().get("results", [])
-      if results:
-        return results[0]["properties"]
+      entreprises = response.json().get("results", [])
+      siret_9 = siret_nettoye[:9]
+      
+      for ent in entreprises:
+        props = ent.get("properties", {})
+        siret_hs = "".join(filter(str.isdigit, str(props.get("siret", ""))))
+        
+        # Si le SIRET ou les 9 premiers chiffres correspondent
+        if siret_9 in siret_hs or siret_nettoye in siret_hs:
+          return props
   except:
     pass
   return None
