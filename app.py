@@ -492,7 +492,9 @@ mode_reglement = st.sidebar.selectbox(
     [
         "Virement bancaire 30 jours",
         "Comptant à la commande",
-        "50% à la commande, 50% à 30 jours",
+        "50% à la commande, 50% à la livraison"
+        "100% à la livraison"
+        "___ mensualités de ___",
     ],
 )
 
