@@ -47,13 +47,23 @@ def obtenir_prochain_numero_devis():
   return nouveau
 
 
-def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
+# --- MOTEUR DE LECTURE EXCEL DYNAMIQUE (CATALOGUE APEX) ---
+def charger_catalogue_print():
   if not os.path.exists(CATALOGUE_FILE):
-    return 0.15
+    return None
   try:
     df_all = pd.read_excel(CATALOGUE_FILE, sheet_name=0, header=None)
+    return df_all
   except:
+    return None
+
+
+def obtenir_prix_catalogue_exact(cat_choisie, sub_choisie, ref_choisie, qte):
+  df_all = charger_catalogue_print()
+  if df_all is None:
     return 0.15
+
+  # Récupérer les paliers de quantité depuis la première ligne (colonne 3 à fin)
   qtys = []
   for c in range(3, df_all.shape[1]):
     try:
@@ -61,62 +71,56 @@ def obtenir_prix_catalogue_intelligent(cat_print, choix_ref, qte):
       qtys.append((c, val))
     except:
       pass
+
+  # Trouver la colonne correspondant au palier de quantité immédiatement inférieur ou égal
   target_col = qtys[0][0] if qtys else 3
   for col_idx, q_val in qtys:
     if qte >= q_val:
       target_col = col_idx
-  cat_lower = str(cat_print).lower().strip()
-  ref_lower = str(choix_ref).lower().strip()
+
+  # Rechercher la ligne exacte correspondant à Catégorie, Sous-catégorie et Référence
   best_row = -1
-  max_match = -1
   for r in range(1, len(df_all)):
-    rc = (
-        str(df_all.iloc[r, 0]).lower().strip()
-        if pd.notna(df_all.iloc[r, 0])
-        else ""
-    )
-    rs = (
-        str(df_all.iloc[r, 1]).lower().strip()
-        if pd.notna(df_all.iloc[r, 1])
-        else ""
-    )
-    rf = (
-        str(df_all.iloc[r, 2]).lower().strip()
-        if pd.notna(df_all.iloc[r, 2])
-        else ""
-    )
-    score = 0
-    if cat_lower in rc or rc in cat_lower:
-      score += 10
-    mots = [m for m in ref_lower.split() if len(m) > 2]
-    match_mots = sum(1 for m in mots if m in rs or m in rf or rc in m)
-    score += match_mots * 5
-    if score > max_match:
-      max_match = score
+    c_val = str(df_all.iloc[r, 0]).strip()
+    s_val = str(df_all.iloc[r, 1]).strip()
+    r_val = str(df_all.iloc[r, 2]).strip()
+
+    if (
+        c_val == str(cat_choisie).strip()
+        and s_val == str(sub_choisie).strip()
+        and r_val == str(ref_choisie).strip()
+    ):
       best_row = r
-  if best_row == -1 or max_match < 5:
+      break
+
+  # Si la ligne exacte n'est pas trouvée, recherche souple
+  if best_row == -1:
     for r in range(1, len(df_all)):
-      if cat_lower in str(df_all.iloc[r, 0]).lower():
+      c_val = str(df_all.iloc[r, 0]).strip()
+      if str(cat_choisie).strip() in c_val:
         best_row = r
         break
+
   if best_row == -1:
     return 0.15
+
   try:
-    prix = float(df_all.iloc[best_row, target_col])
-    if pd.isna(prix) or prix <= 0:
-      for alt in range(df_all.shape[1] - 1, 2, -1):
-        val_alt = float(df_all.iloc[best_row, alt])
-        if not pd.isna(val_alt) and val_alt > 0:
-          prix = val_alt
+    prix_val = float(df_all.iloc[best_row, target_col])
+    if pd.isna(prix_val) or prix_val <= 0:
+      # Chercher un autre palier non vide sur la même ligne
+      for alt_col in range(df_all.shape[1] - 1, 2, -1):
+        alt_val = float(df_all.iloc[best_row, alt_col])
+        if not pd.isna(alt_val) and alt_val > 0:
+          prix_val = alt_val
           break
-    if pd.isna(prix) or prix <= 0:
+    if pd.isna(prix_val) or prix_val <= 0:
       return 0.15
-    return round(prix, 4)
+    return round(prix_val, 4)
   except:
     return 0.15
 
 
-# --- GRILLES TARIFAIRES OFFICIELLES ---
+# --- GRILLES TARIFAIRES OFFICIELLES (TEXTILE & BRODERIE) ---
 def obtenir_tarif_dtf_unitaire(type_textile, emplacement, qte_totale):
   grille_fin = {
       "Cœur (13x9 cm)": [
@@ -327,34 +331,39 @@ def obtenir_tarif_broderie_unitaire(emplacement, qte_totale):
 
 def calculer_frais_port(montant_base, zone):
   if zone == "France Continentale":
-    if montant_base < 99.99:
-      return 14.95
-    elif montant_base < 499.99:
-      return 20.95
-    elif montant_base < 999.99:
-      return 24.95
-    else:
-      return 0.0
+    return (
+        14.95
+        if montant_base < 99.99
+        else (
+            20.95
+            if montant_base < 499.99
+            else (24.95 if montant_base < 999.99 else 0.0)
+        )
+    )
   elif zone == "Livraison Corse, Monaco ou Andorre":
-    if montant_base < 99.99:
-      return 19.95
-    elif montant_base < 499.99:
-      return 25.95
-    elif montant_base < 999.99:
-      return 29.95
-    else:
-      return 0.0
+    return (
+        19.95
+        if montant_base < 99.99
+        else (
+            25.95
+            if montant_base < 499.99
+            else (29.95 if montant_base < 999.99 else 0.0)
+        )
+    )
   else:
-    if montant_base < 99.99:
-      return 25.95
-    elif montant_base < 499.99:
-      return 39.0
-    elif montant_base < 999.99:
-      return 60.0
-    elif montant_base < 1500.0:
-      return 90.0
-    else:
-      return 0.0
+    return (
+        25.95
+        if montant_base < 99.99
+        else (
+            39.0
+            if montant_base < 499.99
+            else (
+                60.0
+                if montant_base < 999.99
+                else (90.0 if montant_base < 1500.0 else 0.0)
+            )
+        )
+    )
 
 
 if not os.path.exists(CRM_FILE):
@@ -442,6 +451,7 @@ onglets = st.tabs(noms_onglets)
 
 articles_saisis = []
 total_textile_brut = 0.0
+df_catalogue = charger_catalogue_print()
 
 for i in range(10):
   with onglets[i]:
@@ -573,27 +583,23 @@ for i in range(10):
         })
         total_textile_brut += qte * prix_vetement_ht
     else:
+      # --- CHARGEMENT DYNAMIQUE DEPUIS LE CATALOGUE EXCEL ---
+      if df_catalogue is not None:
+        cats_disponibles = (
+            df_catalogue.iloc[1:, 0].dropna().astype(str).unique().tolist()
+        )
+      else:
+        cats_disponibles = ["Flyer", "Dépliant", "Roll up"]
+
       cat_print = st.selectbox(
           f"Catégorie Print & Signalétique {i+1}",
-          [
-              "Flyers",
-              "Dépliants",
-              "Blocs notes",
-              "Chemises de présentation",
-              "Banderoles",
-              "Panneaux de chantier",
-              "Roll-Up",
-              "Sous bocks",
-              "Adhésifs",
-              "Cartes de visite",
-              "Calendriers",
-              "Menus restaurants",
-              "➕ Autre / Produit hors catalogue (Saisie libre)",
-          ],
+          cats_disponibles
+          + ["➕ Autre / Produit hors catalogue (Saisie libre)"],
           key=f"cat_print_{i}",
       )
 
       if "Autre" in cat_print:
+        choix_sub = "Saisie libre"
         choix_ref = st.text_input(
             f"Nom / Désignation du produit libre {i+1}",
             value="Produit personnalisé",
@@ -624,60 +630,47 @@ for i in range(10):
               key=f"rem_print_{i}",
           )
       else:
-        options_articles = {
-            "Flyers": [
-                "Flyer A6 - 135g couché brillant - Recto",
-                "Flyer A6 - 135g couché brillant - Recto/Verso",
-                "Flyer A6 - 170g couché demi mat - Recto",
-                "Flyer A6 - 170g couché demi mat - Recto/Verso",
-                "Flyer A6 - 250g couché - Recto",
-                "Flyer A6 - 250g couché - Recto/Verso",
-                "Flyer A6 - 350g couché - Recto",
-                "Flyer A6 - 350g couché - Recto/Verso",
-                "Flyer A6 - 115g recyclé - Recto",
-                "Flyer A6 - 115g recyclé - Recto/Verso",
-                "Flyer A5 - 135g couché brillant - Recto",
-                "Flyer A5 - 135g couché brillant - Recto/Verso",
-                "Flyer A5 - 170g couché demi mat - Recto",
-                "Flyer A5 - 170g couché demi mat - Recto/Verso",
-            ],
-            "Dépliants": [
+        # Extraire les sous-catégories pour la catégorie sélectionnée
+        sub_cats = (
+            df_catalogue[df_catalogue.iloc[:, 0].astype(str).str.strip() == cat_print]
+            .iloc[:, 1]
+            .dropna()
+            .astype(str)
+            .unique()
+            .tolist()
+            if df_catalogue is not None
+            else ["Standard"]
+        )
+        choix_sub = st.selectbox(
+            f"Sous-catégorie {i+1}", sub_cats, key=f"sub_print_{i}"
+        )
+
+        # Extraire les références exactes pour cette catégorie et sous-catégorie
+        refs_exactes = (
+            df_catalogue[
                 (
-                    "Dépliant A6 fermé / A5 ouvert (1 pli) - 135g couché"
-                    " brillant"
-                ),
-                (
-                    "Dépliant A5 fermé / A4 ouvert (1 pli) - 135g couché"
-                    " brillant"
-                ),
-            ],
-            "Blocs notes": [
-                "Bloc Note collé - Format A6 - 25 Feuilles - 90 Gr Offset",
-                "Bloc Note collé - Format A5 - 50 Feuilles - 90 Gr Offset",
-            ],
-            "Chemises de présentation": [
-                "Chemise de présentation A4 - 300g - 2 rabats"
-            ],
-            "Banderoles": [
-                "Banderole 200 x 80 cm - 510g M1 avec œillets",
-                "Banderole 300 x 100 cm - 510g M1 avec œillets",
-            ],
-            "Panneaux de chantier": [
-                "Panneau Akylux 60 x 40 cm - 3,5mm",
-                "Panneau Akylux 80 x 60 cm - 3,5mm",
-            ],
-            "Roll-Up": ["Roll-Up Eco - Bâche PVC 510g M1 - 85x200cm"],
-            "Sous bocks": ["Sous bock carton 580g - 9,3x9,3 cm"],
-            "Adhésifs": ["Adhésif vinyl classique 10x10cm"],
-            "Cartes de visite": ["Carte de visite standard - 350g - Recto/Verso"],
-            "Calendriers": ["Calendrier A4 - 250g couché brillant"],
-            "Menus restaurants": ["Menu restaurant indéchirable 300g - A5"],
-        }
+                    df_catalogue.iloc[:, 0].astype(str).str.strip()
+                    == cat_print
+                )
+                & (
+                    df_catalogue.iloc[:, 1].astype(str).str.strip()
+                    == choix_sub
+                )
+            ]
+            .iloc[:, 2]
+            .dropna()
+            .astype(str)
+            .unique()
+            .tolist()
+            if df_catalogue is not None
+            else ["Recto"]
+        )
         choix_ref = st.selectbox(
-            f"Modèle exact {i+1}",
-            options_articles.get(cat_print, ["Article standard"]),
+            f"Modèle / Référence exacte {i+1}",
+            refs_exactes,
             key=f"ref_print_{i}",
         )
+
         col1, col2 = st.columns(2)
         with col1:
           qte = st.number_input(
@@ -686,8 +679,8 @@ for i in range(10):
               value=100 if i == 0 else 0,
               key=f"qte_print_{i}",
           )
-          prix_unitaire_auto = obtenir_prix_catalogue_intelligent(
-              cat_print, choix_ref, qte
+          prix_unitaire_auto = obtenir_prix_catalogue_exact(
+              cat_print, choix_sub, choix_ref, qte
           )
           prix_vetement_ht = prix_unitaire_auto
           st.metric(
@@ -710,7 +703,7 @@ for i in range(10):
         articles_saisis.append({
             "type_univers": "print",
             "nom_article": (
-                f"{cat_print} - {choix_ref}"
+                f"{cat_print} - {choix_sub} - {choix_ref}"
                 if "Autre" not in cat_print
                 else choix_ref
             ),
