@@ -47,7 +47,7 @@ def obtenir_prochain_numero_devis():
   return nouveau
 
 
-# --- MOTEUR DE LECTURE EXCEL INTELLIGENT (FOURCHETTES DE QUANTITÉS) ---
+# --- MOTEUR DE LECTURE EXCEL INTELLIGENT ---
 def charger_catalogue_print():
   if not os.path.exists(CATALOGUE_FILE):
     return None
@@ -87,14 +87,12 @@ def obtenir_prix_catalogue_exact_robuste(
   if df_all is None:
     return 0.15
 
-  # Analyse des fourchettes de quantités depuis la ligne 0 (colonnes 3 et plus)
   col_ranges = {}
   for c in range(3, df_all.shape[1]):
     r_min, r_max = parse_fourchette_quantite(df_all.iloc[0, c])
     if r_min is not None:
       col_ranges[c] = (r_min, r_max)
 
-  # Trouver la colonne correspondant à la quantité saisie
   target_col = None
   for c, (r_min, r_max) in col_ranges.items():
     if r_min <= qte <= r_max:
@@ -106,7 +104,6 @@ def obtenir_prix_catalogue_exact_robuste(
     if qte >= col_ranges[max_col][0]:
       target_col = max_col
 
-  # Recherche de la ligne exacte
   best_row = -1
   for r in range(1, len(df_all)):
     c_val = str(df_all.iloc[r, 0]).strip()
@@ -123,7 +120,10 @@ def obtenir_prix_catalogue_exact_robuste(
 
   if best_row == -1:
     for r in range(1, len(df_all)):
-      if str(cat_choisie).lower().strip() in str(df_all.iloc[r, 0]).lower().strip():
+      if (
+          str(cat_choisie).lower().strip()
+          in str(df_all.iloc[r, 0]).lower().strip()
+      ):
         best_row = r
         break
 
@@ -1018,4 +1018,286 @@ with onglets[10]:
         )
 
         logo_path = None
-        if logo_file
+        if logo_file is not None:
+          logo_path = "temp_logo.png"
+          with open(logo_path, "wb") as f:
+            f.write(logo_file.getbuffer())
+        elif os.path.exists("logo.png"):
+          logo_path = "logo.png"
+        elif os.path.exists("logo.jpg"):
+          logo_path = "logo.jpg"
+
+        header_text = Paragraph(
+            "<b>APEX - SOLUTIONS VISUELLES, PRINT & TEXTILE</b><br/>Plasne"
+            " (Jura)<br/>Tél (Brice Geny) : 06 32 69 73 28 &nbsp;|&nbsp; Tél"
+            " (Brice Bugna) : 06 29 92 94 74<br/>Email :"
+            " contact@apex-visual.fr",
+            style_sub,
+        )
+        if logo_path and os.path.exists(logo_path):
+          img_logo = RLImage(logo_path, width=120, height=50)
+          t_header = Table([[img_logo, header_text]], colWidths=[130, 410])
+          t_header.setStyle(
+              TableStyle([("VALIGN", (0, 0), (-1, -1), "MIDDLE")])
+          )
+          story.append(t_header)
+        else:
+          story.append(header_text)
+
+        story.append(Spacer(1, 10))
+        story.append(
+            Paragraph(
+                f"<b>N° Devis :</b> {num_devis} &nbsp;&nbsp;|&nbsp;&nbsp;"
+                f" <b>Date :</b> {datetime.now().strftime('%d/%m/%Y')}"
+                " &nbsp;&nbsp;|&nbsp;&nbsp; <b>Validité :</b> 30 Jours",
+                style_sub,
+            )
+        )
+        story.append(Spacer(1, 10))
+
+        siret_txt = f"<br/>SIRET : {client_siret}" if client_siret else ""
+        contact_txt = (
+            f"<br/>Contact : {client_contact}" if client_contact else ""
+        )
+        nom_aff_client = (
+            f"<b>{client_entreprise}</b><br/>À l'attention de : {client_nom}"
+            if client_entreprise
+            else f"<b>{client_nom or 'Client'}</b>"
+        )
+        client_info_text = (
+            f"<b>CLIENT / DESTINATAIRE :</b><br/>{nom_aff_client}<br/>{client_adresse.replace(chr(10), '<br/>')}{siret_txt}{contact_txt}<br/>Email"
+            f" : {client_email}"
+        )
+        order_info_text = (
+            f"<b>DÉTAILS DE LA COMMANDE :</b><br/>Quantité globale :"
+            f" {quantite_globale_totale} pièces<br/>Délai estimé : 8 à 10 jours"
+            f" ouvrés<br/>Conseiller : {conseiller_nom}"
+        )
+
+        t_info = Table(
+            [[Paragraph(client_info_text, style_cell), Paragraph(order_info_text, style_cell)]],
+            colWidths=[270, 270],
+        )
+        t_info.setStyle(
+            TableStyle([
+                ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#f7fafc")),
+                ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#cbd5e0")),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("PADDING", (0, 0), (-1, -1), 8),
+            ])
+        )
+        story.append(t_info)
+        story.append(Spacer(1, 15))
+
+        table_data = [[
+            Paragraph("<b>DÉSIGNATION & CARACTÉRISTIQUES</b>", style_cell_bold),
+            Paragraph("<b>QTÉ</b>", style_cell_bold),
+            Paragraph("<b>PRIX UNIT. HT</b>", style_cell_bold),
+            Paragraph("<b>TOTAL HT</b>", style_cell_bold),
+        ]]
+
+        for item in lignes_devis_global:
+          libelle_support = (
+              f"<b>Support (Sans marquage) : {item['nom_article']}</b>"
+              if item["sans_marquage"]
+              else f"<b>Support : {item['nom_article']}</b>"
+          )
+          table_data.append([
+              Paragraph(libelle_support, style_cell),
+              str(item["quantite"]),
+              f"{item['prix_vet_unit']:.3f} €",
+              f"{item['prix_vet_unit']*item['quantite']:.2f} €",
+          ])
+          for m in item["marquages_calcules"]:
+            table_data.append([
+                Paragraph(
+                    f"&nbsp;&nbsp;&bull; Marquage : {m['nom']}", style_cell
+                ),
+                str(item["quantite"]),
+                f"{m['tarif']:.2f} €",
+                f"{m['tarif']*item['quantite']:.2f} €",
+            ])
+          if item["option_ensachage"]:
+            table_data.append([
+                Paragraph(
+                    f"&nbsp;&nbsp;&bull; Option : {item['type_sachet']}",
+                    style_cell,
+                ),
+                str(item["quantite"]),
+                f"{item['coût_ensachage_unit']:.2f} €",
+                f"{item['coût_ensachage_unit']*item['quantite']:.2f} €",
+            ])
+          if item["option_assurance"]:
+            table_data.append([
+                Paragraph(
+                    "&nbsp;&nbsp;&bull; Option : Assurance MHC (Garantie"
+                    " textile)",
+                    style_cell,
+                ),
+                str(item["quantite"]),
+                f"{item['coût_assurance_unit']:.2f} €",
+                f"{item['coût_assurance_unit']*item['quantite']:.2f} €",
+            ])
+          if item["option_stockage"]:
+            table_data.append([
+                Paragraph(
+                    "&nbsp;&nbsp;&bull; Option : Mise en stockage + picking",
+                    style_cell,
+                ),
+                str(item["quantite"]),
+                f"{item['coût_stockage_unit']:.2f} €",
+                f"{item['coût_stockage_unit']*item['quantite']:.2f} €",
+            ])
+
+        if frais_prog_total > 0:
+          table_data.append([
+              Paragraph(
+                  "Frais de technique & programme Broderie", style_cell
+              ),
+              "1",
+              f"{frais_prog_total:.2f} €",
+              f"{frais_prog_total:.2f} €",
+          ])
+        if frais_techniques_dossier > 0:
+          table_data.append([
+              Paragraph("Frais techniques de dossier", style_cell),
+              "1",
+              f"{frais_techniques_dossier:.2f} €",
+              f"{frais_techniques_dossier:.2f} €",
+          ])
+        if frais_port > 0 or offrir_port:
+          port_libelle = (
+              f"Frais d'envoi ({zone_livraison})"
+              if not offrir_port
+              else f"Frais d'envoi ({zone_livraison}) - Offerts"
+          )
+          port_val = f"{frais_port:.2f} €"
+          table_data.append(
+              [Paragraph(port_libelle, style_cell), "1", port_val, port_val]
+          )
+
+        t_main = Table(table_data, colWidths=[260, 45, 115, 120])
+        t_main.setStyle(
+            TableStyle([
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#edf2f7")),
+                ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#e2e8f0")),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("PADDING", (0, 0), (-1, -1), 6),
+            ])
+        )
+        story.append(t_main)
+        story.append(Spacer(1, 10))
+
+        totaux_data = [
+            [
+                "",
+                Paragraph("Sous-Total HT :", style_right_normal),
+                Paragraph(f"{total_general_ht:.2f} €", style_right_normal),
+            ],
+            [
+                "",
+                Paragraph("TVA (20%) :", style_right_normal),
+                Paragraph(f"{tva:.2f} €", style_right_normal),
+            ],
+            [
+                "",
+                Paragraph("TOTAL TTC :", style_right_bold),
+                Paragraph(f"{total_ttc:.2f} €", style_right_bold),
+            ],
+            [
+                "",
+                Paragraph("Coût unitaire HT / pièce :", style_right_normal),
+                Paragraph(f"{cout_unitaire_moyen:.3f} €", style_right_normal),
+            ],
+        ]
+        t_totaux = Table(totaux_data, colWidths=[240, 160, 140])
+        t_totaux.setStyle(
+            TableStyle([
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("LINEABOVE", (1, 2), (-1, 2), 1, colors.black),
+                ("PADDING", (0, 0), (-1, -1), 4),
+            ])
+        )
+        story.append(t_totaux)
+        story.append(Spacer(1, 15))
+
+        conditions_text = (
+            "<b>Conditions de règlement & Bon pour accord :</b><br/>•"
+            f" Règlement : {mode_reglement}<br/>• Fichiers vectoriels fournis"
+            " (.AI, .EPS, .PDF).<br/>• Bon pour accord daté et signé requis."
+        )
+        story.append(Paragraph(conditions_text, style_sub))
+
+        doc.build(story)
+        st.success(
+            f"Devis PDF professionnel généré sous le numéro : **{num_devis}**"
+        )
+      except Exception as e_pdf:
+        st.error(f"Erreur lors de la génération du PDF : {e_pdf}")
+
+    if "dernier_pdf" in st.session_state:
+      pdf_filename = st.session_state["dernier_pdf"]
+      if os.path.exists(pdf_filename):
+        with open(pdf_filename, "rb") as f:
+          st.download_button(
+              "📥 Télécharger le PDF du devis",
+              f,
+              file_name=os.path.basename(pdf_filename),
+              mime="application/pdf",
+          )
+        st.markdown("---")
+        st.subheader("✉️ Envoi direct du devis par e-mail en 1 clic")
+        email_dest = st.text_input("Destinataire de l'e-mail", value=client_email)
+        sujet_mail = st.text_input(
+            "Objet de l'e-mail",
+            value=f"Devis {st.session_state.get('dernier_num', '')} - APEX",
+        )
+        corps_mail = st.text_area(
+            "Message",
+            value=(
+                f"Bonjour {client_nom},\n\nVeuillez trouver ci-joint votre devis"
+                f" établi par APEX.\n\nCordialement,\n{conseiller_nom}\nAPEX"
+            ),
+        )
+        mailto_link = f"mailto:{email_dest}?subject={urllib.parse.quote(sujet_mail)}&body={urllib.parse.quote(corps_mail)}"
+        st.markdown(
+            f'<a href="{mailto_link}" target="_blank"><button'
+            ' style="background-color:#2b6cb0; color:white; border:none;'
+            " padding:10px 20px; border-radius:5px; cursor:pointer;"
+            ' font-weight:bold; width:100%;">📧 Ouvrir dans le client mail'
+            " (Secours)</button></a>",
+            unsafe_allow_html=True,
+        )
+
+# --- ONGLET SUIVI CRM ---
+with onglets[11]:
+  st.header("📈 Suivi CRM & Historique des Devis")
+  if os.path.exists(CRM_FILE):
+    try:
+      df_crm = pd.read_csv(CRM_FILE)
+      if not df_crm.empty:
+        st.dataframe(df_crm, use_container_width=True)
+        devis_selectionne = st.selectbox(
+            "Sélectionner un devis",
+            df_crm["Numero_Devis"].tolist(),
+            key="select_crm",
+        )
+        ligne_dev = df_crm[
+            df_crm["Numero_Devis"] == devis_selectionne
+        ].iloc[0]
+        if pd.notna(ligne_dev.get("PDF_Path")) and os.path.exists(
+            str(ligne_dev["PDF_Path"])
+        ):
+          with open(ligne_dev["PDF_Path"], "rb") as pdf_file:
+            st.download_button(
+                "📥 Télécharger le PDF de ce devis",
+                pdf_file,
+                file_name=os.path.basename(ligne_dev["PDF_Path"]),
+                mime="application/pdf",
+            )
+      else:
+        st.info("Aucun devis dans le CRM.")
+    except Exception as e_crm:
+      st.info(f"CRM vide ou en cours d'initialisation ({e_crm}).")
+  else:
+    st.info("CRM vide.")
