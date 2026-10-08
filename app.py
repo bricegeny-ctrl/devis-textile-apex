@@ -50,11 +50,13 @@ def obtenir_prochain_numero_devis():
 # --- MOTEUR DE LECTURE EXCEL INTELLIGENT ---
 def charger_catalogue_print():
   if not os.path.exists(CATALOGUE_FILE):
+    st.error(f"⚠️ Fichier introuvable : {CATALOGUE_FILE} dans {os.getcwd()}")
     return None
   try:
     df_all = pd.read_excel(CATALOGUE_FILE, sheet_name=0, header=None)
     return df_all
   except Exception as e:
+    st.error(f"Erreur de lecture Excel : {e}")
     return None
 
 
@@ -598,7 +600,7 @@ for i in range(10):
         })
         total_textile_brut += qte * prix_vetement_ht
     else:
-      # --- CHARGEMENT DYNAMIQUE COMPLET DEPUIS EXCEL ---
+      # --- CHARGEMENT 100% DYNAMIQUE DEPUIS EXCEL (TOUTES LES LIGNES) ---
       if df_catalogue is not None:
         cats_disponibles = (
             df_catalogue.iloc[1:, 0]
@@ -609,7 +611,7 @@ for i in range(10):
             .tolist()
         )
       else:
-        cats_disponibles = ["Flyer", "Dépliant", "Roll up"]
+        cats_disponibles = []
 
       cat_print = st.selectbox(
           f"Catégorie Print & Signalétique {i+1}",
@@ -661,7 +663,7 @@ for i in range(10):
             .unique()
             .tolist()
             if df_catalogue is not None
-            else ["Standard"]
+            else []
         )
         choix_sub = st.selectbox(
             f"Sous-catégorie {i+1}", sub_cats, key=f"sub_print_{i}"
@@ -685,7 +687,7 @@ for i in range(10):
             .unique()
             .tolist()
             if df_catalogue is not None
-            else ["Recto"]
+            else []
         )
         choix_ref = st.selectbox(
             f"Modèle / Référence exacte {i+1}",
