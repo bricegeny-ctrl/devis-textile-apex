@@ -53,7 +53,6 @@ def charger_catalogue_print():
     return None
   try:
     df_all = pd.read_excel(CATALOGUE_FILE, sheet_name=0, header=0)
-    # Nettoyage des colonnes texte pour éviter les sauts de ligne intempestifs
     for col in [0, 1, 2]:
       if col < df_all.shape[1]:
         df_all.iloc[:, col] = (
@@ -64,6 +63,7 @@ def charger_catalogue_print():
         )
     return df_all
   except Exception as e:
+    st.error(f"Erreur lors de la lecture du catalogue Excel : {e}")
     return None
 
 
@@ -476,6 +476,13 @@ onglets = st.tabs(noms_onglets)
 articles_saisis = []
 total_textile_brut = 0.0
 df_catalogue = charger_catalogue_print()
+
+if df_catalogue is None:
+  st.warning(
+      "⚠️ Le fichier catalogue (`catalogue_print.xlsx`) est introuvable dans le"
+      " dossier. Veuillez le placer au même endroit que l'application pour"
+      " activer la sélection automatique du catalogue."
+  )
 
 for i in range(10):
   with onglets[i]:
