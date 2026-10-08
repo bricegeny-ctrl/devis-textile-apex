@@ -129,32 +129,43 @@ def obtenir_prix_catalogue_exact_robuste(
   if best_row == -1 or not col_ranges:
     return 0.15
 
-  # Identifier le plus petit palier disponible dans le tableau (ex: 100 ex)
-  premier_col_idx = min(col_ranges.keys(), key=lambda x: col_ranges[x][0])
-  palier_min_qte, _ = col_ranges[premier_col_idx]
+  # Trouver le PREMIER palier valide (non NaN) dans la ligne du produit
+  premier_col_valide = None
+  palier_min_qte = 0
+  prix_palier_min = 0.15
 
-  try:
-    prix_palier_min = float(df_all.iloc[best_row, premier_col_idx])
-  except:
-    prix_palier_min = 0.15
+  # Trier les colonnes par quantité croissante
+  cols_tries = sorted(col_ranges.keys(), key=lambda x: col_ranges[x][0])
 
-  # AJUSTEMENT : Si la quantité commandée est inférieure au premier palier (ex: < 100)
+  for c in cols_tries:
+    val = df_all.iloc[best_row, c]
+    if pd.notna(val) and float(val) > 0:
+      premier_col_valide = c
+      palier_min_qte, _ = col_ranges[c]
+      prix_palier_min = float(val)
+      break
+
+  if premier_col_valide is None:
+    return 0.15
+
+  # AJUSTEMENT PROPORTIONNEL : Si la quantité commandée est inférieure au premier palier disponible (ex: < 100)
   if qte < palier_min_qte and qte > 0:
     prix_ajuste = (palier_min_qte * prix_palier_min) / qte
     return round(prix_ajuste, 4)
 
-  # Sinon, recherche classique de la tranche correspondante
+  # Sinon, recherche de la tranche correspondante
   target_col = None
   for c, (r_min, r_max) in col_ranges.items():
     if r_min <= qte <= r_max:
       target_col = c
       break
 
-  if target_col is None and col_ranges:
-    max_col = max(col_ranges.keys(), key=lambda x: col_ranges[x][0])
+  if target_col is None and cols_tries:
+    max_col = cols_tries[-1]
     if qte >= col_ranges[max_col][0]:
       target_col = max_col
 
+  # Si la cellule de la tranche ciblée est vide (NaN), on utilise le prix du premier palier valide
   if target_col is None:
     return round(prix_palier_min, 4)
 
@@ -162,10 +173,10 @@ def obtenir_prix_catalogue_exact_robuste(
     val_prix = df_all.iloc[best_row, target_col]
     if pd.notna(val_prix) and float(val_prix) > 0:
       return round(float(val_prix), 4)
+    else:
+      return round(prix_palier_min, 4)
   except:
-    pass
-
-  return round(prix_palier_min, 4)
+    return round(prix_palier_min, 4)
 
 
 # --- GRILLES TARIFAIRES OFFICIELLES (TEXTILE & BRODERIE) ---
