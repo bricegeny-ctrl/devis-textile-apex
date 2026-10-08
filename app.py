@@ -58,7 +58,7 @@ def charger_catalogue_print():
     return None
 
 
-def obtenir_prix_catalogue_ exact_robuste(
+def obtenir_prix_catalogue_exact_robuste(
     cat_choisie, sub_choisie, ref_choisie, qte
 ):
   df_all = charger_catalogue_print()
