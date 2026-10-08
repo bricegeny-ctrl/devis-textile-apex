@@ -7,6 +7,7 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.platypus import Image as RLImage, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 import pandas as pd
+import requests
 import streamlit as st
 
 st.set_page_config(page_title="Gestionnaire de Devis - APEX", layout="wide")
@@ -171,6 +172,126 @@ def obtenir_prix_catalogue_exact_robuste(
       return round(prix_palier_min, 4)
   except:
     return round(prix_palier_min, 4)
+
+
+# --- SYNCHRONISATION HUBSPOT ---
+def synchroniser_avec_hubspot(client_data):
+  # Remplacez par votre token d'accès privé HubSpot ou stockez-le dans st.secrets["HUBSPOT_TOKEN"]
+  hubspot_token = st.secrets.get("HUBSPOT_TOKEN", "")
+  if hubspot_token == "VOTRE_TOKEN_ACCES_PRIVE_HUBSPOT":
+    return False  # Token non configuré pour l'instant
+
+  headers = {
+      "Authorization": f"Bearer {hubspot_token}",
+      "Content-Type": "application/json",
+  }
+
+  siret_9 = client_data.get("SIRET_9", "")
+  entreprise_nom = client_data.get("Entreprise", "").strip()
+  nom_client = client_data.get("Client", "")
+  email = client_data.get("Email", "")
+  telephone = client_data.get("Telephone", "")
+  commercial = client_data.get("Commercial", "")
+
+  company_id = None
+  if entreprise_nom and siret_9:
+    # Vérification par SIRET (9 chiffres) pour éviter les doublons d'entreprise
+    search_url = "https://api.hubapi.com/crm/v3/objects/companies/search"
+    search_payload = {
+        "filterGroups": [{
+            "filters": [{
+                "propertyName": "siret",
+                "operator": "EQ",
+                "value": siret_9,
+            }]
+        }]
+    }
+    try:
+      response = requests.post(
+          search_url, headers=headers, json=search_payload, timeout=5
+      )
+      if response.status_code == 200:
+        results = response.json().get("results", [])
+        if results:
+          company_id = results[0]["id"]
+    except:
+      pass
+
+    if not company_id:
+      create_company_url = "https://api.hubapi.com/crm/v3/objects/companies"
+      company_payload = {
+          "properties": {
+              "name": entreprise_nom,
+              "siret": siret_9,
+              "description": f"Propriétaire / Commercial : {commercial}",
+          }
+      }
+      try:
+        resp_comp = requests.post(
+            create_company_url,
+            headers=headers,
+            json=company_payload,
+            timeout=5,
+        )
+        if resp_comp.status_code in [200, 201]:
+          company_id = resp_comp.json().get("id")
+      except:
+        pass
+
+  # Gestion des contacts (vérification par email / nom)
+  contact_id = None
+  contact_search_url = "https://api.hubapi.com/crm/v3/objects/contacts/search"
+  contact_search_payload = {
+      "filterGroups": [{
+          "filters": [{
+              "propertyName": "email",
+              "operator": "EQ",
+              "value": email,
+          }]
+      }]
+  }
+  try:
+    resp_c_search = requests.post(
+        contact_search_url, headers=headers, json=contact_search_payload, timeout=5
+    )
+    if resp_c_search.status_code == 200:
+      c_results = resp_c_search.json().get("results", [])
+      if c_results:
+        contact_id = c_results[0]["id"]
+  except:
+    pass
+
+  parts_nom = nom_client.split(" ", 1)
+  prenom = parts_nom[0]
+  nom_famille = parts_nom[1] if len(parts_nom) > 1 else ""
+
+  if not contact_id:
+    create_contact_url = "https://api.hubapi.com/crm/v3/objects/contacts"
+    contact_payload = {
+        "properties": {
+            "firstname": prenom,
+            "lastname": nom_famille,
+            "email": email,
+            "phone": telephone,
+        }
+    }
+    try:
+      resp_contact = requests.post(
+          create_contact_url, headers=headers, json=contact_payload, timeout=5
+      )
+      if resp_contact.status_code in [200, 201]:
+        contact_id = resp_contact.json().get("id")
+    except:
+      pass
+
+  if contact_id and company_id:
+    assoc_url = f"https://api.hubapi.com/crm/v3/objects/contacts/{contact_id}/associations/companies/{company_id}/contact_to_company"
+    try:
+      requests.put(assoc_url, headers=headers, timeout=5)
+    except:
+      pass
+
+  return True
 
 
 # --- GRILLES TARIFAIRES OFFICIELLES (TEXTILE & BRODERIE) ---
@@ -995,7 +1116,6 @@ with onglets[10]:
       st.session_state["dernier_pdf"] = pdf_filename
       st.session_state["dernier_num"] = num_devis
 
-      # Extraction des 9 premiers chiffres du SIRET pour l'unicité entreprise
       siret_clean = (
           "".join(filter(str.isdigit, client_siret))[:9]
           if client_siret
@@ -1019,7 +1139,14 @@ with onglets[10]:
           "PDF_Path": pdf_filename,
       }
       enregistrer_dans_crm(data_crm)
-      st.success("✅ Données enregistrées dans le CRM avec succès !")
+
+      # Synchronisation vers HubSpot
+      synchroniser_avec_hubspot(data_crm)
+
+      st.success(
+          "✅ Données enregistrées dans le CRM local et synchronisées avec"
+          " HubSpot !"
+      )
 
       try:
         doc = SimpleDocTemplate(
@@ -1329,7 +1456,6 @@ with onglets[11]:
             " correspondance avec HubSpot :"
         )
 
-        # Édition interactive des statuts
         edited_df = st.data_editor(
             df_crm,
             column_config={
@@ -1354,7 +1480,6 @@ with onglets[11]:
             key="crm_editor",
         )
 
-        # Sauvegarde des modifications du tableau édité
         if st.button("💾 Enregistrer les modifications de statut"):
           edited_df.to_csv(CRM_FILE, index=False)
           st.success("✅ Statuts mis à jour avec succès !")
