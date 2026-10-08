@@ -47,7 +47,7 @@ def obtenir_prochain_numero_devis():
   return nouveau
 
 
-# --- MOTEUR DE LECTURE EXCEL DYNAMIQUE & ROBUSTE ---
+# --- MOTEUR DE LECTURE EXCEL INTELLIGENT (FOURCHETTES DE QUANTITÉS) ---
 def charger_catalogue_print():
   if not os.path.exists(CATALOGUE_FILE):
     return None
@@ -58,6 +58,28 @@ def charger_catalogue_print():
     return None
 
 
+def parse_fourchette_quantite(texte_entete):
+  texte = str(texte_entete).strip()
+  if "à" in texte:
+    parts = texte.split("à")
+    try:
+      return float(parts[0].strip()), float(parts[1].strip())
+    except:
+      return None, None
+  elif "et plus" in texte:
+    num_str = texte.replace("et plus", "").strip()
+    try:
+      return float(num_str), float("inf")
+    except:
+      return None, None
+  else:
+    try:
+      val = float(texte)
+      return val, val
+    except:
+      return None, None
+
+
 def obtenir_prix_catalogue_exact_robuste(
     cat_choisie, sub_choisie, ref_choisie, qte
 ):
@@ -65,14 +87,26 @@ def obtenir_prix_catalogue_exact_robuste(
   if df_all is None:
     return 0.15
 
-  qtys = []
+  # Analyse des fourchettes de quantités depuis la ligne 0 (colonnes 3 et plus)
+  col_ranges = {}
   for c in range(3, df_all.shape[1]):
-    try:
-      val = float(df_all.iloc[0, c])
-      qtys.append((c, val))
-    except:
-      pass
+    r_min, r_max = parse_fourchette_quantite(df_all.iloc[0, c])
+    if r_min is not None:
+      col_ranges[c] = (r_min, r_max)
 
+  # Trouver la colonne correspondant à la quantité saisie
+  target_col = None
+  for c, (r_min, r_max) in col_ranges.items():
+    if r_min <= qte <= r_max:
+      target_col = c
+      break
+
+  if target_col is None and col_ranges:
+    max_col = max(col_ranges.keys(), key=lambda x: col_ranges[x][0])
+    if qte >= col_ranges[max_col][0]:
+      target_col = max_col
+
+  # Recherche de la ligne exacte
   best_row = -1
   for r in range(1, len(df_all)):
     c_val = str(df_all.iloc[r, 0]).strip()
@@ -80,45 +114,30 @@ def obtenir_prix_catalogue_exact_robuste(
     r_val = str(df_all.iloc[r, 2]).strip()
 
     if (
-        c_val == str(cat_choisie).strip()
-        and s_val == str(sub_choisie).strip()
-        and r_val == str(ref_choisie).strip()
+        c_val.lower() == str(cat_choisie).lower().strip()
+        and s_val.lower() == str(sub_choisie).lower().strip()
+        and r_val.lower() == str(ref_choisie).lower().strip()
     ):
       best_row = r
       break
 
   if best_row == -1:
     for r in range(1, len(df_all)):
-      if str(cat_choisie).strip() in str(df_all.iloc[r, 0]).strip():
+      if str(cat_choisie).lower().strip() in str(df_all.iloc[r, 0]).lower().strip():
         best_row = r
         break
 
-  if best_row == -1:
-    return 0.15
-
-  col_cible = -1
-  for col_idx, q_val in sorted(qtys, key=lambda x: x[1], reverse=True):
-    if qte >= q_val:
-      val_prix = df_all.iloc[best_row, col_idx]
-      if pd.notna(val_prix) and float(val_prix) > 0:
-        col_cible = col_idx
-        break
-
-  if col_cible == -1:
-    for col_idx, q_val in sorted(qtys, key=lambda x: x[1]):
-      val_prix = df_all.iloc[best_row, col_idx]
-      if pd.notna(val_prix) and float(val_prix) > 0:
-        col_cible = col_idx
-        break
-
-  if col_cible == -1:
+  if best_row == -1 or target_col is None:
     return 0.15
 
   try:
-    prix = float(df_all.iloc[best_row, col_cible])
-    return round(prix, 4) if not pd.isna(prix) else 0.15
+    val_prix = df_all.iloc[best_row, target_col]
+    if pd.notna(val_prix) and float(val_prix) > 0:
+      return round(float(val_prix), 4)
   except:
-    return 0.15
+    pass
+
+  return 0.15
 
 
 # --- GRILLES TARIFAIRES OFFICIELLES (TEXTILE & BRODERIE) ---
@@ -579,7 +598,7 @@ for i in range(10):
         })
         total_textile_brut += qte * prix_vetement_ht
     else:
-      # --- CHARGEMENT DYNAMIQUE PROPRE DEPUIS EXCEL ---
+      # --- CHARGEMENT DYNAMIQUE COMPLET DEPUIS EXCEL ---
       if df_catalogue is not None:
         cats_disponibles = (
             df_catalogue.iloc[1:, 0]
@@ -929,4 +948,74 @@ with onglets[10]:
     )
 
     if st.button("📄 Générer le numéro de devis et le PDF"):
-      num_
+      num_devis = obtenir_prochain_numero_devis()
+      pdf_filename = os.path.join(
+          PDF_DIR, f"Devis_{num_devis.replace('/', '_')}.pdf"
+      )
+      st.session_state["dernier_pdf"] = pdf_filename
+      st.session_state["dernier_num"] = num_devis
+
+      data_crm = {
+          "Date": datetime.now().strftime("%Y-%m-%d %H:%M"),
+          "Numero_Devis": num_devis,
+          "Commercial": conseiller_nom,
+          "Client": client_nom,
+          "Entreprise": client_entreprise,
+          "Email": client_email,
+          "Telephone": client_contact_tel,
+          "Quantite_Totale": quantite_globale_totale,
+          "Total_HT": round(total_general_ht, 2),
+          "Total_TTC": round(total_ttc, 2),
+          "Statut": "En cours",
+          "Mode_Reglement": mode_reglement,
+          "PDF_Path": pdf_filename,
+      }
+      enregistrer_dans_crm(data_crm)
+      st.success("✅ Données enregistrées dans le CRM avec succès !")
+
+      try:
+        doc = SimpleDocTemplate(
+            pdf_filename,
+            pagesize=A4,
+            rightMargin=30,
+            leftMargin=30,
+            topMargin=30,
+            bottomMargin=30,
+        )
+        story = []
+        styles = getSampleStyleSheet()
+        style_sub = ParagraphStyle(
+            "SubStyle",
+            parent=styles["Normal"],
+            fontSize=8.5,
+            leading=11,
+            textColor=colors.HexColor("#4a5568"),
+        )
+        style_cell = ParagraphStyle(
+            "Cell", parent=styles["Normal"], fontSize=9, leading=11
+        )
+        style_cell_bold = ParagraphStyle(
+            "CellBold",
+            parent=styles["Normal"],
+            fontSize=9,
+            leading=11,
+            fontName="Helvetica-Bold",
+        )
+        style_right_bold = ParagraphStyle(
+            "RightBold",
+            parent=styles["Normal"],
+            fontSize=9,
+            leading=11,
+            fontName="Helvetica-Bold",
+            alignment=2,
+        )
+        style_right_normal = ParagraphStyle(
+            "RightNormal",
+            parent=styles["Normal"],
+            fontSize=9,
+            leading=11,
+            alignment=2,
+        )
+
+        logo_path = None
+        if logo_file
