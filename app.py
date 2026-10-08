@@ -176,8 +176,8 @@ def obtenir_prix_catalogue_exact_robuste(
 
 # --- SYNCHRONISATION HUBSPOT ---
 def chercher_entreprise_hubspot_par_siret(siret):
-  siret_9 = "".join(filter(str.isdigit, str(siret)))[:9]
-  if len(siret_9) < 9:
+  siret_nettoye = "".join(filter(str.isdigit, str(siret)))
+  if not siret_nettoye:
     return None
 
   hubspot_token = st.secrets.get("HUBSPOT_TOKEN", "")
@@ -189,15 +189,19 @@ def chercher_entreprise_hubspot_par_siret(siret):
       "Content-Type": "application/json",
   }
   search_url = "https://api.hubapi.com/crm/v3/objects/companies/search"
+
+  # On essaie d'abord de chercher sur les 9 premiers chiffres ou le texte saisi
+  siret_9 = siret_nettoye[:9]
+
   search_payload = {
       "filterGroups": [{
           "filters": [{
               "propertyName": "siret",
-              "operator": "EQ",
+              "operator": "CONTAINS_TOKEN",
               "value": siret_9,
           }]
       }],
-      "properties": ["name", "address", "city", "zip", "phone"],
+      "properties": ["name", "address", "city", "zip", "phone", "siret"],
   }
 
   try:
