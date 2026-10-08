@@ -507,13 +507,12 @@ for i in range(10):
             key=f"px_textile_{i}",
         )
       with col2:
-        nb_marquages = (
-            st.selectbox(
-                f"Nombre de marquages {i+1}", [1, 2, 3, 4], key=f"nb_m_textile_{i}"
-            )
-            if not sans_marquage
-            else 0
-        )
+        if not sans_marquage:
+          nb_marquages = st.selectbox(
+              f"Nombre de marquages {i+1}", [1, 2, 3, 4], key=f"nb_m_textile_{i}"
+          )
+        else:
+          nb_marquages = 0
 
       marquages = []
       if not sans_marquage:
@@ -535,34 +534,4 @@ for i in range(10):
                       "Dos Large D20 (25x20 cm)",
                       "Col / Signature (7x2 cm)",
                       "Casquettes / Bonnets",
-                      "Manche (8x5 cm)",
-                      "Pantalon / Poche",
-                      "+ Perso. Nom (Cœur)",
-                  ],
-                  key=f"emp_{i}_{m}",
-              )
-            else:
-              emp = st.selectbox(
-                  f"Emplacement M{m+1}",
-                  [
-                      "Cœur (13x9 cm)",
-                      "Dos D10 (20x13 cm)",
-                      "Dos D20 (28x20 cm)",
-                      "Format P (37x27 cm)",
-                      "Manche (9x8 cm)",
-                      "+ Personnalisation Nom",
-                  ],
-                  key=f"emp_{i}_{m}",
-              )
-          marquages.append({"technique": t_marq, "emplacement": emp})
-
-      option_ensachage = st.checkbox(
-          f"Option ensachage individuel {i+1}", key=f"ens_{i}"
-      )
-      type_sachet = (
-          st.selectbox(
-              f"Type de sachet {i+1}",
-              ["Sachet (T-shirt/Polo)", "Sachet (Veste/Sweat)"],
-              key=f"tsach_{i}",
-          )
-          if option_ensach
+                      "Manche (8x
