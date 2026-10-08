@@ -485,7 +485,7 @@ zone_livraison = st.sidebar.selectbox(
 )
 offrir_port = st.sidebar.checkbox("🎁 Offrir les frais de port", value=False)
 conseiller_nom = st.sidebar.selectbox(
-    "Commercial / Conseiller", ["Brice Geny", "Brice Bugna"]
+    "Commercial / Conseiller", ["Brice Geny", "Brice Bugna", "Jonathan Marchandot", "non attribué"]
 )
 mode_reglement = st.sidebar.selectbox(
     "Mode de Règlement",
