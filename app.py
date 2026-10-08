@@ -174,7 +174,7 @@ def obtenir_prix_catalogue_exact_robuste(
     return round(prix_palier_min, 4)
 
 
-# --- SYNCHRONISATION HUBSPOT ---
+# --- SYNCHRONISATION HUBSPOT & RECHERCHE PAR SIRET ---
 def chercher_entreprise_hubspot_par_siret(siret):
   siret_nettoye = "".join(filter(str.isdigit, str(siret)))
   if not siret_nettoye:
@@ -189,10 +189,9 @@ def chercher_entreprise_hubspot_par_siret(siret):
       "Content-Type": "application/json",
   }
   search_url = "https://api.hubapi.com/crm/v3/objects/companies/search"
-
-  # On essaie d'abord de chercher sur les 9 premiers chiffres ou le texte saisi
   siret_9 = siret_nettoye[:9]
 
+  # Recherche flexible avec CONTAINS_TOKEN sur les 9 premiers chiffres
   search_payload = {
       "filterGroups": [{
           "filters": [{
@@ -215,12 +214,12 @@ def chercher_entreprise_hubspot_par_siret(siret):
   except:
     pass
   return None
-  
+
+
 def synchroniser_avec_hubspot(client_data):
-  # Remplacez par votre token d'accès privé HubSpot ou stockez-le dans st.secrets["HUBSPOT_TOKEN"]
   hubspot_token = st.secrets.get("HUBSPOT_TOKEN", "")
   if hubspot_token == "VOTRE_TOKEN_ACCES_PRIVE_HUBSPOT":
-    return False  # Token non configuré pour l'instant
+    return False
 
   headers = {
       "Authorization": f"Bearer {hubspot_token}",
@@ -236,7 +235,6 @@ def synchroniser_avec_hubspot(client_data):
 
   company_id = None
   if entreprise_nom and siret_9:
-    # Vérification par SIRET (9 chiffres) pour éviter les doublons d'entreprise
     search_url = "https://api.hubapi.com/crm/v3/objects/companies/search"
     search_payload = {
         "filterGroups": [{
@@ -279,7 +277,6 @@ def synchroniser_avec_hubspot(client_data):
       except:
         pass
 
-  # Gestion des contacts (vérification par email / nom)
   contact_id = None
   contact_search_url = "https://api.hubapi.com/crm/v3/objects/contacts/search"
   contact_search_payload = {
@@ -335,7 +332,7 @@ def synchroniser_avec_hubspot(client_data):
   return True
 
 
-# --- GRILLES TARIFAIRES OFFICIELLES (TEXTILE & BRODERIE) ---
+# --- GRILLES TARIFAIRES OFFICIELLES ---
 def obtenir_tarif_dtf_unitaire(type_textile, emplacement, qte_totale):
   grille_fin = {
       "Cœur (13x9 cm)": [
@@ -631,7 +628,7 @@ st.sidebar.title("📋 Infos Client & Expédition")
 
 client_siret = st.sidebar.text_input("SIRET", "")
 
-# Bouton pour déclencher la recherche HubSpot
+# Bouton pour déclencher la recherche HubSpot par SIRET
 if st.sidebar.button("🔍 Rechercher le client via le SIRET"):
   if client_siret:
     infos_hs = chercher_entreprise_hubspot_par_siret(client_siret)
@@ -1588,7 +1585,7 @@ with onglets[11]:
                 mime="application/pdf",
             )
       else:
-        st.info("Aucun devis dans le CRM.")
+        st.info("No devis in CRM.")
     except Exception as e_crm:
       st.info(f"CRM vide ou en cours d'initialisation ({e_crm}).")
   else:
