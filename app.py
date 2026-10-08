@@ -52,6 +52,7 @@ def charger_catalogue_print():
   if not os.path.exists(CATALOGUE_FILE):
     return None
   try:
+    # On lit le fichier sans header fixe pour analyser toutes les lignes
     df_all = pd.read_excel(CATALOGUE_FILE, sheet_name=0, header=None)
     return df_all
   except Exception as e:
@@ -65,6 +66,7 @@ def obtenir_prix_catalogue_exact_robuste(
   if df_all is None:
     return 0.15
 
+  # Récupérer les paliers de quantité depuis la première ligne (colonnes 3 et au-delà)
   qtys = []
   for c in range(3, df_all.shape[1]):
     try:
@@ -73,6 +75,7 @@ def obtenir_prix_catalogue_exact_robuste(
     except:
       pass
 
+  # Trouver la ligne exacte correspondant aux 3 critères (Catégorie, Sous-catégorie, Référence)
   best_row = -1
   for r in range(1, len(df_all)):
     c_val = str(df_all.iloc[r, 0]).strip()
@@ -87,6 +90,7 @@ def obtenir_prix_catalogue_exact_robuste(
       best_row = r
       break
 
+  # Fallback si correspondance exacte introuvable
   if best_row == -1:
     for r in range(1, len(df_all)):
       if str(cat_choisie).strip() in str(df_all.iloc[r, 0]).strip():
@@ -96,6 +100,7 @@ def obtenir_prix_catalogue_exact_robuste(
   if best_row == -1:
     return 0.15
 
+  # Recherche du prix selon le palier de quantité
   col_cible = -1
   for col_idx, q_val in sorted(qtys, key=lambda x: x[1], reverse=True):
     if qte >= q_val:
@@ -584,7 +589,7 @@ for i in range(10):
         })
         total_textile_brut += qte * prix_vetement_ht
     else:
-      # --- CHARGEMENT DYNAMIQUE DEPUIS EXCEL ---
+      # --- CHARGEMENT DYNAMIQUE PROpre DEPUIS EXCEL ---
       if df_catalogue is not None:
         cats_disponibles = (
             df_catalogue.iloc[1:, 0]
@@ -692,4 +697,177 @@ for i in range(10):
           )
           prix_vetement_ht = prix_unitaire_auto
           st.metric(
-              label
+              label=f"Prix unitaire HT (€) {i+1} (Catalogue auto)",
+              value=f"{prix_unitaire_auto:.4f} €",
+          )
+        with col2:
+          st.success(
+              f"✅ Tarif appliqué ({qte} ex) : **{prix_unitaire_auto:.4f} € HT**"
+          )
+          remise_fidelite = st.number_input(
+              f"Remise commerciale (%) {i+1}",
+              min_value=0.0,
+              max_value=100.0,
+              value=0.0,
+              key=f"rem_print_{i}",
+          )
+
+      if qte > 0:
+        articles_saisis.append({
+            "type_univers": "print",
+            "nom_article": (
+                f"{cat_print} - {choix_sub} - {choix_ref}"
+                if "Autre" not in cat_print
+                else choix_ref
+            ),
+            "quantite": qte,
+            "prix_vet_unit": prix_vetement_ht,
+            "sans_marquage": True,
+            "marquages": [],
+            "option_ensachage": False,
+            "type_sachet": "",
+            "option_assurance": False,
+            "option_stockage": False,
+            "remise_fidelite": remise_fidelite,
+        })
+
+# --- CALCUL DES QUANTITÉS CUMULÉES ---
+quantites_cumulees_marquages = {}
+for item in articles_saisis:
+  if item["type_univers"] == "textile" and not item["sans_marquage"]:
+    q = item["quantite"]
+    for m in item["marquages"]:
+      cle = (m["technique"], m["emplacement"])
+      quantites_cumulees_marquages[cle] = (
+          quantites_cumulees_marquages.get(cle, 0) + q
+      )
+
+frais_tech_auto = 19.80 if total_textile_brut > 0 else 0.0
+
+# --- ONGLET GÉNÉRAL & DEVIS ---
+with onglets[10]:
+  st.subheader(
+      "📊 Récapitulatif Général & Génération du Devis Professionnel"
+  )
+  if not articles_saisis:
+    st.warning(
+        "Veuillez renseigner au moins un article avec une quantité supérieure à"
+        " 0."
+    )
+  else:
+    supprimer_frais_tech = st.checkbox(
+        "⚙️ Supprimer / Offrir les frais techniques de dossier", value=False
+    )
+    frais_techniques_dossier = (
+        0.0 if supprimer_frais_tech else frais_tech_auto
+    )
+
+    lignes_devis_global = []
+    has_broderie_global = False
+    quantite_totale_broderie = 0
+
+    for item in articles_saisis:
+      q = item["quantite"]
+      px_support = item["prix_vet_unit"] * (
+          1 - item["remise_fidelite"] / 100.0
+      )
+      tot_support = q * px_support
+      marquages_calcules = []
+      tot_marquages = 0.0
+
+      if item["type_univers"] == "textile" and not item["sans_marquage"]:
+        for m in item["marquages"]:
+          cle = (m["technique"], m["emplacement"])
+          qte_tot_ref = quantites_cumulees_marquages.get(cle, q)
+          if "Broderie" in m["technique"]:
+            tarif_m = obtenir_tarif_broderie_unitaire(
+                m["emplacement"], qte_tot_ref
+            )
+            has_broderie_global = True
+            quantite_totale_broderie += q
+          else:
+            tarif_m = obtenir_tarif_dtf_unitaire(
+                m["technique"], m["emplacement"], qte_tot_ref
+            )
+          tot_marquages += tarif_m * q
+          marquages_calcules.append({
+              "nom": f"{m['technique']} ({m['emplacement']})",
+              "tarif": tarif_m,
+          })
+
+      if has_broderie_global:
+        if 2 <= quantite_totale_broderie <= 3:
+          frais_prog_broderie = 41.0
+        elif 4 <= quantite_totale_broderie <= 11:
+          frais_prog_broderie = 23.0
+        else:
+          frais_prog_broderie = 0.0
+      else:
+        frais_prog_broderie = 0.0
+
+      coût_ens_unit = (
+          (
+              1.38
+              if q <= 11
+              else (
+                  1.24
+                  if q <= 24
+                  else (
+                      1.17
+                      if q <= 49
+                      else (
+                          1.11
+                          if q <= 99
+                          else (
+                              1.08
+                              if q <= 249
+                              else (1.06 if q <= 499 else 1.00)
+                          )
+                      )
+                  )
+              )
+          )
+          if item["option_ensachage"]
+          else 0.0
+      )
+      tot_ens = coût_ens_unit * q
+
+      coût_ass_unit = (
+          (
+              3.08
+              if q <= 11
+              else (
+                  2.38
+                  if q <= 24
+                  else (
+                      1.83
+                      if q <= 49
+                      else (
+                          1.25
+                          if q <= 99
+                          else (
+                              0.98
+                              if q <= 249
+                              else (
+                                  0.70
+                                  if q <= 499
+                                  else (0.64 if q <= 999 else 0.61)
+                              )
+                          )
+                      )
+                  )
+              )
+          )
+          if item["option_assurance"]
+          else 0.0
+      )
+      tot_ass = coût_ass_unit * q
+
+      coût_stock_unit = (
+          (
+              1.00
+              if q <= 99
+              else (
+                  0.56
+                  if q <= 249
+                  else (0
