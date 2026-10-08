@@ -102,7 +102,6 @@ def obtenir_prix_catalogue_exact_robuste(
     if r_min is not None:
       col_ranges[c] = (r_min, r_max)
 
-  # Trouver la ligne correspondante dans le catalogue
   best_row = -1
   for r in range(len(df_all)):
     c_val = str(df_all.iloc[r, 0]).strip()
@@ -129,12 +128,10 @@ def obtenir_prix_catalogue_exact_robuste(
   if best_row == -1 or not col_ranges:
     return 0.15
 
-  # Trouver le PREMIER palier valide (non NaN) dans la ligne du produit
   premier_col_valide = None
   palier_min_qte = 0
   prix_palier_min = 0.15
 
-  # Trier les colonnes par quantité croissante
   cols_tries = sorted(col_ranges.keys(), key=lambda x: col_ranges[x][0])
 
   for c in cols_tries:
@@ -148,12 +145,10 @@ def obtenir_prix_catalogue_exact_robuste(
   if premier_col_valide is None:
     return 0.15
 
-  # AJUSTEMENT PROPORTIONNEL : Si la quantité commandée est inférieure au premier palier disponible (ex: < 100)
   if qte < palier_min_qte and qte > 0:
     prix_ajuste = (palier_min_qte * prix_palier_min) / qte
     return round(prix_ajuste, 4)
 
-  # Sinon, recherche de la tranche correspondante
   target_col = None
   for c, (r_min, r_max) in col_ranges.items():
     if r_min <= qte <= r_max:
@@ -165,7 +160,6 @@ def obtenir_prix_catalogue_exact_robuste(
     if qte >= col_ranges[max_col][0]:
       target_col = max_col
 
-  # Si la cellule de la tranche ciblée est vide (NaN), on utilise le prix du premier palier valide
   if target_col is None:
     return round(prix_palier_min, 4)
 
@@ -463,7 +457,7 @@ def enregistrer_dans_crm(devis_data):
 st.sidebar.title("📋 Infos Client & Expédition")
 client_nom = st.sidebar.text_input("Nom du Client", "Client Exemple")
 client_entreprise = st.sidebar.text_input("Société / Entreprise", "")
-client_siret = st.sidebar.text_input("SIRET", "")
+client_siret = st.sidebar.text_input("SIRET (Vérif 9 premiers chiffres)", "")
 client_contact = st.sidebar.text_input("Nom de contact", "")
 client_adresse = st.sidebar.text_area(
     "Adresse complète", "1 rue de l'Exemple\n70000 Vesoul"
@@ -485,7 +479,8 @@ zone_livraison = st.sidebar.selectbox(
 )
 offrir_port = st.sidebar.checkbox("🎁 Offrir les frais de port", value=False)
 conseiller_nom = st.sidebar.selectbox(
-    "Commercial / Conseiller", ["Brice Geny", "Brice Bugna", "Jonathan Marchandot", "non attribué"]
+    "Commercial / Conseiller (HubSpot Owner)",
+    ["Brice Geny", "Brice Bugna", "Jonathan Marchandot"],
 )
 mode_reglement = st.sidebar.selectbox(
     "Mode de Règlement",
@@ -512,8 +507,7 @@ df_catalogue = charger_catalogue_print()
 if df_catalogue is None:
   st.warning(
       "⚠️ Le fichier catalogue (`catalogue_print.xlsx`) est introuvable dans le"
-      " dossier. Veuillez le placer au même endroit que l'application pour"
-      " activer la sélection automatique du catalogue."
+      " dossier."
   )
 
 for i in range(10):
@@ -1001,12 +995,20 @@ with onglets[10]:
       st.session_state["dernier_pdf"] = pdf_filename
       st.session_state["dernier_num"] = num_devis
 
+      # Extraction des 9 premiers chiffres du SIRET pour l'unicité entreprise
+      siret_clean = (
+          "".join(filter(str.isdigit, client_siret))[:9]
+          if client_siret
+          else ""
+      )
+
       data_crm = {
           "Date": datetime.now().strftime("%Y-%m-%d %H:%M"),
           "Numero_Devis": num_devis,
           "Commercial": conseiller_nom,
           "Client": client_nom,
           "Entreprise": client_entreprise,
+          "SIRET_9": siret_clean,
           "Email": client_email,
           "Telephone": client_contact_tel,
           "Quantite_Totale": quantite_globale_totale,
@@ -1117,7 +1119,7 @@ with onglets[10]:
         order_info_text = (
             f"<b>DÉTAILS DE LA COMMANDE :</b><br/>Quantité globale :"
             f" {quantite_globale_totale} pièces<br/>Délai estimé : 8 à 10 jours"
-            f" ouvrés<br/>Conseiller : {conseiller_nom}"
+            f" ouvrés<br/>Commercial (Owner) : {conseiller_nom}"
         )
 
         t_info = Table(
@@ -1317,14 +1319,49 @@ with onglets[10]:
 
 # --- ONGLET SUIVI CRM ---
 with onglets[11]:
-  st.header("📈 Suivi CRM & Historique des Devis")
+  st.header("📈 Suivi CRM & Modification des Statuts")
   if os.path.exists(CRM_FILE):
     try:
       df_crm = pd.read_csv(CRM_FILE)
       if not df_crm.empty:
-        st.dataframe(df_crm, use_container_width=True)
+        st.write(
+            "Modifiez directement les statuts ci-dessous pour assurer la"
+            " correspondance avec HubSpot :"
+        )
+
+        # Édition interactive des statuts
+        edited_df = st.data_editor(
+            df_crm,
+            column_config={
+                "Statut": st.column_config.SelectboxColumn(
+                    "Statut du Devis",
+                    help="Statut synchronisé avec HubSpot",
+                    options=[
+                        "En cours",
+                        "Envoyé",
+                        "Accepté (Gagné)",
+                        "Refusé (Perdu)",
+                    ],
+                    required=True,
+                )
+            },
+            disabled=[
+                col
+                for col in df_crm.columns
+                if col not in ["Statut", "Commercial"]
+            ],
+            use_container_width=True,
+            key="crm_editor",
+        )
+
+        # Sauvegarde des modifications du tableau édité
+        if st.button("💾 Enregistrer les modifications de statut"):
+          edited_df.to_csv(CRM_FILE, index=False)
+          st.success("✅ Statuts mis à jour avec succès !")
+
+        st.markdown("---")
         devis_selectionne = st.selectbox(
-            "Sélectionner un devis",
+            "Télécharger le PDF d'un devis",
             df_crm["Numero_Devis"].tolist(),
             key="select_crm",
         )
