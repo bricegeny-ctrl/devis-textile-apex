@@ -58,7 +58,9 @@ def charger_catalogue_print():
     return None
 
 
-def obtenir_prix_catalogue_exact(cat_choisie, sub_choisie, ref_choisie, qte):
+def obtenir_prix_catalogue_ exact_robuste(
+    cat_choisie, sub_choisie, ref_choisie, qte
+):
   df_all = charger_catalogue_print()
   if df_all is None:
     return 0.15
@@ -72,13 +74,7 @@ def obtenir_prix_catalogue_exact(cat_choisie, sub_choisie, ref_choisie, qte):
     except:
       pass
 
-  # Trouver la colonne correspondant au palier de quantité immédiatement inférieur ou égal
-  target_col = qtys[0][0] if qtys else 3
-  for col_idx, q_val in qtys:
-    if qte >= q_val:
-      target_col = col_idx
-
-  # Rechercher la ligne exacte correspondant à Catégorie, Sous-catégorie et Référence
+  # Trouver la ligne exacte
   best_row = -1
   for r in range(1, len(df_all)):
     c_val = str(df_all.iloc[r, 0]).strip()
@@ -93,29 +89,39 @@ def obtenir_prix_catalogue_exact(cat_choisie, sub_choisie, ref_choisie, qte):
       best_row = r
       break
 
-  # Si la ligne exacte n'est pas trouvée, recherche souple
   if best_row == -1:
     for r in range(1, len(df_all)):
-      c_val = str(df_all.iloc[r, 0]).strip()
-      if str(cat_choisie).strip() in c_val:
+      if str(cat_choisie).strip() in str(df_all.iloc[r, 0]).strip():
         best_row = r
         break
 
   if best_row == -1:
     return 0.15
 
+  # Chercher le prix valide le plus proche ou correspondant au palier
+  # On parcourt les colonnes de quantité de droite à gauche (plus grand au plus petit) ou selon la quantité
+  col_cible = -1
+  for col_idx, q_val in sorted(qtys, key=lambda x: x[1], reverse=True):
+    if qte >= q_val:
+      val_prix = df_all.iloc[best_row, col_idx]
+      if pd.notna(val_prix) and float(val_prix) > 0:
+        col_cible = col_idx
+        break
+
+  # Si aucun palier inférieur trouvé, prendre le plus petit palier disponible
+  if col_cible == -1:
+    for col_idx, q_val in sorted(qtys, key=lambda x: x[1]):
+      val_prix = df_all.iloc[best_row, col_idx]
+      if pd.notna(val_prix) and float(val_prix) > 0:
+        col_cible = col_idx
+        break
+
+  if col_cible == -1:
+    return 0.15
+
   try:
-    prix_val = float(df_all.iloc[best_row, target_col])
-    if pd.isna(prix_val) or prix_val <= 0:
-      # Chercher un autre palier non vide sur la même ligne
-      for alt_col in range(df_all.shape[1] - 1, 2, -1):
-        alt_val = float(df_all.iloc[best_row, alt_col])
-        if not pd.isna(alt_val) and alt_val > 0:
-          prix_val = alt_val
-          break
-    if pd.isna(prix_val) or prix_val <= 0:
-      return 0.15
-    return round(prix_val, 4)
+    prix = float(df_all.iloc[best_row, col_cible])
+    return round(prix, 4) if not pd.isna(prix) else 0.15
   except:
     return 0.15
 
@@ -583,7 +589,7 @@ for i in range(10):
         })
         total_textile_brut += qte * prix_vetement_ht
     else:
-      # --- CHARGEMENT DYNAMIQUE DEPUIS LE CATALOGUE EXCEL ---
+      # --- CHARGEMENT DYNAMIQUE COMPLET DEPUIS EXCEL ---
       if df_catalogue is not None:
         cats_disponibles = (
             df_catalogue.iloc[1:, 0].dropna().astype(str).unique().tolist()
@@ -630,7 +636,6 @@ for i in range(10):
               key=f"rem_print_{i}",
           )
       else:
-        # Extraire les sous-catégories pour la catégorie sélectionnée
         sub_cats = (
             df_catalogue[df_catalogue.iloc[:, 0].astype(str).str.strip() == cat_print]
             .iloc[:, 1]
@@ -645,7 +650,6 @@ for i in range(10):
             f"Sous-catégorie {i+1}", sub_cats, key=f"sub_print_{i}"
         )
 
-        # Extraire les références exactes pour cette catégorie et sous-catégorie
         refs_exactes = (
             df_catalogue[
                 (
@@ -679,7 +683,7 @@ for i in range(10):
               value=100 if i == 0 else 0,
               key=f"qte_print_{i}",
           )
-          prix_unitaire_auto = obtenir_prix_catalogue_exact(
+          prix_unitaire_auto = obtenir_prix_catalogue_ exact_robuste(
               cat_print, choix_sub, choix_ref, qte
           )
           prix_vetement_ht = prix_unitaire_auto
