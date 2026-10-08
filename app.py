@@ -52,7 +52,6 @@ def charger_catalogue_print():
   if not os.path.exists(CATALOGUE_FILE):
     return None
   try:
-    # On lit le fichier sans header fixe pour analyser toutes les lignes
     df_all = pd.read_excel(CATALOGUE_FILE, sheet_name=0, header=None)
     return df_all
   except Exception as e:
@@ -66,7 +65,6 @@ def obtenir_prix_catalogue_exact_robuste(
   if df_all is None:
     return 0.15
 
-  # Récupérer les paliers de quantité depuis la première ligne (colonnes 3 et au-delà)
   qtys = []
   for c in range(3, df_all.shape[1]):
     try:
@@ -75,7 +73,6 @@ def obtenir_prix_catalogue_exact_robuste(
     except:
       pass
 
-  # Trouver la ligne exacte correspondant aux 3 critères (Catégorie, Sous-catégorie, Référence)
   best_row = -1
   for r in range(1, len(df_all)):
     c_val = str(df_all.iloc[r, 0]).strip()
@@ -90,7 +87,6 @@ def obtenir_prix_catalogue_exact_robuste(
       best_row = r
       break
 
-  # Fallback si correspondance exacte introuvable
   if best_row == -1:
     for r in range(1, len(df_all)):
       if str(cat_choisie).strip() in str(df_all.iloc[r, 0]).strip():
@@ -100,7 +96,6 @@ def obtenir_prix_catalogue_exact_robuste(
   if best_row == -1:
     return 0.15
 
-  # Recherche du prix selon le palier de quantité
   col_cible = -1
   for col_idx, q_val in sorted(qtys, key=lambda x: x[1], reverse=True):
     if qte >= q_val:
@@ -337,39 +332,34 @@ def obtenir_tarif_broderie_unitaire(emplacement, qte_totale):
 
 def calculer_frais_port(montant_base, zone):
   if zone == "France Continentale":
-    return (
-        14.95
-        if montant_base < 99.99
-        else (
-            20.95
-            if montant_base < 499.99
-            else (24.95 if montant_base < 999.99 else 0.0)
-        )
-    )
+    if montant_base < 99.99:
+      return 14.95
+    elif montant_base < 499.99:
+      return 20.95
+    elif montant_base < 999.99:
+      return 24.95
+    else:
+      return 0.0
   elif zone == "Livraison Corse, Monaco ou Andorre":
-    return (
-        19.95
-        if montant_base < 99.99
-        else (
-            25.95
-            if montant_base < 499.99
-            else (29.95 if montant_base < 999.99 else 0.0)
-        )
-    )
+    if montant_base < 99.99:
+      return 19.95
+    elif montant_base < 499.99:
+      return 25.95
+    elif montant_base < 999.99:
+      return 29.95
+    else:
+      return 0.0
   else:
-    return (
-        25.95
-        if montant_base < 99.99
-        else (
-            39.0
-            if montant_base < 499.99
-            else (
-                60.0
-                if montant_base < 999.99
-                else (90.0 if montant_base < 1500.0 else 0.0)
-            )
-        )
-    )
+    if montant_base < 99.99:
+      return 25.95
+    elif montant_base < 499.99:
+      return 39.0
+    elif montant_base < 999.99:
+      return 60.0
+    elif montant_base < 1500.0:
+      return 90.0
+    else:
+      return 0.0
 
 
 if not os.path.exists(CRM_FILE):
@@ -589,7 +579,7 @@ for i in range(10):
         })
         total_textile_brut += qte * prix_vetement_ht
     else:
-      # --- CHARGEMENT DYNAMIQUE PROpre DEPUIS EXCEL ---
+      # --- CHARGEMENT DYNAMIQUE PROPRE DEPUIS EXCEL ---
       if df_catalogue is not None:
         cats_disponibles = (
             df_catalogue.iloc[1:, 0]
@@ -870,4 +860,73 @@ with onglets[10]:
               else (
                   0.56
                   if q <= 249
-                  else (0
+                  else (0.50 if q <= 499 else (0.43 if q <= 999 else 0.30))
+              )
+          )
+          if item["option_stockage"]
+          else 0.0
+      )
+      tot_stock = coût_stock_unit * q
+
+      tot_ligne = tot_support + tot_marquages + tot_ens + tot_ass + tot_stock
+      lignes_devis_global.append({
+          **item,
+          "prix_vet_unit": px_support,
+          "marquages_calcules": marquages_calcules,
+          "frais_prog_broderie": frais_prog_broderie,
+          "coût_ensachage_unit": coût_ens_unit,
+          "coût_assurance_unit": coût_ass_unit,
+          "coût_stockage_unit": coût_stock_unit,
+          "total_ligne_ht": tot_ligne,
+      })
+
+    sous_total_articles = sum(
+        [item["total_ligne_ht"] for item in lignes_devis_global]
+    )
+    frais_prog_total = (
+        lignes_devis_global[0]["frais_prog_broderie"]
+        if lignes_devis_global
+        else 0.0
+    )
+    montant_base_port = (
+        sous_total_articles + frais_prog_total + frais_techniques_dossier
+    )
+    frais_port = (
+        0.0
+        if offrir_port
+        else calculer_frais_port(montant_base_port, zone_livraison)
+    )
+    total_general_ht = montant_base_port + frais_port
+    tva = total_general_ht * 0.20
+    total_ttc = total_general_ht + tva
+    quantite_globale_totale = sum(
+        [item["quantite"] for item in lignes_devis_global]
+    )
+    cout_unitaire_moyen = (
+        total_general_ht / quantite_globale_totale
+        if quantite_globale_totale > 0
+        else 0
+    )
+
+    st.write(f"**Quantité globale pièces :** {quantite_globale_totale}")
+    st.write(f"**Sous-Total Articles HT :** {sous_total_articles:.2f} €")
+    if frais_prog_total > 0:
+      st.write(
+          f"**Frais de technique & programme Broderie :**"
+          f" {frais_prog_total:.2f} € HT"
+      )
+    st.write(
+        f"**Frais techniques de dossier :** {frais_techniques_dossier:.2f} € HT"
+    )
+    st.write(
+        f"**Frais de port ({zone_livraison}) :** {frais_port:.2f} € HT"
+        if not offrir_port
+        else "**Frais de port :** Offerts (0.00 €)"
+    )
+    st.markdown(
+        f"### **Total Général HT : {total_general_ht:.2f} €** | **TOTAL TTC"
+        f" (20%) : {total_ttc:.2f} €**"
+    )
+
+    if st.button("📄 Générer le numéro de devis et le PDF"):
+      num_
