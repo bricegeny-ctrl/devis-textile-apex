@@ -102,17 +102,7 @@ def obtenir_prix_catalogue_exact_robuste(
     if r_min is not None:
       col_ranges[c] = (r_min, r_max)
 
-  target_col = None
-  for c, (r_min, r_max) in col_ranges.items():
-    if r_min <= qte <= r_max:
-      target_col = c
-      break
-
-  if target_col is None and col_ranges:
-    max_col = max(col_ranges.keys(), key=lambda x: col_ranges[x][0])
-    if qte >= col_ranges[max_col][0]:
-      target_col = max_col
-
+  # Trouver la ligne correspondante dans le catalogue
   best_row = -1
   for r in range(len(df_all)):
     c_val = str(df_all.iloc[r, 0]).strip()
@@ -136,8 +126,37 @@ def obtenir_prix_catalogue_exact_robuste(
         best_row = r
         break
 
-  if best_row == -1 or target_col is None:
+  if best_row == -1 or not col_ranges:
     return 0.15
+
+  # Identifier le plus petit palier disponible dans le tableau (ex: 100 ex)
+  premier_col_idx = min(col_ranges.keys(), key=lambda x: col_ranges[x][0])
+  palier_min_qte, _ = col_ranges[premier_col_idx]
+
+  try:
+    prix_palier_min = float(df_all.iloc[best_row, premier_col_idx])
+  except:
+    prix_palier_min = 0.15
+
+  # AJUSTEMENT : Si la quantité commandée est inférieure au premier palier (ex: < 100)
+  if qte < palier_min_qte and qte > 0:
+    prix_ajuste = (palier_min_qte * prix_palier_min) / qte
+    return round(prix_ajuste, 4)
+
+  # Sinon, recherche classique de la tranche correspondante
+  target_col = None
+  for c, (r_min, r_max) in col_ranges.items():
+    if r_min <= qte <= r_max:
+      target_col = c
+      break
+
+  if target_col is None and col_ranges:
+    max_col = max(col_ranges.keys(), key=lambda x: col_ranges[x][0])
+    if qte >= col_ranges[max_col][0]:
+      target_col = max_col
+
+  if target_col is None:
+    return round(prix_palier_min, 4)
 
   try:
     val_prix = df_all.iloc[best_row, target_col]
@@ -146,7 +165,7 @@ def obtenir_prix_catalogue_exact_robuste(
   except:
     pass
 
-  return 0.15
+  return round(prix_palier_min, 4)
 
 
 # --- GRILLES TARIFAIRES OFFICIELLES (TEXTILE & BRODERIE) ---
