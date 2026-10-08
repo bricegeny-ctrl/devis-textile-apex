@@ -683,7 +683,7 @@ for i in range(10):
               value=100 if i == 0 else 0,
               key=f"qte_print_{i}",
           )
-          prix_unitaire_auto = obtenir_prix_catalogue_ exact_robuste(
+          prix_unitaire_auto = obtenir_prix_catalogue_exact_robuste(
               cat_print, choix_sub, choix_ref, qte
           )
           prix_vetement_ht = prix_unitaire_auto
