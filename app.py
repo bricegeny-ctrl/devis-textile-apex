@@ -1205,3 +1205,97 @@ with onglets[10]:
             [
                 "",
                 Paragraph("Coût unitaire HT / pièce :", style_right_normal),
+                Paragraph(f"{cout_unitaire_moyen:.3f} €", style_right_normal),
+            ],
+        ]
+        t_totaux = Table(totaux_data, colWidths=[240, 160, 140])
+        t_totaux.setStyle(
+            TableStyle([
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("LINEABOVE", (1, 2), (-1, 2), 1, colors.black),
+                ("PADDING", (0, 0), (-1, -1), 4),
+            ])
+        )
+        story.append(t_totaux)
+        story.append(Spacer(1, 15))
+
+        conditions_text = (
+            "<b>Conditions de règlement & Bon pour accord :</b><br/>•"
+            f" Règlement : {mode_reglement}<br/>• Fichiers vectoriels fournis"
+            " (.AI, .EPS, .PDF).<br/>• Bon pour accord daté et signé requis."
+        )
+        story.append(Paragraph(conditions_text, style_sub))
+
+        doc.build(story)
+        st.success(
+            f"Devis PDF professionnel généré sous le numéro : **{num_devis}**"
+        )
+      except Exception as e_pdf:
+        st.error(f"Erreur lors de la génération du PDF : {e_pdf}")
+
+    if "dernier_pdf" in st.session_state:
+      pdf_filename = st.session_state["dernier_pdf"]
+      if os.path.exists(pdf_filename):
+        with open(pdf_filename, "rb") as f:
+          st.download_button(
+              "📥 Télécharger le PDF du devis",
+              f,
+              file_name=os.path.basename(pdf_filename),
+              mime="application/pdf",
+          )
+        st.markdown("---")
+        st.subheader("✉️ Envoi direct du devis par e-mail en 1 clic")
+        email_dest = st.text_input("Destinataire de l'e-mail", value=client_email)
+        sujet_mail = st.text_input(
+            "Objet de l'e-mail",
+            value=f"Devis {st.session_state.get('dernier_num', '')} - APEX",
+        )
+        corps_mail = st.text_area(
+            "Message",
+            value=(
+                f"Bonjour {client_nom},\n\nVeuillez trouver ci-joint votre devis"
+                f" établi par APEX.\n\nCordialement,\n{conseiller_nom}\nAPEX"
+            ),
+        )
+        mailto_link = f"mailto:{email_dest}?subject={urllib.parse.quote(sujet_mail)}&body={urllib.parse.quote(corps_mail)}"
+        st.markdown(
+            f'<a href="{mailto_link}" target="_blank"><button'
+            ' style="background-color:#2b6cb0; color:white; border:none;'
+            " padding:10px 20px; border-radius:5px; cursor:pointer;"
+            ' font-weight:bold; width:100%;">📧 Ouvrir dans le client mail'
+            " (Secours)</button></a>",
+            unsafe_allow_html=True,
+        )
+
+# --- ONGLET SUIVI CRM ---
+with onglets[11]:
+  st.header("📈 Suivi CRM & Historique des Devis")
+  if os.path.exists(CRM_FILE):
+    try:
+      df_crm = pd.read_csv(CRM_FILE)
+      if not df_crm.empty:
+        st.dataframe(df_crm, use_container_width=True)
+        devis_selectionne = st.selectbox(
+            "Sélectionner un devis",
+            df_crm["Numero_Devis"].tolist(),
+            key="select_crm",
+        )
+        ligne_dev = df_crm[
+            df_crm["Numero_Devis"] == devis_selectionne
+        ].iloc[0]
+        if pd.notna(ligne_dev.get("PDF_Path")) and os.path.exists(
+            str(ligne_dev["PDF_Path"])
+        ):
+          with open(ligne_dev["PDF_Path"], "rb") as pdf_file:
+            st.download_button(
+                "📥 Télécharger le PDF de ce devis",
+                pdf_file,
+                file_name=os.path.basename(ligne_dev["PDF_Path"]),
+                mime="application/pdf",
+            )
+      else:
+        st.info("Aucun devis dans le CRM.")
+    except Exception as e_crm:
+      st.info(f"CRM vide ou en cours d'initialisation ({e_crm}).")
+  else:
+    st.info("CRM vide.")
