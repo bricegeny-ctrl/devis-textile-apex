@@ -393,7 +393,7 @@ if not os.path.exists(CRM_FILE):
 
 
 def enregistrer_dans_crm(devis_data):
-  df_crm = (
-      pd.read_csv(CRM_FILE)
-      if os.path.exists(CRM_FILE)
-      else pd.DataFrame(columns=list(devis_
+  if os.path.exists(CRM_FILE):
+    df_crm = pd.read_csv(CRM_FILE)
+  else:
+    df_crm = pd
