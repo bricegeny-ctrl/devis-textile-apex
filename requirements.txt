@@ -1,11 +1,7 @@
 streamlit
 pandas
+requests
 reportlab
-pillow
-xlsxwriter
 openpyxl
 gspread
-oauth2client
 google-auth
-streamlit-gsheets
-requests
