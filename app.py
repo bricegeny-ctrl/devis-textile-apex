@@ -2,6 +2,7 @@ from datetime import datetime
 import json
 import os
 import urllib.parse
+from gspread.exceptions import SpreadsheetNotFound
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
@@ -9,12 +10,12 @@ from reportlab.platypus import Image as RLImage, Paragraph, SimpleDocTemplate, S
 import pandas as pd
 import requests
 import streamlit as st
+from streamlit_gsheets import GSheetsConnection
 
 st.set_page_config(page_title="Gestionnaire de Devis - APEX", layout="wide")
 
-# --- GESTION DES FICHIERS ---
+# --- GESTION DES FICHIERS & GOOGLE SHEETS ---
 COMPTEUR_FILE = "compteur_devis.json"
-CRM_FILE = "crm_devis.csv"
 CATALOGUE_FILE = "catalogue_print.xlsx"
 PDF_DIR = "devis_pdf"
 
@@ -46,6 +47,72 @@ def obtenir_prochain_numero_devis():
   except:
     pass
   return nouveau
+
+
+# --- CONNEXION GOOGLE SHEETS PERMANENTE ---
+def charger_crm_gsheets():
+  try:
+    conn = st.connection("gsheets", type=GSheetsConnection)
+    df = conn.read(spreadsheet="CRM_Apex", ttl=0)
+    if df is not None and not df.empty:
+      return df
+  except Exception as e:
+    pass
+  # DataFrame vide par défaut si la feuille est vide ou introuvable
+  return pd.DataFrame(
+      columns=[
+          "Numero_Devis",
+          "Date",
+          "Client",
+          "Contact",
+          "Email",
+          "Telephone",
+          "Total_HT",
+          "Total_TTC",
+          "Statut",
+          "Commercial",
+          "Mode_Reglement",
+          "PDF_Path",
+          "Deal_ID",
+          "Lignes_Articles",
+      ]
+  )
+
+
+def enregistrer_dans_crm_gsheets(devis_data):
+  try:
+    conn = st.connection("gsheets", type=GSheetsConnection)
+    df_crm = charger_crm_gsheets()
+
+    # Si le devis existe déjà, on le met à jour, sinon on l'ajoute
+    if not df_crm.empty and "Numero_Devis" in df_crm.columns:
+      mask = df_crm["Numero_Devis"] == devis_data["Numero_Devis"]
+      if mask.any():
+        for col, val in devis_data.items():
+          df_crm.loc[mask, col] = val
+      else:
+        df_crm = pd.concat(
+            [df_crm, pd.DataFrame([devis_data])], ignore_index=True
+        )
+    else:
+      df_crm = pd.DataFrame([devis_data])
+
+    conn.update(spreadsheet="CRM_Apex", data=df_crm)
+  except Exception as e:
+    st.error(f"Erreur d'enregistrement Google Sheets : {e}")
+
+
+def mettre_a_jour_statut_gsheets(numero_devis, nouveau_statut):
+  try:
+    conn = st.connection("gsheets", type=GSheetsConnection)
+    df_crm = charger_crm_gsheets()
+    if not df_crm.empty and "Numero_Devis" in df_crm.columns:
+      df_crm.loc[df_crm["Numero_Devis"] == numero_devis, "Statut"] = (
+          nouveau_statut
+      )
+      conn.update(spreadsheet="CRM_Apex", data=df_crm)
+  except:
+    pass
 
 
 # --- MOTEUR DE LECTURE EXCEL INTELLIGENT ---
@@ -188,8 +255,6 @@ def chercher_entreprise_hubspot_par_siret(siret):
       "Authorization": f"Bearer {hubspot_token}",
       "Content-Type": "application/json",
   }
-  
-  # On récupère les entreprises de HubSpot pour les comparer directement
   url = "https://api.hubapi.com/crm/v3/objects/companies?limit=100&properties=name,address,city,zip,phone,siret"
 
   try:
@@ -197,12 +262,9 @@ def chercher_entreprise_hubspot_par_siret(siret):
     if response.status_code == 200:
       entreprises = response.json().get("results", [])
       siret_9 = siret_nettoye[:9]
-      
       for ent in entreprises:
         props = ent.get("properties", {})
         siret_hs = "".join(filter(str.isdigit, str(props.get("siret", ""))))
-        
-        # Si le SIRET ou les 9 premiers chiffres correspondent
         if siret_9 in siret_hs or siret_nettoye in siret_hs:
           return props
   except:
@@ -212,8 +274,8 @@ def chercher_entreprise_hubspot_par_siret(siret):
 
 def synchroniser_avec_hubspot(client_data):
   hubspot_token = st.secrets.get("HUBSPOT_TOKEN", "")
-  if hubspot_token == "VOTRE_TOKEN_ACCES_PRIVE_HUBSPOT":
-    return False
+  if not hubspot_token or hubspot_token == "VOTRE_TOKEN_ACCES_PRIVE_HUBSPOT":
+    return None
 
   headers = {
       "Authorization": f"Bearer {hubspot_token}",
@@ -272,26 +334,27 @@ def synchroniser_avec_hubspot(client_data):
         pass
 
   contact_id = None
-  contact_search_url = "https://api.hubapi.com/crm/v3/objects/contacts/search"
-  contact_search_payload = {
-      "filterGroups": [{
-          "filters": [{
-              "propertyName": "email",
-              "operator": "EQ",
-              "value": email,
-          }]
-      }]
-  }
-  try:
-    resp_c_search = requests.post(
-        contact_search_url, headers=headers, json=contact_search_payload, timeout=5
-    )
-    if resp_c_search.status_code == 200:
-      c_results = resp_c_search.json().get("results", [])
-      if c_results:
-        contact_id = c_results[0]["id"]
-  except:
-    pass
+  if email:
+    contact_search_url = "https://api.hubapi.com/crm/v3/objects/contacts/search"
+    contact_search_payload = {
+        "filterGroups": [{
+            "filters": [{
+                "propertyName": "email",
+                "operator": "EQ",
+                "value": email,
+            }]
+        }]
+    }
+    try:
+      resp_c_search = requests.post(
+          contact_search_url, headers=headers, json=contact_search_payload, timeout=5
+      )
+      if resp_c_search.status_code == 200:
+        c_results = resp_c_search.json().get("results", [])
+        if c_results:
+          contact_id = c_results[0]["id"]
+    except:
+      pass
 
   parts_nom = nom_client.split(" ", 1)
   prenom = parts_nom[0]
@@ -323,14 +386,7 @@ def synchroniser_avec_hubspot(client_data):
     except:
       pass
 
-  if contact_id and company_id:
-    assoc_url = f"https://api.hubapi.com/crm/v3/objects/contacts/{contact_id}/associations/companies/{company_id}/contact_to_company"
-    try:
-      requests.put(assoc_url, headers=headers, timeout=5)
-    except:
-      pass
-
-  # --- AJOUTEZ LE BLOC DEAL ICI ---
+  deal_id = None
   if company_id:
     deal_url = "https://api.hubapi.com/crm/v3/objects/deals"
     deal_payload = {
@@ -354,12 +410,37 @@ def synchroniser_avec_hubspot(client_data):
         requests.put(assoc_deal_url, headers=headers, timeout=5)
     except:
       pass
-  # --------------------------------
 
-  return True
-  return True
+  return deal_id
 
-    
+
+def mettre_a_jour_statut_deal_hubspot(deal_id, statut_str):
+  if not deal_id or pd.isna(deal_id) or str(deal_id).strip() == "":
+    return
+  hubspot_token = st.secrets.get("HUBSPOT_TOKEN", "")
+  if not hubspot_token:
+    return
+
+  mapping_stages = {
+      "En cours": "appointmentscheduled",
+      "Envoyé": "qualifiedtobuy",
+      "Accepté (Gagné)": "closedwon",
+      "Refusé (Perdu)": "closedlost",
+  }
+  stage_hs = mapping_stages.get(statut_str, "appointmentscheduled")
+
+  url = f"https://api.hubapi.com/crm/v3/objects/deals/{deal_id}"
+  headers = {
+      "Authorization": f"Bearer {hubspot_token}",
+      "Content-Type": "application/json",
+  }
+  payload = {"properties": {"dealstage": stage_hs}}
+  try:
+    requests.patch(url, headers=headers, json=payload, timeout=5)
+  except:
+    pass
+
+
 # --- GRILLES TARIFAIRES OFFICIELLES ---
 def obtenir_tarif_dtf_unitaire(type_textile, emplacement, qte_totale):
   grille_fin = {
@@ -601,46 +682,7 @@ def calculer_frais_port(montant_base, zone):
       return 0.0
 
 
-if not os.path.exists(CRM_FILE):
-  try:
-    pd.DataFrame(
-        columns=[
-            "Numero_Devis",
-            "Date",
-            "Client",
-            "Contact",
-            "Email",
-            "Telephone",
-            "Total_HT",
-            "Total_TTC",
-            "Statut",
-            "Commercial",
-            "Mode_Reglement",
-            "PDF_Path",
-        ]
-    ).to_csv(CRM_FILE, index=False)
-  except:
-    pass
-
-
-def enregistrer_dans_crm(devis_data):
-  try:
-    if os.path.exists(CRM_FILE):
-      df_crm = pd.read_csv(CRM_FILE)
-    else:
-      df_crm = pd.DataFrame(columns=list(devis_data.keys()))
-    if not df_crm[df_crm["Numero_Devis"] == devis_data["Numero_Devis"]].empty:
-      df_crm.loc[
-          df_crm["Numero_Devis"] == devis_data["Numero_Devis"], :
-      ] = list(devis_data.values())
-    else:
-      df_crm = pd.concat([df_crm, pd.DataFrame([devis_data])], ignore_index=True)
-    df_crm.to_csv(CRM_FILE, index=False)
-  except Exception as e:
-    st.error(f"Erreur CRM : {e}")
-
-
-# --- SIDEBAR & SESSION STATE POUR AUTOCOMPLÉTION ---
+# --- INITIALISATION SESSION STATE DUPLICATION ---
 if "client_entreprise_val" not in st.session_state:
   st.session_state["client_entreprise_val"] = ""
 if "client_adresse_val" not in st.session_state:
@@ -656,7 +698,6 @@ st.sidebar.title("📋 Infos Client & Expédition")
 
 client_siret = st.sidebar.text_input("SIRET", "")
 
-# Bouton pour déclencher la recherche HubSpot par SIRET
 if st.sidebar.button("🔍 Rechercher le client via le SIRET"):
   if client_siret:
     infos_hs = chercher_entreprise_hubspot_par_siret(client_siret)
@@ -830,15 +871,15 @@ for i in range(10):
       option_ensachage = st.checkbox(
           f"Option ensachage individuel {i+1}", key=f"ens_{i}"
       )
-      if option_ensachage:
-        type_sachet = st.selectbox(
-            f"Type de sachet {i+1}",
-            ["Sachet (T-shirt/Polo)", "Sachet (Veste/Sweat)"],
-            key=f"tsach_{i}",
-        )
-      else:
-        type_sachet = ""
-
+      type_sachet = (
+          st.selectbox(
+              f"Type de sachet {i+1}",
+              ["Sachet (T-shirt/Polo)", "Sachet (Veste/Sweat)"],
+              key=f"tsach_{i}",
+          )
+          if option_ensachage
+          else ""
+      )
       option_assurance = st.checkbox(
           f"Option assurance garantie textile {i+1}", key=f"ass_{i}"
       )
@@ -869,18 +910,16 @@ for i in range(10):
         })
         total_textile_brut += qte * prix_vetement_ht
     else:
-      if df_catalogue is not None:
-        cats_disponibles = (
-            df_catalogue.iloc[:, 0]
-            .dropna()
-            .astype(str)
-            .str.strip()
-            .unique()
-            .tolist()
-        )
-      else:
-        cats_disponibles = []
-
+      cats_disponibles = (
+          df_catalogue.iloc[:, 0]
+          .dropna()
+          .astype(str)
+          .str.strip()
+          .unique()
+          .tolist()
+          if df_catalogue is not None
+          else []
+      )
       cat_print = st.selectbox(
           f"Catégorie Print & Signalétique {i+1}",
           cats_disponibles
@@ -889,7 +928,6 @@ for i in range(10):
       )
 
       if "Autre" in cat_print:
-        choix_sub = "Saisie libre"
         choix_ref = st.text_input(
             f"Nom / Désignation du produit libre {i+1}",
             value="Produit personnalisé",
@@ -911,7 +949,6 @@ for i in range(10):
               key=f"px_libre_{i}",
           )
         with col2:
-          st.info("💡 Saisie manuelle active (produit hors catalogue).")
           remise_fidelite = st.number_input(
               f"Remise commerciale (%) {i+1}",
               min_value=0.0,
@@ -971,17 +1008,16 @@ for i in range(10):
               value=100 if i == 0 else 0,
               key=f"qte_print_{i}",
           )
-          prix_unitaire_auto = obtenir_prix_catalogue_exact_robuste(
+          prix_vetement_ht = obtenir_prix_catalogue_exact_robuste(
               cat_print, choix_sub, choix_ref, qte
           )
-          prix_vetement_ht = prix_unitaire_auto
           st.metric(
               label=f"Prix unitaire HT (€) {i+1} (Catalogue auto)",
-              value=f"{prix_unitaire_auto:.4f} €",
+              value=f"{prix_vetement_ht:.4f} €",
           )
         with col2:
           st.success(
-              f"✅ Tarif appliqué ({qte} ex) : **{prix_unitaire_auto:.4f} € HT**"
+              f"✅ Tarif appliqué ({qte} ex) : **{prix_vetement_ht:.4f} € HT**"
           )
           remise_fidelite = st.number_input(
               f"Remise commerciale (%) {i+1}",
@@ -1074,15 +1110,15 @@ with onglets[10]:
               "tarif": tarif_m,
           })
 
-      if has_broderie_global:
-        if 2 <= quantite_totale_broderie <= 3:
-          frais_prog_broderie = 41.0
-        elif 4 <= quantite_totale_broderie <= 11:
-          frais_prog_broderie = 23.0
-        else:
-          frais_prog_broderie = 0.0
-      else:
-        frais_prog_broderie = 0.0
+      frais_prog_broderie = (
+          41.0
+          if (has_broderie_global and 2 <= quantite_totale_broderie <= 3)
+          else (
+              23.0
+              if (has_broderie_global and 4 <= quantite_totale_broderie <= 11)
+              else 0.0
+          )
+      )
 
       coût_ens_unit = (
           (
@@ -1230,6 +1266,7 @@ with onglets[10]:
           if client_siret
           else ""
       )
+      lignes_export_str = json.dumps(articles_saisis, ensure_ascii=False)
 
       data_crm = {
           "Date": datetime.now().strftime("%Y-%m-%d %H:%M"),
@@ -1246,14 +1283,19 @@ with onglets[10]:
           "Statut": "En cours",
           "Mode_Reglement": mode_reglement,
           "PDF_Path": pdf_filename,
+          "Deal_ID": "",
+          "Lignes_Articles": lignes_export_str,
       }
-      enregistrer_dans_crm(data_crm)
 
-      # Synchronisation vers HubSpot
-      synchroniser_avec_hubspot(data_crm)
+      deal_id = synchroniser_avec_hubspot(data_crm)
+      if deal_id:
+        data_crm["Deal_ID"] = deal_id
+
+      # Enregistrement persistant dans Google Sheets (CRM_Apex)
+      enregistrer_dans_crm_gsheets(data_crm)
 
       st.success(
-          "✅ Données enregistrées dans le CRM local et synchronisées avec"
+          "✅ Données enregistrées de manière permanente dans Google Sheets et"
           " HubSpot !"
       )
 
@@ -1301,15 +1343,18 @@ with onglets[10]:
             alignment=2,
         )
 
-        logo_path = None
-        if logo_file is not None:
-          logo_path = "temp_logo.png"
+        logo_path = (
+            "temp_logo.png"
+            if logo_file
+            else (
+                "logo.png"
+                if os.path.exists("logo.png")
+                else ("logo.jpg" if os.path.exists("logo.jpg") else None)
+            )
+        )
+        if logo_file and logo_path == "temp_logo.png":
           with open(logo_path, "wb") as f:
             f.write(logo_file.getbuffer())
-        elif os.path.exists("logo.png"):
-          logo_path = "logo.png"
-        elif os.path.exists("logo.jpg"):
-          logo_path = "logo.jpg"
 
         header_text = Paragraph(
             "<b>APEX - SOLUTIONS VISUELLES, PRINT & TEXTILE</b><br/>Plasne"
@@ -1555,66 +1600,122 @@ with onglets[10]:
 
 # --- ONGLET SUIVI CRM ---
 with onglets[11]:
-  st.header("📈 Suivi CRM & Modification des Statuts")
-  if os.path.exists(CRM_FILE):
-    try:
-      df_crm = pd.read_csv(CRM_FILE)
-      if not df_crm.empty:
-        st.write(
-            "Modifiez directement les statuts ci-dessous pour assurer la"
-            " correspondance avec HubSpot :"
-        )
+  st.header("📈 Suivi CRM, Duplication & Export Marge (Google Sheets)")
+  df_crm = charger_crm_gsheets()
 
-        edited_df = st.data_editor(
-            df_crm,
-            column_config={
-                "Statut": st.column_config.SelectboxColumn(
-                    "Statut du Devis",
-                    help="Statut synchronisé avec HubSpot",
-                    options=[
-                        "En cours",
-                        "Envoyé",
-                        "Accepté (Gagné)",
-                        "Refusé (Perdu)",
-                    ],
-                    required=True,
-                )
-            },
-            disabled=[
-                col
-                for col in df_crm.columns
-                if col not in ["Statut", "Commercial"]
-            ],
-            use_container_width=True,
-            key="crm_editor",
-        )
+  if not df_crm.empty:
+    st.write("Modifiez les statuts pour synchroniser avec HubSpot :")
 
-        if st.button("💾 Enregistrer les modifications de statut"):
-          edited_df.to_csv(CRM_FILE, index=False)
-          st.success("✅ Statuts mis à jour avec succès !")
-
-        st.markdown("---")
-        devis_selectionne = st.selectbox(
-            "Télécharger le PDF d'un devis",
-            df_crm["Numero_Devis"].tolist(),
-            key="select_crm",
-        )
-        ligne_dev = df_crm[
-            df_crm["Numero_Devis"] == devis_selectionne
-        ].iloc[0]
-        if pd.notna(ligne_dev.get("PDF_Path")) and os.path.exists(
-            str(ligne_dev["PDF_Path"])
-        ):
-          with open(ligne_dev["PDF_Path"], "rb") as pdf_file:
-            st.download_button(
-                "📥 Télécharger le PDF de ce devis",
-                pdf_file,
-                file_name=os.path.basename(ligne_dev["PDF_Path"]),
-                mime="application/pdf",
+    edited_df = st.data_editor(
+        df_crm,
+        column_config={
+            "Statut": st.column_config.SelectboxColumn(
+                "Statut du Devis",
+                help="Statut synchronisé avec HubSpot",
+                options=[
+                    "En cours",
+                    "Envoyé",
+                    "Accepté (Gagné)",
+                    "Refusé (Perdu)",
+                ],
+                required=True,
             )
+        },
+        disabled=[
+            col for col in df_crm.columns if col not in ["Statut", "Commercial"]
+        ],
+        use_container_width=True,
+        key="crm_editor",
+    )
+
+    if st.button("💾 Enregistrer et synchroniser HubSpot"):
+      for idx, row in edited_df.iterrows():
+        ancien_statut = df_crm.loc[
+            df_crm["Numero_Devis"] == row["Numero_Devis"], "Statut"
+        ].values[0]
+        nouveau_statut = row["Statut"]
+        if ancien_statut != nouveau_statut:
+          deal_id = row.get("Deal_ID")
+          if pd.notna(deal_id) and str(deal_id).strip() != "":
+            mettre_a_jour_statut_deal_hubspot(deal_id, nouveau_statut)
+          mettre_a_jour_statut_gsheets(row["Numero_Devis"], nouveau_statut)
+      st.success("✅ Statuts mis à jour et synchronisés avec HubSpot !")
+      st.rerun()
+
+    st.markdown("---")
+    st.subheader("🔁 Dupliquer un devis pour modification")
+    devis_a_dupliquer = st.selectbox(
+        "Sélectionner un devis à dupliquer",
+        df_crm["Numero_Devis"].tolist(),
+        key="select_dupli",
+    )
+
+    if st.button("🚀 Charger ce devis dans les articles"):
+      ligne_dupli = df_crm[df_crm["Numero_Devis"] == devis_a_dupliquer].iloc[0]
+      st.session_state["client_entreprise_val"] = str(
+          ligne_dupli.get("Entreprise", "")
+      )
+      st.session_state["client_nom_val"] = str(ligne_dupli.get("Client", ""))
+      st.session_state["client_email_val"] = str(ligne_dupli.get("Email", ""))
+      st.session_state["client_tel_val"] = str(
+          ligne_dupli.get("Telephone", "")
+      )
+      st.success(
+          f"✅ Devis {devis_a_dupliquer} chargé avec succès ! Vous pouvez le"
+          " modifier dans les onglets Articles."
+      )
+
+    st.markdown("---")
+    st.subheader("📊 Export Ligne par Ligne pour Google Sheets (Marge)")
+    st.write(
+        "Cet export génère un tableau détaillé au fil de l'eau (chaque produit"
+        " de chaque devis sur une ligne distincte) avec les colonnes prêtes pour"
+        " renseigner vos coûts de revient et calculer les marges."
+    )
+
+    if st.button("📥 Générer l'export CSV détaillé (Append au fil de l'eau)"):
+      lignes_export_global = []
+      for _, row in df_crm.iterrows():
+        lignes_json = row.get("Lignes_Articles", "[]")
+        if pd.notna(lignes_json) and str(lignes_json).strip():
+          try:
+            arts = json.loads(lignes_json)
+            for art in arts:
+              lignes_export_global.append({
+                  "Date_Devis": row["Date"],
+                  "Numero_Devis": row["Numero_Devis"],
+                  "Commercial": row["Commercial"],
+                  "Client": row["Client"],
+                  "Entreprise": row["Entreprise"],
+                  "Statut_Devis": row["Statut"],
+                  "Type_Univers": art.get("type_univers"),
+                  "Nom_Article": art.get("nom_article"),
+                  "Quantite": art.get("quantite"),
+                  "Prix_Vente_Unit_HT": art.get("prix_vet_unit"),
+                  "Total_Vente_HT": art.get("quantite")
+                  * art.get("prix_vet_unit"),
+                  "Cout_Revient_Unit_HT": (
+                      ""
+                  ),  # Laissé vide pour saisie manuelle dans Google Sheets
+                  "Marge_Brute_Totale": "",  # Formule Google Sheet à insérer
+                  "Coefficient": "",  # Formule Google Sheet à insérer
+              })
+          except:
+            pass
+
+      if lignes_export_global:
+        df_export_details = pd.DataFrame(lignes_export_global)
+        csv_export = df_export_details.to_csv(index=False).encode("utf-8")
+        st.download_button(
+            "📥 Télécharger le fichier CSV d'export détaillé",
+            csv_export,
+            file_name="export_suivi_marge_apex.csv",
+            mime="text/csv",
+        )
       else:
-        st.info("No devis in CRM.")
-    except Exception as e_crm:
-      st.info(f"CRM vide ou en cours d'initialisation ({e_crm}).")
+        st.warning("Aucune ligne d'article détaillée trouvée à exporter.")
   else:
-    st.info("CRM vide.")
+    st.info(
+        "Aucun devis dans le CRM pour le moment. Générez votre premier devis"
+        " depuis l'onglet Général."
+    )
