@@ -6,3 +6,4 @@ xlsxwriter
 openpyxl
 gspread
 oauth2client
+google-auth
