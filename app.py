@@ -10,110 +10,92 @@ from reportlab.platypus import Image as RLImage, Paragraph, SimpleDocTemplate, S
 import pandas as pd
 import requests
 import streamlit as st
-from streamlit_gsheets import GSheetsConnection
+import gspread
+from google.oauth2.service_account import Credentials
 
 st.set_page_config(page_title="Gestionnaire de Devis - APEX", layout="wide")
 
-# --- GESTION DES FICHIERS & GOOGLE SHEETS ---
-COMPTEUR_FILE = "compteur_devis.json"
-CATALOGUE_FILE = "catalogue_print.xlsx"
-PDF_DIR = "devis_pdf"
+# --- CONNEXION GOOGLE SHEETS DIRECTE (GSPREAD) ---
+SCOPES = [
+    "https://www.googleapis.com/auth/spreadsheets",
+    "https://www.googleapis.com/auth/drive",
+]
 
-if not os.path.exists(PDF_DIR):
-  os.makedirs(PDF_DIR)
-
-
-def obtenir_prochain_numero_devis():
-  annee = datetime.now().strftime("%Y")
-  mois = datetime.now().strftime("%m")
-  jour = datetime.now().strftime("%d")
-  prefix = f"{annee}/{mois}/{jour}"
-  seq = 1
-  if os.path.exists(COMPTEUR_FILE):
+def obtenir_client_gspread():
     try:
-      with open(COMPTEUR_FILE, "r") as f:
-        data = json.load(f)
-        dernier = data.get("dernier_num", "")
-        if "_" in dernier and dernier.startswith(prefix):
-          parts = dernier.split("_")
-          if len(parts) > 1 and parts[1].isdigit():
-            seq = int(parts[1]) + 1
-    except:
-      seq = 1
-  nouveau = f"{prefix}_{seq:08d}"
-  try:
-    with open(COMPTEUR_FILE, "w") as f:
-      json.dump({"dernier_num": nouveau}, f)
-  except:
-    pass
-  return nouveau
+        # Récupération des secrets depuis Streamlit Cloud
+        if "gcp_service_account" in st.secrets:
+            creds_dict = dict(st.secrets["gcp_service_account"])
+            creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
+            client = gspread.authorize(creds)
+            return client
+    except Exception as e:
+        st.error(f"Erreur d'authentification Google Sheets : {e}")
+    return None
 
-
-# --- CONNEXION GOOGLE SHEETS PERMANENTE ---
 def charger_crm_gsheets():
-  try:
-    conn = st.connection("gsheets", type=GSheetsConnection)
-    df = conn.read(spreadsheet="CRM_Apex", ttl=0)
-    if df is not None and not df.empty:
-      return df
-  except Exception as e:
-    pass
-  # DataFrame vide par défaut si la feuille est vide ou introuvable
-  return pd.DataFrame(
-      columns=[
-          "Numero_Devis",
-          "Date",
-          "Client",
-          "Contact",
-          "Email",
-          "Telephone",
-          "Total_HT",
-          "Total_TTC",
-          "Statut",
-          "Commercial",
-          "Mode_Reglement",
-          "PDF_Path",
-          "Deal_ID",
-          "Lignes_Articles",
-      ]
-  )
-
+    client = obtenir_client_gspread()
+    if client:
+        try:
+            sheet = client.open("CRM_Apex").sheet1
+            data = sheet.get_all_records()
+            if data:
+                return pd.DataFrame(data)
+        except Exception as e:
+            pass
+    return pd.DataFrame(
+        columns=[
+            "Numero_Devis",
+            "Date",
+            "Client",
+            "Contact",
+            "Email",
+            "Telephone",
+            "Total_HT",
+            "Total_TTC",
+            "Statut",
+            "Commercial",
+            "Mode_Reglement",
+            "PDF_Path",
+            "Deal_ID",
+            "Lignes_Articles",
+        ]
+    )
 
 def enregistrer_dans_crm_gsheets(devis_data):
-  try:
-    conn = st.connection("gsheets", type=GSheetsConnection)
-    df_crm = charger_crm_gsheets()
+    client = obtenir_client_gspread()
+    if client:
+        try:
+            sheet = client.open("CRM_Apex").sheet1
+            df_crm = charger_crm_gsheets()
 
-    # Si le devis existe déjà, on le met à jour, sinon on l'ajoute
-    if not df_crm.empty and "Numero_Devis" in df_crm.columns:
-      mask = df_crm["Numero_Devis"] == devis_data["Numero_Devis"]
-      if mask.any():
-        for col, val in devis_data.items():
-          df_crm.loc[mask, col] = val
-      else:
-        df_crm = pd.concat(
-            [df_crm, pd.DataFrame([devis_data])], ignore_index=True
-        )
-    else:
-      df_crm = pd.DataFrame([devis_data])
+            if not df_crm.empty and "Numero_Devis" in df_crm.columns:
+                mask = df_crm["Numero_Devis"] == devis_data["Numero_Devis"]
+                if mask.any():
+                    for col, val in devis_data.items():
+                        df_crm.loc[mask, col] = val
+                else:
+                    df_crm = pd.concat([df_crm, pd.DataFrame([devis_data])], ignore_index=True)
+            else:
+                df_crm = pd.DataFrame([devis_data])
 
-    conn.update(spreadsheet="CRM_Apex", data=df_crm)
-  except Exception as e:
-    st.error(f"Erreur d'enregistrement Google Sheets : {e}")
-
+            sheet.clear()
+            sheet.update([df_crm.columns.values.tolist()] + df_crm.values.tolist())
+        except Exception as e:
+            st.error(f"Erreur d'enregistrement Google Sheets : {e}")
 
 def mettre_a_jour_statut_gsheets(numero_devis, nouveau_statut):
-  try:
-    conn = st.connection("gsheets", type=GSheetsConnection)
-    df_crm = charger_crm_gsheets()
-    if not df_crm.empty and "Numero_Devis" in df_crm.columns:
-      df_crm.loc[df_crm["Numero_Devis"] == numero_devis, "Statut"] = (
-          nouveau_statut
-      )
-      conn.update(spreadsheet="CRM_Apex", data=df_crm)
-  except:
-    pass
-
+    client = obtenir_client_gspread()
+    if client:
+        try:
+            sheet = client.open("CRM_Apex").sheet1
+            df_crm = charger_crm_gsheets()
+            if not df_crm.empty and "Numero_Devis" in df_crm.columns:
+                df_crm.loc[df_crm["Numero_Devis"] == numero_devis, "Statut"] = nouveau_statut
+                sheet.clear()
+                sheet.update([df_crm.columns.values.tolist()] + df_crm.values.tolist())
+        except:
+            pass
 
 # --- MOTEUR DE LECTURE EXCEL INTELLIGENT ---
 def charger_catalogue_print():
