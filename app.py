@@ -103,12 +103,13 @@ def enregistrer_dans_crm_gsheets(devis_data):
 
   client = obtenir_client_gspread()
   if not client:
-    st.error("❌ Erreur : Impossible de se connecter à Google Sheets (Vérifiez les secrets).")
+    st.error("❌ Erreur : Impossible de se connecter à Google Sheets.")
     return
 
   try:
+    # On ouvre explicitement le classeur "CRM_Apex"
     sh = client.open("CRM_Apex")
-    sheet = sh.sheet1
+    sheet = sh.sheet1  # C'est la toute première feuille (onglet) du classeur
 
     entetes_actuels = sheet.row_values(1)
 
@@ -129,9 +130,13 @@ def enregistrer_dans_crm_gsheets(devis_data):
     else:
       sheet.append_row(ligne_a_ecrire)
 
-    st.success("✅ Devis enregistré avec succès dans le CRM Google Sheets !")
+    # 🔍 Message de confirmation détaillé avec le titre de la feuille active
+    st.success(
+        f"✅ Succès total ! Écrit dans le fichier 'CRM_Apex', onglet"
+        f" '{sheet.title}', ligne numéro : {cellule_num.row if cellule_num else 'Nouvelle ligne en bas'}"
+    )
+
   except Exception as e:
-    # ⚠️ Ceci affichera l'erreur exacte à l'écran si l'écriture échoue
     st.error(f"❌ Erreur détaillée lors de l'enregistrement CRM : {str(e)}")
 
 
