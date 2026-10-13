@@ -12,6 +12,7 @@ import requests
 import streamlit as st
 import gspread
 from google.oauth2.service_account import Credentials
+CATALOGUE_FILE = "catalogue_print.xlsx"
 
 st.set_page_config(page_title="Gestionnaire de Devis - APEX", layout="wide")
 
