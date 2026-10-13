@@ -93,26 +93,33 @@ def charger_crm_gsheets():
     )
 
 def enregistrer_dans_crm_gsheets(devis_data):
-    client = obtenir_client_gspread()
-    if client:
-        try:
-            sheet = client.open("CRM_Apex").sheet1
-            df_crm = charger_crm_gsheets()
+  client = obtenir_client_gspread()
+  if client:
+    try:
+      # Test d'ouverture explicite
+      sh = client.open("CRM_Apex")
+      sheet = sh.sheet1
+      df_crm = charger_crm_gsheets()
 
-            if not df_crm.empty and "Numero_Devis" in df_crm.columns:
-                mask = df_crm["Numero_Devis"] == devis_data["Numero_Devis"]
-                if mask.any():
-                    for col, val in devis_data.items():
-                        df_crm.loc[mask, col] = val
-                else:
-                    df_crm = pd.concat([df_crm, pd.DataFrame([devis_data])], ignore_index=True)
-            else:
-                df_crm = pd.DataFrame([devis_data])
+      if not df_crm.empty and "Numero_Devis" in df_crm.columns:
+        mask = df_crm["Numero_Devis"] == devis_data["Numero_Devis"]
+        if mask.any():
+          for col, val in devis_data.items():
+            df_crm.loc[mask, col] = val
+        else:
+          df_crm = pd.concat(
+              [df_crm, pd.DataFrame([devis_data])], ignore_index=True
+          )
+      else:
+        df_crm = pd.DataFrame([devis_data])
 
-            sheet.clear()
-            sheet.update([df_crm.columns.values.tolist()] + df_crm.values.tolist())
-        except Exception as e:
-            st.error(f"Erreur d'enregistrement Google Sheets : {e}")
+      sheet.clear()
+      sheet.update(
+          [df_crm.columns.values.tolist()] + df_crm.values.tolist()
+      )
+      st.success("✅ Écriture Google Sheets réussie !")
+    except Exception as e:
+      st.error(f"❌ Erreur Google Sheets détaillée : {e}")
 
 def mettre_a_jour_statut_gsheets(numero_devis, nouveau_statut):
     client = obtenir_client_gspread()
