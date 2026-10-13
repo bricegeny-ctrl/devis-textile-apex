@@ -1338,7 +1338,8 @@ with onglets[10]:
 
       # 2. Enregistrement persistant dans Google Sheets (CRM_Apex)
       enregistrer_dans_crm_gsheets(data_crm)
-
+      st.rerun()
+      
       try:
         doc = SimpleDocTemplate(
             pdf_filename,
