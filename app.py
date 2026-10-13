@@ -103,10 +103,7 @@ def enregistrer_dans_crm_gsheets(devis_data):
 
   client = obtenir_client_gspread()
   if not client:
-    st.error(
-        "❌ Erreur : Impossible de se connecter à Google Sheets (Vérifiez les"
-        " secrets)."
-    )
+    st.error("❌ Erreur : Impossible de se connecter à Google Sheets (Vérifiez les secrets).")
     return
 
   try:
@@ -134,6 +131,7 @@ def enregistrer_dans_crm_gsheets(devis_data):
 
     st.success("✅ Devis enregistré avec succès dans le CRM Google Sheets !")
   except Exception as e:
+    # ⚠️ Ceci affichera l'erreur exacte à l'écran si l'écriture échoue
     st.error(f"❌ Erreur détaillée lors de l'enregistrement CRM : {str(e)}")
 
 
