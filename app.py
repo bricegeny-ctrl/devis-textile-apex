@@ -91,39 +91,51 @@ def charger_crm_gsheets():
     )
 
 def enregistrer_dans_crm_gsheets(devis_data):
-  # 1. NETTOYAGE DES VALEURS NAN (à placer ici)
-  devis_data_propre = {}
-  for k, v in devis_data.items():
-    if pd.isna(v):
-      devis_data_propre[k] = ""
-    else:
-      devis_data_propre[k] = v
+  # 1. Nettoyage des valeurs NaN
+  devis_data_propre = {
+      k: ("" if pd.isna(v) else v) for k, v in devis_data.items()
+  }
 
-  # 2. Authentification et écriture (utilisez devis_data_propre à la place de devis_data)
   client = obtenir_client_gspread()
   if client:
     try:
       sh = client.open("CRM_Apex")
       sheet = sh.sheet1
-      df_crm = charger_crm_gsheets()
 
-      if not df_crm.empty and "Numero_Devis" in df_crm.columns:
-        mask = df_crm["Numero_Devis"] == devis_data_propre["Numero_Devis"]
-        if mask.any():
-          for col, val in devis_data_propre.items():
-            df_crm.loc[mask, col] = val
-        else:
-          df_crm = pd.concat(
-              [df_crm, pd.DataFrame([devis_data_propre])], ignore_index=True
-          )
+      # 2. Récupérer les en-têtes existants de votre Google Sheet (avec vos colonnes perso)
+      entetes_actuels = sheet.row_values(1)
+
+      # Si la feuille est vide, on initialise les en-têtes avec les clés du devis
+      if not entetes_actuels:
+        entetes_actuels = list(devis_data_propre.keys())
+        sheet.append_row(entetes_actuels)
+
+      # 3. Vérifier si ce devis existe déjà (par son numéro)
+      cellule_num = None
+      try:
+        cellule_num = sheet.find(str(devis_data_propre.get("Numero_Devis", "")))
+      except gspread.exceptions.CellNotFound:
+        pass
+
+      # Préparer la ligne dans l'ordre exact des colonnes de VOTRE tableau
+      ligne_a_ecrire = [
+          devis_data_propre.get(col, "") for col in entetes_actuels
+      ]
+
+      if cellule_num:
+        # Si le devis existe déjà, on met à jour uniquement sa ligne
+        sheet.update(
+            f"A{cellule_num.row}:{chr(64 + len(entetes_actuels))}{cellule_num.row}",
+            [ligne_a_ecrire],
+        )
       else:
-        df_crm = pd.DataFrame([devis_data_propre])
+        # Si c'est un nouveau devis, on l'ajoute tout en bas sans toucher aux colonnes à droite
+        sheet.append_row(ligne_a_ecrire)
 
-      sheet.clear()
-      sheet.update(
-          [df_crm.columns.values.tolist()] + df_crm.values.tolist()
+      st.success(
+          "✅ Données enregistrées dans Google Sheets sans toucher à vos"
+          " colonnes !"
       )
-      st.success("✅ Données enregistrées dans Google Sheets et HubSpot !")
     except Exception as e:
       st.error(f"❌ Erreur : {e}")
 
