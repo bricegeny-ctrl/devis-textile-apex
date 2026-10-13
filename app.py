@@ -1331,11 +1331,12 @@ with onglets[10]:
           "Deal_ID": "",
       }
 
+      # 1. Synchronisation HubSpot
       deal_id = synchroniser_avec_hubspot(data_crm)
       if deal_id:
         data_crm["Deal_ID"] = deal_id
 
-      # Enregistrement persistant dans Google Sheets (CRM_Apex)
+      # 2. Enregistrement persistant dans Google Sheets (CRM_Apex)
       enregistrer_dans_crm_gsheets(data_crm)
 
       try:
