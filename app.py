@@ -52,16 +52,14 @@ SCOPES = [
 ]
 
 def obtenir_client_gspread():
-    try:
-        # Récupération des secrets depuis Streamlit Cloud
-        if "gcp_service_account" in st.secrets:
-            creds_dict = dict(st.secrets["gcp_service_account"])
-            creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
-            client = gspread.authorize(creds)
-            return client
-    except Exception as e:
-        st.error(f"Erreur d'authentification Google Sheets : {e}")
-    return None
+  try:
+    if "gcp_service_account" in st.secrets:
+      creds_dict = dict(st.secrets["gcp_service_account"])
+      creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
+      return gspread.authorize(creds)
+  except Exception as e:
+    st.error(f"Erreur d'authentification Google Sheets : {e}")
+  return None
 
 def charger_crm_gsheets():
     client = obtenir_client_gspread()
