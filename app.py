@@ -14,6 +14,10 @@ import gspread
 from google.oauth2.service_account import Credentials
 CATALOGUE_FILE = "catalogue_print.xlsx"
 
+COMPTEUR_FILE = "compteur_devis.json"
+CATALOGUE_FILE = "catalogue_print.xlsx"
+PDF_DIR = "devis_pdf"
+
 st.set_page_config(page_title="Gestionnaire de Devis - APEX", layout="wide")
 
 def obtenir_prochain_numero_devis():
