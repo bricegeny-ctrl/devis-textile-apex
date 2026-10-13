@@ -91,7 +91,11 @@ def charger_crm_gsheets():
     )
 
 def enregistrer_dans_crm_gsheets(devis_data):
-  # 1. Nettoyage des valeurs NaN
+  # On retire la colonne des lignes articles si elle existe pour ne garder que le résumé global
+  if "Lignes_Articles" in devis_data:
+    devis_data.pop("Lignes_Articles")
+
+  # Nettoyage des valeurs vides/NaN
   devis_data_propre = {
       k: ("" if pd.isna(v) else v) for k, v in devis_data.items()
   }
@@ -102,42 +106,34 @@ def enregistrer_dans_crm_gsheets(devis_data):
       sh = client.open("CRM_Apex")
       sheet = sh.sheet1
 
-      # 2. Récupérer les en-têtes existants de votre Google Sheet (avec vos colonnes perso)
       entetes_actuels = sheet.row_values(1)
 
-      # Si la feuille est vide, on initialise les en-têtes avec les clés du devis
       if not entetes_actuels:
         entetes_actuels = list(devis_data_propre.keys())
         sheet.append_row(entetes_actuels)
 
-      # 3. Vérifier si ce devis existe déjà (par son numéro)
+      # Vérifier si le devis existe déjà pour le mettre à jour, sinon l'ajouter en bas
       cellule_num = None
       try:
         cellule_num = sheet.find(str(devis_data_propre.get("Numero_Devis", "")))
       except gspread.exceptions.CellNotFound:
         pass
 
-      # Préparer la ligne dans l'ordre exact des colonnes de VOTRE tableau
       ligne_a_ecrire = [
           devis_data_propre.get(col, "") for col in entetes_actuels
       ]
 
       if cellule_num:
-        # Si le devis existe déjà, on met à jour uniquement sa ligne
         sheet.update(
             f"A{cellule_num.row}:{chr(64 + len(entetes_actuels))}{cellule_num.row}",
             [ligne_a_ecrire],
         )
       else:
-        # Si c'est un nouveau devis, on l'ajoute tout en bas sans toucher aux colonnes à droite
         sheet.append_row(ligne_a_ecrire)
 
-      st.success(
-          "✅ Données enregistrées dans Google Sheets sans toucher à vos"
-          " colonnes !"
-      )
+      st.success("✅ Devis enregistré proprement dans le CRM !")
     except Exception as e:
-      st.error(f"❌ Erreur : {e}")
+      st.error(f"❌ Erreur d'enregistrement CRM : {e}")
 
 # --- MOTEUR DE LECTURE EXCEL INTELLIGENT ---
 def charger_catalogue_print():
