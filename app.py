@@ -16,6 +16,31 @@ CATALOGUE_FILE = "catalogue_print.xlsx"
 
 st.set_page_config(page_title="Gestionnaire de Devis - APEX", layout="wide")
 
+def obtenir_prochain_numero_devis():
+  annee = datetime.now().strftime("%Y")
+  mois = datetime.now().strftime("%m")
+  jour = datetime.now().strftime("%d")
+  prefix = f"{annee}/{mois}/{jour}"
+  seq = 1
+  if os.path.exists(COMPTEUR_FILE):
+    try:
+      with open(COMPTEUR_FILE, "r") as f:
+        data = json.load(f)
+        dernier = data.get("dernier_num", "")
+        if "_" in dernier and dernier.startswith(prefix):
+          parts = dernier.split("_")
+          if len(parts) > 1 and parts[1].isdigit():
+            seq = int(parts[1]) + 1
+    except:
+      seq = 1
+  nouveau = f"{prefix}_{seq:08d}"
+  try:
+    with open(COMPTEUR_FILE, "w") as f:
+      json.dump({"dernier_num": nouveau}, f)
+  except:
+    pass
+  return nouveau
+
 # --- CONNEXION GOOGLE SHEETS DIRECTE (GSPREAD) ---
 SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
