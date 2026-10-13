@@ -93,46 +93,44 @@ def charger_crm_gsheets():
     )
 
 def enregistrer_dans_crm_gsheets(devis_data):
-  client = obtenir_client_gspread()
-  if client:
-    try:
-      # Test d'ouverture explicite
-      sh = client.open("CRM_Apex")
-      sheet = sh.sheet1
-      df_crm = charger_crm_gsheets()
+  # 1. Test direct de l'authentification avec les secrets Streamlit
+  if "gcp_service_account" not in st.secrets:
+    st.error("❌ Le secret 'gcp_service_account' est introuvable dans Streamlit !")
+    return
 
-      if not df_crm.empty and "Numero_Devis" in df_crm.columns:
-        mask = df_crm["Numero_Devis"] == devis_data["Numero_Devis"]
-        if mask.any():
-          for col, val in devis_data.items():
-            df_crm.loc[mask, col] = val
-        else:
-          df_crm = pd.concat(
-              [df_crm, pd.DataFrame([devis_data])], ignore_index=True
-          )
+  creds_dict = dict(st.secrets["gcp_service_account"])
+  creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
+  client = gspread.authorize(creds)
+
+  # 2. Test d'ouverture du fichier et écriture forcée
+  try:
+    sh = client.open("CRM_Apex")
+    sheet = sh.sheet1
+    
+    # Lecture directe
+    existing_data = sheet.get_all_records()
+    if existing_data:
+      df_crm = pd.DataFrame(existing_data)
+    else:
+      df_crm = pd.DataFrame(columns=list(devis_data.keys()))
+
+    # Ajout ou mise à jour
+    if not df_crm.empty and "Numero_Devis" in df_crm.columns:
+      mask = df_crm["Numero_Devis"] == devis_data["Numero_Devis"]
+      if mask.any():
+        for col, val in devis_data.items():
+          df_crm.loc[mask, col] = val
       else:
-        df_crm = pd.DataFrame([devis_data])
+        df_crm = pd.concat([df_crm, pd.DataFrame([devis_data])], ignore_index=True)
+    else:
+      df_crm = pd.DataFrame([devis_data])
 
-      sheet.clear()
-      sheet.update(
-          [df_crm.columns.values.tolist()] + df_crm.values.tolist()
-      )
-      st.success("✅ Écriture Google Sheets réussie !")
-    except Exception as e:
-      st.error(f"❌ Erreur Google Sheets détaillée : {e}")
-
-def mettre_a_jour_statut_gsheets(numero_devis, nouveau_statut):
-    client = obtenir_client_gspread()
-    if client:
-        try:
-            sheet = client.open("CRM_Apex").sheet1
-            df_crm = charger_crm_gsheets()
-            if not df_crm.empty and "Numero_Devis" in df_crm.columns:
-                df_crm.loc[df_crm["Numero_Devis"] == numero_devis, "Statut"] = nouveau_statut
-                sheet.clear()
-                sheet.update([df_crm.columns.values.tolist()] + df_crm.values.tolist())
-        except:
-            pass
+    # Mise à jour sur Google Sheets
+    sheet.clear()
+    sheet.update([df_crm.columns.values.tolist()] + df_crm.values.tolist())
+    st.success("✅ Succès total : Données écrites dans Google Sheets !")
+  except Exception as e:
+    st.error(f"❌ ERREUR BLOCK GOOGLE SHEETS : {e}")
 
 # --- MOTEUR DE LECTURE EXCEL INTELLIGENT ---
 def charger_catalogue_print():
