@@ -91,7 +91,7 @@ def charger_crm_gsheets():
     )
 
 def enregistrer_dans_crm_gsheets(devis_data):
-  # On retire la colonne des lignes articles si elle existe pour ne garder que le résumé global
+  # On retire la colonne des lignes articles pour ne garder que le résumé global
   if "Lignes_Articles" in devis_data:
     devis_data.pop("Lignes_Articles")
 
@@ -101,39 +101,49 @@ def enregistrer_dans_crm_gsheets(devis_data):
   }
 
   client = obtenir_client_gspread()
-  if client:
+  if not client:
+    st.error(
+        "❌ Erreur : Impossible de se connecter à Google Sheets (Vérifiez les"
+        " secrets)."
+    )
+    return
+
+  try:
+    # ⚠️ Vérifiez bien que votre fichier s'appelle exactement "CRM_Apex" dans votre Google Drive
+    sh = client.open("CRM_Apex")
+    sheet = sh.sheet1
+
+    entetes_actuels = sheet.row_values(1)
+
+    if not entetes_actuels:
+      entetes_actuels = list(devis_data_propre.keys())
+      sheet.append_row(entetes_actuels)
+
+    # Préparer la ligne dans l'ordre exact des colonnes
+    ligne_a_ecrire = [devis_data_propre.get(col, "") for col in entetes_actuels]
+
+    # Vérifier si le devis existe déjà
+    cellule_num = None
     try:
-      sh = client.open("CRM_Apex")
-      sheet = sh.sheet1
+      cellule_num = sheet.find(str(devis_data_propre.get("Numero_Devis", "")))
+    except Exception:
+      pass
 
-      entetes_actuels = sheet.row_values(1)
+    if cellule_num:
+      # Mise à jour de la ligne existante de manière sécurisée par index de ligne
+      sheet.update(
+          f"A{cellule_num.row}", [ligne_a_ecrire]
+      )  # gspread gère l'élargissement automatique
+    else:
+      # Ajout en bas de tableau
+      sheet.append_row(ligne_a_ecrire)
 
-      if not entetes_actuels:
-        entetes_actuels = list(devis_data_propre.keys())
-        sheet.append_row(entetes_actuels)
-
-      # Vérifier si le devis existe déjà pour le mettre à jour, sinon l'ajouter en bas
-      cellule_num = None
-      try:
-        cellule_num = sheet.find(str(devis_data_propre.get("Numero_Devis", "")))
-      except gspread.exceptions.CellNotFound:
-        pass
-
-      ligne_a_ecrire = [
-          devis_data_propre.get(col, "") for col in entetes_actuels
-      ]
-
-      if cellule_num:
-        sheet.update(
-            f"A{cellule_num.row}:{chr(64 + len(entetes_actuels))}{cellule_num.row}",
-            [ligne_a_ecrire],
-        )
-      else:
-        sheet.append_row(ligne_a_ecrire)
-
-      st.success("✅ Devis enregistré proprement dans le CRM !")
-    except Exception as e:
-      st.error(f"❌ Erreur d'enregistrement CRM : {e}")
+    st.success("✅ Devis enregistré avec succès dans le CRM Google Sheets !")
+  except Exception as e:
+    # Affichage de l'erreur exacte pour comprendre d'où ça vient
+    st.error(
+        f"❌ Erreur détaillée lors de l'enregistrement CRM : {str(e)}"
+    )
 
 # --- MOTEUR DE LECTURE EXCEL INTELLIGENT ---
 def charger_catalogue_print():
