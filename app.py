@@ -1302,8 +1302,11 @@ with onglets[10]:
 
     if st.button("📄 Générer le numéro de devis et le PDF"):
       num_devis = obtenir_prochain_numero_devis()
+      
+      # Création indispensable du dossier PDF s'il n'existe pas
       if not os.path.exists(PDF_DIR):
         os.makedirs(PDF_DIR)
+        
       pdf_filename = os.path.join(
           PDF_DIR, f"Devis_{num_devis.replace('/', '_')}.pdf"
       )
@@ -1315,6 +1318,9 @@ with onglets[10]:
           if client_siret
           else ""
       )
+      
+      # On sérialise les articles pour pouvoir les recharger plus tard si besoin
+      lignes_export_str = json.dumps(articles_saisis, ensure_ascii=False)
 
       data_crm = {
           "Date": datetime.now().strftime("%Y-%m-%d %H:%M"),
@@ -1332,6 +1338,7 @@ with onglets[10]:
           "Mode_Reglement": mode_reglement,
           "PDF_Path": pdf_filename,
           "Deal_ID": "",
+          "Lignes_Articles": lignes_export_str, # Gardé en mémoire pour la duplication
       }
 
       # 1. Synchronisation HubSpot
@@ -1341,8 +1348,8 @@ with onglets[10]:
 
       # 2. Enregistrement persistant dans Google Sheets (CRM_Apex)
       enregistrer_dans_crm_gsheets(data_crm)
-      st.rerun()
-      
+
+      # 3. Génération effective du fichier PDF via ReportLab
       try:
         doc = SimpleDocTemplate(
             pdf_filename,
@@ -1606,10 +1613,11 @@ with onglets[10]:
 
         doc.build(story)
         st.success(
-            f"Devis PDF professionnel généré sous le numéro : **{num_devis}**"
+            f"✅ Devis PDF professionnel généré avec succès sous le numéro : **{num_devis}**"
         )
+        st.rerun() # Actualise l'affichage pour rendre le bouton de téléchargement visible instantanément
       except Exception as e_pdf:
-        st.error(f"Erreur lors de la génération du PDF : {e_pdf}")
+        st.error(f"❌ Erreur lors de la génération du PDF : {e_pdf}")
 
     if "dernier_pdf" in st.session_state:
       pdf_filename = st.session_state["dernier_pdf"]
@@ -1648,6 +1656,7 @@ with onglets[10]:
         )
 
 # --- ONGLET SUIVI CRM ---
+# --- ONGLET SUIVI CRM ---
 with onglets[11]:
   st.header("📈 Suivi CRM & Duplication Devis (Google Sheets)")
   df_crm = charger_crm_gsheets()
@@ -1674,7 +1683,7 @@ with onglets[11]:
                     "Accepté (Gagné)",
                     "Refusé (Perdu)",
                 ],
-                required=True,
+                required=False,
             )
         },
         disabled=[
@@ -1718,6 +1727,15 @@ with onglets[11]:
       st.session_state["client_tel_val"] = str(
           ligne_dupli.get("Telephone", "")
       )
+      
+      # Chargement sécurisé des lignes si la colonne est présente dans le Google Sheet
+      lignes_json = ligne_dupli.get("Lignes_Articles", "")
+      if pd.notna(lignes_json) and str(lignes_json).strip():
+        try:
+          st.session_state["articles_dupliques"] = json.loads(lignes_json)
+        except:
+          pass
+
       st.success(
           f"✅ Devis {devis_a_dupliquer} chargé avec succès ! Vous pouvez le"
           " modifier dans les onglets Articles."
