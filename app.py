@@ -1132,8 +1132,11 @@ with onglets[10]:
       q = item["quantite"]
       taux_remise = item["remise_fidelite"] / 100.0
       prix_original = item["prix_vet_unit"]
+      
+      # Application de la réduction sur le support
       px_support = prix_original * (1.0 - taux_remise)
       tot_support = q * px_support
+      
       marquages_calcules = []
       tot_marquages = 0.0
 
@@ -1142,19 +1145,23 @@ with onglets[10]:
           cle = (m["technique"], m["emplacement"])
           qte_tot_ref = quantites_cumulees_marquages.get(cle, q)
           if "Broderie" in m["technique"]:
-            tarif_m = obtenir_tarif_broderie_unitaire(
+            tarif_m_brut = obtenir_tarif_broderie_unitaire(
                 m["emplacement"], qte_tot_ref
             )
             has_broderie_global = True
             quantite_totale_broderie += q
           else:
-            tarif_m = obtenir_tarif_dtf_unitaire(
+            tarif_m_brut = obtenir_tarif_dtf_unitaire(
                 m["technique"], m["emplacement"], qte_tot_ref
             )
+          
+          # Application de la même réduction sur le tarif du marquage
+          tarif_m = tarif_m_brut * (1.0 - taux_remise)
           tot_marquages += tarif_m * q
           marquages_calcules.append({
               "nom": f"{m['technique']} ({m['emplacement']})",
               "tarif": tarif_m,
+              "tarif_brut": tarif_m_brut,
           })
 
       frais_prog_broderie = (
@@ -1168,73 +1175,21 @@ with onglets[10]:
       )
 
       coût_ens_unit = (
-          (
-              1.38
-              if q <= 11
-              else (
-                  1.24
-                  if q <= 24
-                  else (
-                      1.17
-                      if q <= 49
-                      else (
-                          1.11
-                          if q <= 99
-                          else (
-                              1.08
-                              if q <= 249
-                              else (1.06 if q <= 499 else 1.00)
-                          )
-                      )
-                  )
-              )
-          )
+          (1.38 if q <= 11 else (1.24 if q <= 24 else (1.17 if q <= 49 else (1.11 if q <= 99 else (1.08 if q <= 249 else (1.06 if q <= 499 else 1.00))))))
           if item["option_ensachage"]
           else 0.0
       )
       tot_ens = coût_ens_unit * q
 
       coût_ass_unit = (
-          (
-              3.08
-              if q <= 11
-              else (
-                  2.38
-                  if q <= 24
-                  else (
-                      1.83
-                      if q <= 49
-                      else (
-                          1.25
-                          if q <= 99
-                          else (
-                              0.98
-                              if q <= 249
-                              else (
-                                  0.70
-                                  if q <= 499
-                                  else (0.64 if q <= 999 else 0.61)
-                              )
-                          )
-                      )
-                  )
-              )
-          )
+          (3.08 if q <= 11 else (2.38 if q <= 24 else (1.83 if q <= 49 else (1.25 if q <= 99 else (0.98 if q <= 249 else (0.70 if q <= 499 else (0.64 if q <= 999 else 0.61)))))))
           if item["option_assurance"]
           else 0.0
       )
       tot_ass = coût_ass_unit * q
 
       coût_stock_unit = (
-          (
-              1.00
-              if q <= 99
-              else (
-                  0.56
-                  if q <= 249
-                  else (0.50 if q <= 499 else (0.43 if q <= 999 else 0.30))
-              )
-          )
+          (1.00 if q <= 99 else (0.56 if q <= 249 else (0.50 if q <= 499 else (0.43 if q <= 999 else 0.30))))
           if item["option_stockage"]
           else 0.0
       )
@@ -1493,11 +1448,11 @@ with onglets[10]:
               f"{item['prix_vet_unit']*item['quantite']:.2f} €",
           ])
           
-          # Affichage de la ligne de remise si elle existe
+          # Mention claire de la réduction appliquée sur l'ensemble de la ligne
           if item["remise_fidelite"] > 0:
             table_data.append([
                 Paragraph(
-                    f"&nbsp;&nbsp;&bull; Remise commerciale / fidélité : -{item['remise_fidelite']}% (Prix de base : {item['prix_original']:.3f} € HT)",
+                    f"&nbsp;&nbsp;&bull; Réduction commerciale / fidélité : -{item['remise_fidelite']}% (appliquée sur référence et marquages)",
                     style_cell,
                 ),
                 "",
