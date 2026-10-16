@@ -1130,9 +1130,9 @@ with onglets[10]:
 
     for item in articles_saisis:
       q = item["quantite"]
-      px_support = item["prix_vet_unit"] * (
-          1 - item["remise_fidelite"] / 100.0
-      )
+      taux_remise = item["remise_fidelite"] / 100.0
+      prix_original = item["prix_vet_unit"]
+      px_support = prix_original * (1.0 - taux_remise)
       tot_support = q * px_support
       marquages_calcules = []
       tot_marquages = 0.0
@@ -1244,6 +1244,7 @@ with onglets[10]:
       lignes_devis_global.append({
           **item,
           "prix_vet_unit": px_support,
+          "prix_original": prix_original,
           "marquages_calcules": marquages_calcules,
           "frais_prog_broderie": frais_prog_broderie,
           "coût_ensachage_unit": coût_ens_unit,
@@ -1491,6 +1492,19 @@ with onglets[10]:
               f"{item['prix_vet_unit']:.3f} €",
               f"{item['prix_vet_unit']*item['quantite']:.2f} €",
           ])
+          
+          # Affichage de la ligne de remise si elle existe
+          if item["remise_fidelite"] > 0:
+            table_data.append([
+                Paragraph(
+                    f"&nbsp;&nbsp;&bull; Remise commerciale / fidélité : -{item['remise_fidelite']}% (Prix de base : {item['prix_original']:.3f} € HT)",
+                    style_cell,
+                ),
+                "",
+                "",
+                "",
+            ])
+
           for m in item["marquages_calcules"]:
             table_data.append([
                 Paragraph(
@@ -1513,8 +1527,7 @@ with onglets[10]:
           if item["option_assurance"]:
             table_data.append([
                 Paragraph(
-                    "&nbsp;&nbsp;&bull; Option : Assurance MHC (Garantie"
-                    " textile)",
+                    "&nbsp;&nbsp;&bull; Option : Assurance MHC (Garantie textile)",
                     style_cell,
                 ),
                 str(item["quantite"]),
