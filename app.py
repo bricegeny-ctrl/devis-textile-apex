@@ -1669,7 +1669,6 @@ with onglets[10]:
         )
 
 # --- ONGLET SUIVI CRM ---
-# --- ONGLET SUIVI CRM ---
 with onglets[11]:
   st.header("📈 Suivi CRM & Duplication Devis (Google Sheets)")
   df_crm = charger_crm_gsheets()
@@ -1723,26 +1722,45 @@ with onglets[11]:
       st.rerun()
 
     st.markdown("---")
-    st.subheader("🔁 Dupliquer un devis pour modification")
-    devis_a_dupliquer = st.selectbox(
-        "Sélectionner un devis à dupliquer",
-        df_crm["Numero_Devis"].tolist(),
-        key="select_dupli",
-    )
+    st.subheader("🔁 Actions sur un devis (Duplication & Téléchargement PDF)")
+    
+    col_sel1, col_sel2 = st.columns(2)
+    with col_sel1:
+      devis_a_dupliquer = st.selectbox(
+          "Sélectionner un devis",
+          df_crm["Numero_Devis"].tolist(),
+          key="select_dupli",
+      )
+
+    # Récupération de la ligne correspondant au devis sélectionné
+    ligne_selectionnee = df_crm[df_crm["Numero_Devis"] == devis_a_dupliquer].iloc[0]
+    pdf_path_crm = ligne_selectionnee.get("PDF_Path", "")
+
+    with col_sel2:
+      st.write("&nbsp;") # Petit espace d'alignement visuel
+      if pdf_path_crm and os.path.exists(str(pdf_path_crm)):
+        with open(pdf_path_crm, "rb") as f_pdf:
+          st.download_button(
+              label="📥 Télécharger le PDF de ce devis",
+              data=f_pdf,
+              file_name=os.path.basename(pdf_path_crm),
+              mime="application/pdf",
+              key="btn_dl_crm"
+          )
+      else:
+        st.info("ℹ️ Fichier PDF introuvable sur le disque local.")
 
     if st.button("🚀 Charger ce devis dans les articles"):
-      ligne_dupli = df_crm[df_crm["Numero_Devis"] == devis_a_dupliquer].iloc[0]
       st.session_state["client_entreprise_val"] = str(
-          ligne_dupli.get("Entreprise", "")
+          ligne_selectionnee.get("Entreprise", "")
       )
-      st.session_state["client_nom_val"] = str(ligne_dupli.get("Client", ""))
-      st.session_state["client_email_val"] = str(ligne_dupli.get("Email", ""))
+      st.session_state["client_nom_val"] = str(ligne_selectionnee.get("Client", ""))
+      st.session_state["client_email_val"] = str(ligne_selectionnee.get("Email", ""))
       st.session_state["client_tel_val"] = str(
-          ligne_dupli.get("Telephone", "")
+          ligne_selectionnee.get("Telephone", "")
       )
       
-      # Chargement sécurisé des lignes si la colonne est présente dans le Google Sheet
-      lignes_json = ligne_dupli.get("Lignes_Articles", "")
+      lignes_json = ligne_selectionnee.get("Lignes_Articles", "")
       if pd.notna(lignes_json) and str(lignes_json).strip():
         try:
           st.session_state["articles_dupliques"] = json.loads(lignes_json)
