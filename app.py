@@ -1764,7 +1764,12 @@ with onglets[11]:
                 alignment=2,
             )
 
-            # En-tête APEX
+            # --- GESTION DU LOGO APEX ---
+            logo_path = (
+                "logo.png"
+                if os.path.exists("logo.png")
+                else ("logo.jpg" if os.path.exists("logo.jpg") else None)
+            )
             header_text = Paragraph(
                 "<b>APEX - SOLUTIONS VISUELLES, PRINT & TEXTILE</b><br/>Plasne"
                 " (Jura)<br/>Tél (Brice Geny) : 06 32 69 73 28 &nbsp;|&nbsp; Tél"
@@ -1772,7 +1777,16 @@ with onglets[11]:
                 " contact@apex-visual.fr",
                 style_sub,
             )
-            story.append(header_text)
+            if logo_path and os.path.exists(logo_path):
+              img_logo = RLImage(logo_path, width=120, height=50)
+              t_header = Table([[img_logo, header_text]], colWidths=[130, 410])
+              t_header.setStyle(
+                  TableStyle([("VALIGN", (0, 0), (-1, -1), "MIDDLE")])
+              )
+              story.append(t_header)
+            else:
+              story.append(header_text)
+
             story.append(Spacer(1, 10))
             story.append(
                 Paragraph(
@@ -1785,7 +1799,7 @@ with onglets[11]:
             )
             story.append(Spacer(1, 10))
 
-            # Informations Client & Commande
+            # --- INFOS CLIENT ---
             client_nom_val = ligne_selectionnee.get("Client", "")
             client_ent_val = ligne_selectionnee.get("Entreprise", "")
             client_email_val = ligne_selectionnee.get("Email", "")
@@ -1825,7 +1839,7 @@ with onglets[11]:
             story.append(t_info)
             story.append(Spacer(1, 15))
 
-            # Tableau des articles (restaurés depuis le JSON du CRM)
+            # --- RESTAURATION DES ARTICLES DEPUIS LE JSON ---
             table_data = [[
                 Paragraph(
                     "<b>DÉSIGNATION & CARACTÉRISTIQUES</b>", style_cell_bold
@@ -1842,28 +1856,84 @@ with onglets[11]:
                 items_restores = json.loads(lignes_json)
                 for item in items_restores:
                   q = item.get("quantite", 0)
-                  px = item.get("prix_vet_unit", 0)
+                  px_support = item.get("prix_vet_unit", 0)
                   nom = item.get("nom_article", "Article")
+                  sans_marquage = item.get("sans_marquage", False)
+
+                  libelle_support = (
+                      f"<b>Support (Sans marquage) : {nom}</b>"
+                      if sans_marquage
+                      else f"<b>Support : {nom}</b>"
+                  )
                   table_data.append([
-                      Paragraph(f"<b>Support : {nom}</b>", style_cell),
+                      Paragraph(libelle_support, style_cell),
                       str(q),
-                      f"{px:.3f} €",
-                      f"{px * q:.2f} €",
+                      f"{px_support:.3f} €",
+                      f"{px_support * q:.2f} €",
                   ])
+
                   remise = item.get("remise_fidelite", 0)
                   if remise > 0:
+                    prix_orig = item.get("prix_original", px_support)
                     table_data.append([
                         Paragraph(
-                            f"&nbsp;&nbsp;&bull; Réduction commerciale :"
-                            f" -{remise}%",
+                            f"&nbsp;&nbsp;&bull; Réduction commerciale / fidélité"
+                            f" : -{remise}% (Prix de base : {prix_orig:.3f} €"
+                            " HT)",
                             style_cell,
                         ),
                         "",
                         "",
                         "",
                     ])
+
+                  for m in item.get("marquages_calcules", []):
+                    table_data.append([
+                        Paragraph(
+                            f"&nbsp;&nbsp;&bull; Marquage : {m.get('nom', '')}",
+                            style_cell,
+                        ),
+                        str(q),
+                        f"{m.get('tarif', 0):.2f} €",
+                        f"{m.get('tarif', 0) * q:.2f} €",
+                    ])
+
+                  if item.get("option_ensachage", False):
+                    table_data.append([
+                        Paragraph(
+                            f"&nbsp;&nbsp;&bull; Option :"
+                            f" {item.get('type_sachet', 'Ensachage')}",
+                            style_cell,
+                        ),
+                        str(q),
+                        f"{item.get('coût_ensachage_unit', 0):.2f} €",
+                        f"{item.get('coût_ensachage_unit', 0) * q:.2f} €",
+                    ])
+                  if item.get("option_assurance", False):
+                    table_data.append([
+                        Paragraph(
+                            "&nbsp;&nbsp;&bull; Option : Assurance MHC (Garantie"
+                            " textile)",
+                            style_cell,
+                        ),
+                        str(q),
+                        f"{item.get('coût_assurance_unit', 0):.2f} €",
+                        f"{item.get('coût_assurance_unit', 0) * q:.2f} €",
+                    ])
+                  if item.get("option_stockage", False):
+                    table_data.append([
+                        Paragraph(
+                            "&nbsp;&nbsp;&bull; Option : Mise en stockage +"
+                            " picking",
+                            style_cell,
+                        ),
+                        str(q),
+                        f"{item.get('coût_stockage_unit', 0):.2f} €",
+                        f"{item.get('coût_stockage_unit', 0) * q:.2f} €",
+                    ])
                 has_items = True
-              except:
+              except Exception as e_json:
+                print(f"Erreur lecture JSON: {e_json}")
                 pass
 
             if not has_items:
@@ -1931,7 +2001,7 @@ with onglets[11]:
 
             doc.build(story)
             st.success(
-                "✅ PDF régénéré avec le design professionnel complet !"
+                "✅ PDF régénéré avec le design exact et les articles d'origine !"
             )
             st.rerun()
           except Exception as e_reg:
