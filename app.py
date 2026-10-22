@@ -1687,30 +1687,63 @@ with onglets[11]:
           key="select_dupli",
       )
 
-    # Récupération de la ligne correspondant au devis sélectionné
     ligne_selectionnee = df_crm[df_crm["Numero_Devis"] == devis_a_dupliquer].iloc[0]
     pdf_path_crm = ligne_selectionnee.get("PDF_Path", "")
 
     with col_sel2:
-      st.write("&nbsp;") # Petit espace d'alignement visuel
-      if pdf_path_crm and os.path.exists(str(pdf_path_crm)):
-        with open(pdf_path_crm, "rb") as f_pdf:
+      st.write("&nbsp;")
+      chemin_pdf_final = None
+      if pdf_path_crm:
+        if os.path.exists(str(pdf_path_crm)):
+          chemin_pdf_final = str(pdf_path_crm)
+        else:
+          nom_fichier_pdf = os.path.basename(str(pdf_path_crm))
+          tentative_dossier = os.path.join("devis_pdf", nom_fichier_pdf)
+          if os.path.exists(tentative_dossier):
+            chemin_pdf_final = tentative_dossier
+
+      if chemin_pdf_final:
+        with open(chemin_pdf_final, "rb") as f_pdf:
           st.download_button(
               label="📥 Télécharger le PDF de ce devis",
               data=f_pdf,
-              file_name=os.path.basename(pdf_path_crm),
+              file_name=os.path.basename(chemin_pdf_final),
               mime="application/pdf",
               key="btn_dl_crm"
           )
       else:
-        st.info("ℹ️ Fichier PDF introuvable sur le disque local.")
+        st.warning("⚠️ Fichier PDF physique introuvable sur le disque.")
+        if st.button("🔄 Régénérer ce devis PDF"):
+          if not os.path.exists(PDF_DIR):
+            os.makedirs(PDF_DIR)
+          nouveau_chemin = os.path.join(PDF_DIR, f"Devis_{str(devis_a_dupliquer).replace('/', '_')}.pdf")
+          
+          # Régénération rapide d'un PDF de secours avec les infos de la ligne CRM
+          try:
+            doc = SimpleDocTemplate(nouveau_chemin, pagesize=A4, rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)
+            story = [
+                Paragraph(<b>APEX - Devis régénéré</b>, getSampleStyleSheet()['Normal']),
+                Spacer(1, 15),
+                Paragraph(f"<b>N° Devis :</b> {devis_a_dupliquer}", getSampleStyleSheet()['Normal']),
+                Paragraph(f"<b>Client :</b> {ligne_selectionnee.get('Client', '')} ({ligne_selectionnee.get('Entreprise', '')})", getSampleStyleSheet()['Normal']),
+                Paragraph(f"<b>Total HT :</b> {ligne_selectionnee.get('Total_HT', '')} € | <b>Total TTC :</b> {ligne_selectionnee.get('Total_TTC', '')} €", getSampleStyleSheet()['Normal'])
+            ]
+            doc.build(story)
+            st.success("✅ PDF régénéré avec succès ! Vous pouvez maintenant le télécharger.")
+            st.rerun()
+          except Exception as e_reg:
+            st.error(f"❌ Erreur lors de la régénération : {e_reg}")
 
     if st.button("🚀 Charger ce devis dans les articles"):
       st.session_state["client_entreprise_val"] = str(
           ligne_selectionnee.get("Entreprise", "")
       )
-      st.session_state["client_nom_val"] = str(ligne_selectionnee.get("Client", ""))
-      st.session_state["client_email_val"] = str(ligne_selectionnee.get("Email", ""))
+      st.session_state["client_nom_val"] = str(
+          ligne_selectionnee.get("Client", "")
+      )
+      st.session_state["client_email_val"] = str(
+          ligne_selectionnee.get("Email", "")
+      )
       st.session_state["client_tel_val"] = str(
           ligne_selectionnee.get("Telephone", "")
       )
@@ -1723,9 +1756,9 @@ with onglets[11]:
           pass
 
       st.success(
-          f"✅ Devis {devis_a_dupliquer} chargé avec succès ! Vous pouvez le"
-          " modifier dans les onglets Articles."
+          f"✅ Devis {devis_a_dupliquer} chargé avec succès ! Redirection..."
       )
+      st.rerun() # Indispensable pour actualiser l'interface et appliquer le chargement
   else:
     st.info(
         "Aucun devis dans le CRM pour le moment. Générez votre premier devis"
