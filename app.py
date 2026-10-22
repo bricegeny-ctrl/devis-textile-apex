@@ -77,10 +77,10 @@ def charger_crm_gsheets():
     
     df = pd.DataFrame(data)
     
-    # Nettoyage robuste et universel des montants (gère le point et la virgule)
+    # Nettoyage robuste pour transformer la virgule de Google Sheets en point décimal Python
     for col in ["Total_HT", "Total_TTC"]:
       if col in df.columns:
-        def nettoyer_prix(val):
+        def nettoyer_montant(val):
           if pd.isna(val) or str(val).strip() == "":
             return 0.0
           if isinstance(val, (int, float)):
@@ -88,20 +88,22 @@ def charger_crm_gsheets():
           
           s = str(val).strip().replace(" ", "").replace("€", "")
           
-          # Si le format contient à la fois un point et une virgule (ex: 1.234,56)
-          if "." in s and "," in s:
-            s = s.replace(".", "").replace(",", ".")
-          # Si le format contient une virgule (ex: 180,73)
-          elif "," in s:
+          # Si le format utilise la virgule comme séparateur décimal (ex: "180,73")
+          if "," in s and "." not in s:
             s = s.replace(",", ".")
-          # Si le format contient un point (ex: 180.73), on le conserve tel quel !
-          
+          # Si les deux existent (ex format millier/décimale)
+          elif "," in s and "." in s:
+            if s.find(",") > s.find("."):
+              s = s.replace(".", "").replace(",", ".")
+            else:
+              s = s.replace(",", "")
+              
           try:
             return float(s)
           except:
             return 0.0
 
-        df[col] = df[col].apply(nettoyer_prix)
+        df[col] = df[col].apply(nettoyer_montant)
         
     return df
   except Exception as e:
