@@ -66,31 +66,33 @@ def obtenir_client_gspread():
 
 def charger_crm_gsheets():
   client = obtenir_client_gspread()
-  if client:
-    try:
-      sheet = client.open("CRM_Apex").sheet1
-      data = sheet.get_all_records()
-      if data:
-        return pd.DataFrame(data)
-    except Exception as e:
-      pass
-  return pd.DataFrame(
-      columns=[
-          "Numero_Devis",
-          "Date",
-          "Client",
-          "Contact",
-          "Email",
-          "Telephone",
-          "Total_HT",
-          "Total_TTC",
-          "Statut",
-          "Commercial",
-          "Mode_Reglement",
-          "PDF_Path",
-          "Deal_ID",
-      ]
-  )
+  if not client:
+    return pd.DataFrame()
+  try:
+    sh = client.open("CRM_Apex")
+    sheet = sh.sheet1
+    data = sheet.get_all_records()
+    if not data:
+      return pd.DataFrame()
+    
+    df = pd.DataFrame(data)
+    
+    # Nettoyage rigoureux des colonnes financières pour garder les bonnes décimales
+    for col in ["Total_HT", "Total_TTC"]:
+      if col in df.columns:
+        df[col] = (
+            df[col]
+            .astype(str)
+            .str.replace(" ", "")
+            .str.replace("€", "")
+            .str.replace(",", ".")
+        )
+        df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0.0)
+        
+    return df
+  except Exception as e:
+    st.error(f"❌ Erreur lors du chargement du CRM : {e}")
+    return pd.DataFrame()
 
 
 def enregistrer_dans_crm_gsheets(devis_data):
