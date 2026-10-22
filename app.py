@@ -1630,21 +1630,33 @@ with onglets[11]:
         "Statut" if "Statut" in df_crm.columns else "Statut du Devis"
     )
 
+    # Configuration des colonnes pour forcer l'affichage propre des prix en euros et centimes
+    column_config_dict = {
+        colonne_statut: st.column_config.SelectboxColumn(
+            "Statut du Devis",
+            help="Statut synchronisé avec HubSpot et Google Sheets",
+            options=[
+                "En cours",
+                "Envoyé",
+                "Accepté (Gagné)",
+                "Refusé (Perdu)",
+            ],
+            required=False,
+        )
+    }
+    
+    if "Total_HT" in df_crm.columns:
+      column_config_dict["Total_HT"] = st.column_config.NumberColumn(
+          "Total_HT", format="%.2f €"
+      )
+    if "Total_TTC" in df_crm.columns:
+      column_config_dict["Total_TTC"] = st.column_config.NumberColumn(
+          "Total_TTC", format="%.2f €"
+      )
+
     edited_df = st.data_editor(
         df_crm,
-        column_config={
-            colonne_statut: st.column_config.SelectboxColumn(
-                "Statut du Devis",
-                help="Statut synchronisé avec HubSpot et Google Sheets",
-                options=[
-                    "En cours",
-                    "Envoyé",
-                    "Accepté (Gagné)",
-                    "Refusé (Perdu)",
-                ],
-                required=False,
-            )
-        },
+        column_config=column_config_dict,
         disabled=[
             col
             for col in df_crm.columns
