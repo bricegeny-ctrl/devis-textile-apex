@@ -77,24 +77,31 @@ def charger_crm_gsheets():
     
     df = pd.DataFrame(data)
     
-    # Conversion correcte de la virgule française en point décimal
+    # Nettoyage robuste et universel des montants (gère le point et la virgule)
     for col in ["Total_HT", "Total_TTC"]:
       if col in df.columns:
-        def convertir_montant(val):
+        def nettoyer_prix(val):
           if pd.isna(val) or str(val).strip() == "":
             return 0.0
           if isinstance(val, (int, float)):
             return float(val)
           
-          # Nettoyage et remplacement strict de la virgule par un point
-          s = str(val).strip().replace(" ", "").replace("€", "").replace(",", ".")
-            
+          s = str(val).strip().replace(" ", "").replace("€", "")
+          
+          # Si le format contient à la fois un point et une virgule (ex: 1.234,56)
+          if "." in s and "," in s:
+            s = s.replace(".", "").replace(",", ".")
+          # Si le format contient une virgule (ex: 180,73)
+          elif "," in s:
+            s = s.replace(",", ".")
+          # Si le format contient un point (ex: 180.73), on le conserve tel quel !
+          
           try:
             return float(s)
           except:
             return 0.0
 
-        df[col] = df[col].apply(convertir_montant)
+        df[col] = df[col].apply(nettoyer_prix)
         
     return df
   except Exception as e:
