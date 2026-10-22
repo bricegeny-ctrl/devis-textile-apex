@@ -1729,33 +1729,209 @@ with onglets[11]:
                 topMargin=30,
                 bottomMargin=30,
             )
-            story = [
+            story = []
+            styles = getSampleStyleSheet()
+            style_sub = ParagraphStyle(
+                "SubStyle",
+                parent=styles["Normal"],
+                fontSize=8.5,
+                leading=11,
+                textColor=colors.HexColor("#4a5568"),
+            )
+            style_cell = ParagraphStyle(
+                "Cell", parent=styles["Normal"], fontSize=9, leading=11
+            )
+            style_cell_bold = ParagraphStyle(
+                "CellBold",
+                parent=styles["Normal"],
+                fontSize=9,
+                leading=11,
+                fontName="Helvetica-Bold",
+            )
+            style_right_bold = ParagraphStyle(
+                "RightBold",
+                parent=styles["Normal"],
+                fontSize=9,
+                leading=11,
+                fontName="Helvetica-Bold",
+                alignment=2,
+            )
+            style_right_normal = ParagraphStyle(
+                "RightNormal",
+                parent=styles["Normal"],
+                fontSize=9,
+                leading=11,
+                alignment=2,
+            )
+
+            # En-tête APEX
+            header_text = Paragraph(
+                "<b>APEX - SOLUTIONS VISUELLES, PRINT & TEXTILE</b><br/>Plasne"
+                " (Jura)<br/>Tél (Brice Geny) : 06 32 69 73 28 &nbsp;|&nbsp; Tél"
+                " (Brice Bugna) : 06 29 92 94 74<br/>Email :"
+                " contact@apex-visual.fr",
+                style_sub,
+            )
+            story.append(header_text)
+            story.append(Spacer(1, 10))
+            story.append(
                 Paragraph(
-                    "<b>APEX - Devis régénéré</b>",
-                    getSampleStyleSheet()["Normal"],
-                ),
-                Spacer(1, 15),
+                    f"<b>N° Devis :</b> {devis_a_dupliquer}"
+                    f" &nbsp;&nbsp;|&nbsp;&nbsp; <b>Date :</b>"
+                    f" {ligne_selectionnee.get('Date', datetime.now().strftime('%d/%m/%Y'))}"
+                    " &nbsp;&nbsp;|&nbsp;&nbsp; <b>Validité :</b> 30 Jours",
+                    style_sub,
+                )
+            )
+            story.append(Spacer(1, 10))
+
+            # Informations Client & Commande
+            client_nom_val = ligne_selectionnee.get("Client", "")
+            client_ent_val = ligne_selectionnee.get("Entreprise", "")
+            client_email_val = ligne_selectionnee.get("Email", "")
+            client_tel_val = ligne_selectionnee.get("Telephone", "")
+
+            nom_aff_client = (
+                f"<b>{client_ent_val}</b><br/>À l'attention de : {client_nom_val}"
+                if client_ent_val
+                else f"<b>{client_nom_val or 'Client'}</b>"
+            )
+            client_info_text = (
+                f"<b>CLIENT / DESTINATAIRE :</b><br/>{nom_aff_client}<br/>Email"
+                f" : {client_email_val}<br/>Tél : {client_tel_val}"
+            )
+            order_info_text = (
+                f"<b>DÉTAILS DE LA COMMANDE :</b><br/>Quantité globale :"
+                f" {ligne_selectionnee.get('Quantite_Totale', '')}"
+                " pièces<br/>Commercial (Owner) :"
+                f" {ligne_selectionnee.get('Commercial', '')}"
+            )
+
+            t_info = Table(
+                [[
+                    Paragraph(client_info_text, style_cell),
+                    Paragraph(order_info_text, style_cell),
+                ]],
+                colWidths=[270, 270],
+            )
+            t_info.setStyle(
+                TableStyle([
+                    ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#f7fafc")),
+                    ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#cbd5e0")),
+                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                    ("PADDING", (0, 0), (-1, -1), 8),
+                ])
+            )
+            story.append(t_info)
+            story.append(Spacer(1, 15))
+
+            # Tableau des articles (restaurés depuis le JSON du CRM)
+            table_data = [[
                 Paragraph(
-                    f"<b>N° Devis :</b> {devis_a_dupliquer}",
-                    getSampleStyleSheet()["Normal"],
+                    "<b>DÉSIGNATION & CARACTÉRISTIQUES</b>", style_cell_bold
                 ),
-                Paragraph(
-                    f"<b>Client :</b> {ligne_selectionnee.get('Client', '')}"
-                    f" ({ligne_selectionnee.get('Entreprise', '')})",
-                    getSampleStyleSheet()["Normal"],
-                ),
-                Paragraph(
-                    f"<b>Total HT :</b>"
-                    f" {ligne_selectionnee.get('Total_HT', '')} € |"
-                    f" <b>Total TTC :</b>"
-                    f" {ligne_selectionnee.get('Total_TTC', '')} €",
-                    getSampleStyleSheet()["Normal"],
-                ),
+                Paragraph("<b>QTÉ</b>", style_cell_bold),
+                Paragraph("<b>PRIX UNIT. HT</b>", style_cell_bold),
+                Paragraph("<b>TOTAL HT</b>", style_cell_bold),
+            ]]
+
+            lignes_json = ligne_selectionnee.get("Lignes_Articles", "")
+            has_items = False
+            if pd.notna(lignes_json) and str(lignes_json).strip():
+              try:
+                items_restores = json.loads(lignes_json)
+                for item in items_restores:
+                  q = item.get("quantite", 0)
+                  px = item.get("prix_vet_unit", 0)
+                  nom = item.get("nom_article", "Article")
+                  table_data.append([
+                      Paragraph(f"<b>Support : {nom}</b>", style_cell),
+                      str(q),
+                      f"{px:.3f} €",
+                      f"{px * q:.2f} €",
+                  ])
+                  remise = item.get("remise_fidelite", 0)
+                  if remise > 0:
+                    table_data.append([
+                        Paragraph(
+                            f"&nbsp;&nbsp;&bull; Réduction commerciale :"
+                            f" -{remise}%",
+                            style_cell,
+                        ),
+                        "",
+                        "",
+                        "",
+                    ])
+                has_items = True
+              except:
+                pass
+
+            if not has_items:
+              table_data.append([
+                  Paragraph(
+                      "<b>Prestation globale / Devis enregistré</b>",
+                      style_cell,
+                  ),
+                  str(ligne_selectionnee.get("Quantite_Totale", "1")),
+                  f"{float(ligne_selectionnee.get('Total_HT', 0)):.2f} €",
+                  f"{float(ligne_selectionnee.get('Total_HT', 0)):.2f} €",
+              ])
+
+            t_main = Table(table_data, colWidths=[260, 45, 115, 120])
+            t_main.setStyle(
+                TableStyle([
+                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#edf2f7")),
+                    ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#e2e8f0")),
+                    ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                    ("PADDING", (0, 0), (-1, -1), 6),
+                ])
+            )
+            story.append(t_main)
+            story.append(Spacer(1, 10))
+
+            total_ht_val = float(ligne_selectionnee.get("Total_HT", 0))
+            total_ttc_val = float(ligne_selectionnee.get("Total_TTC", 0))
+            tva_val = total_ttc_val - total_ht_val
+
+            totaux_data = [
+                [
+                    "",
+                    Paragraph("Sous-Total HT :", style_right_normal),
+                    Paragraph(f"{total_ht_val:.2f} €", style_right_normal),
+                ],
+                [
+                    "",
+                    Paragraph("TVA (20%) :", style_right_normal),
+                    Paragraph(f"{tva_val:.2f} €", style_right_normal),
+                ],
+                [
+                    "",
+                    Paragraph("TOTAL TTC :", style_right_bold),
+                    Paragraph(f"{total_ttc_val:.2f} €", style_right_bold),
+                ],
             ]
+            t_totaux = Table(totaux_data, colWidths=[240, 160, 140])
+            t_totaux.setStyle(
+                TableStyle([
+                    ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                    ("LINEABOVE", (1, 2), (-1, 2), 1, colors.black),
+                    ("PADDING", (0, 0), (-1, -1), 4),
+                ])
+            )
+            story.append(t_totaux)
+            story.append(Spacer(1, 15))
+
+            conditions_text = (
+                "<b>Conditions de règlement & Bon pour accord :</b><br/>•"
+                f" Règlement : {ligne_selectionnee.get('Mode_Reglement', 'Virement bancaire 30 jours')}<br/>• Fichiers"
+                " vectoriels fournis (.AI, .EPS, .PDF).<br/>• Bon pour accord"
+                " daté et signé requis."
+            )
+            story.append(Paragraph(conditions_text, style_sub))
+
             doc.build(story)
             st.success(
-                "✅ PDF régénéré avec succès ! Vous pouvez maintenant le"
-                " télécharger."
+                "✅ PDF régénéré avec le design professionnel complet !"
             )
             st.rerun()
           except Exception as e_reg:
