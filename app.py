@@ -94,9 +94,7 @@ def charger_crm_gsheets():
 
 
 def enregistrer_dans_crm_gsheets(devis_data):
-  if "Lignes_Articles" in devis_data:
-    devis_data.pop("Lignes_Articles")
-
+  # On conserve désormais Lignes_Articles pour l'enregistrer dans Google Sheets
   devis_data_propre = {
       k: ("" if pd.isna(v) else v) for k, v in devis_data.items()
   }
@@ -107,15 +105,15 @@ def enregistrer_dans_crm_gsheets(devis_data):
     return
 
   try:
-    # On ouvre explicitement le classeur "CRM_Apex"
     sh = client.open("CRM_Apex")
-    sheet = sh.sheet1  # C'est la toute première feuille (onglet) du classeur
+    sheet = sh.sheet1
 
     entetes_actuels = sheet.row_values(1)
 
-    if not entetes_actuels:
+    # Si la colonne Lignes_Articles n'existe pas dans le Google Sheet, on met à jour les en-têtes
+    if not entetes_actuels or "Lignes_Articles" not in entetes_actuels:
       entetes_actuels = list(devis_data_propre.keys())
-      sheet.append_row(entetes_actuels)
+      sheet.update("A1", [entetes_actuels])
 
     ligne_a_ecrire = [devis_data_propre.get(col, "") for col in entetes_actuels]
 
@@ -130,14 +128,8 @@ def enregistrer_dans_crm_gsheets(devis_data):
     else:
       sheet.append_row(ligne_a_ecrire)
 
-    # 🔍 Message de confirmation détaillé avec le titre de la feuille active
-    st.success(
-        f"✅ Succès total ! Écrit dans le fichier 'CRM_Apex', onglet"
-        f" '{sheet.title}', ligne numéro : {cellule_num.row if cellule_num else 'Nouvelle ligne en bas'}"
-    )
-
   except Exception as e:
-    st.error(f"❌ Erreur détaillée lors de l'enregistrement CRM : {str(e)}")
+    st.error(f"❌ Erreur lors de l'enregistrement CRM : {e_reg if 'e_reg' in locals() else e}")
 
 
 def mettre_a_jour_statut_gsheets(num_devis, nouveau_statut):
