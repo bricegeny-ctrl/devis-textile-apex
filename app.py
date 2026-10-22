@@ -77,17 +77,24 @@ def charger_crm_gsheets():
     
     df = pd.DataFrame(data)
     
-    # Nettoyage rigoureux des colonnes financières pour garder les bonnes décimales
+    # Correction propre du format décimal (conversion de la virgule en point)
     for col in ["Total_HT", "Total_TTC"]:
       if col in df.columns:
-        df[col] = (
-            df[col]
-            .astype(str)
-            .str.replace(" ", "")
-            .str.replace("€", "")
-            .str.replace(",", ".")
-        )
-        df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0.0)
+        def corriger_montant(val):
+          if pd.isna(val) or str(val).strip() == "":
+            return 0.0
+          if isinstance(val, (int, float)):
+            return float(val)
+          
+          # Nettoyage et remplacement de la virgule par un point
+          s = str(val).strip().replace(" ", "").replace("€", "")
+          s = s.replace(",", ".")
+          try:
+            return float(s)
+          except:
+            return 0.0
+
+        df[col] = df[col].apply(corriger_montant)
         
     return df
   except Exception as e:
