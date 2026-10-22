@@ -77,10 +77,10 @@ def charger_crm_gsheets():
     
     df = pd.DataFrame(data)
     
-    # Nettoyage robuste pour transformer la virgule de Google Sheets en point décimal Python
+    # Correction stricte : on remplace la virgule par un point pour garder les centimes exacts
     for col in ["Total_HT", "Total_TTC"]:
       if col in df.columns:
-        def nettoyer_montant(val):
+        def nettoyer_prix(val):
           if pd.isna(val) or str(val).strip() == "":
             return 0.0
           if isinstance(val, (int, float)):
@@ -88,22 +88,16 @@ def charger_crm_gsheets():
           
           s = str(val).strip().replace(" ", "").replace("€", "")
           
-          # Si le format utilise la virgule comme séparateur décimal (ex: "180,73")
-          if "," in s and "." not in s:
-            s = s.replace(",", ".")
-          # Si les deux existent (ex format millier/décimale)
-          elif "," in s and "." in s:
-            if s.find(",") > s.find("."):
-              s = s.replace(".", "").replace(",", ".")
-            else:
-              s = s.replace(",", "")
-              
+          # Si le format utilise une virgule (ex: "180,73"), on la convertit en point (".73")
+          if "," in s:
+            s = s.replace(".", "").replace(",", ".")
+            
           try:
             return float(s)
           except:
             return 0.0
 
-        df[col] = df[col].apply(nettoyer_montant)
+        df[col] = df[col].apply(nettoyer_prix)
         
     return df
   except Exception as e:
