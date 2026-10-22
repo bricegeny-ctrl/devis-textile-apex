@@ -77,24 +77,28 @@ def charger_crm_gsheets():
     
     df = pd.DataFrame(data)
     
-    # Correction propre du format décimal (conversion de la virgule en point)
+    # Conversion rigoureuse des montants du Google Sheet vers Python
     for col in ["Total_HT", "Total_TTC"]:
       if col in df.columns:
-        def corriger_montant(val):
+        def convertir_montant(val):
           if pd.isna(val) or str(val).strip() == "":
             return 0.0
           if isinstance(val, (int, float)):
             return float(val)
           
-          # Nettoyage et remplacement de la virgule par un point
+          # Nettoyage et transformation de la virgule en point décimal
           s = str(val).strip().replace(" ", "").replace("€", "")
-          s = s.replace(",", ".")
+          if "," in s and "." in s:
+            s = s.replace(".", "").replace(",", ".")
+          elif "," in s:
+            s = s.replace(",", ".")
+            
           try:
             return float(s)
           except:
             return 0.0
 
-        df[col] = df[col].apply(corriger_montant)
+        df[col] = df[col].apply(convertir_montant)
         
     return df
   except Exception as e:
