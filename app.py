@@ -1709,56 +1709,58 @@ with onglets[11]:
               data=f_pdf,
               file_name=os.path.basename(chemin_pdf_final),
               mime="application/pdf",
-              key="btn_dl_crm"
+              key="btn_dl_crm",
           )
       else:
         st.warning("⚠️ Fichier PDF physique introuvable sur le disque.")
         if st.button("🔄 Régénérer ce devis PDF"):
           if not os.path.exists(PDF_DIR):
             os.makedirs(PDF_DIR)
-          nouveau_chemin = os.path.join(PDF_DIR, f"Devis_{str(devis_a_dupliquer).replace('/', '_')}.pdf")
-          
-          # Régénération rapide d'un PDF de secours avec les infos de la ligne CRM
-         try:
-              doc = SimpleDocTemplate(
-                  nouveau_chemin,
-                  pagesize=A4,
-                  rightMargin=30,
-                  leftMargin=30,
-                  topMargin=30,
-                  bottomMargin=30,
-              )
-              story = [
-                  Paragraph(
-                      "<b>APEX - Devis régénéré</b>",
-                      getSampleStyleSheet()["Normal"],
-                  ),
-                  Spacer(1, 15),
-                  Paragraph(
-                      f"<b>N° Devis :</b> {devis_a_dupliquer}",
-                      getSampleStyleSheet()["Normal"],
-                  ),
-                  Paragraph(
-                      f"<b>Client :</b> {ligne_selectionnee.get('Client', '')}"
-                      f" ({ligne_selectionnee.get('Entreprise', '')})",
-                      getSampleStyleSheet()["Normal"],
-                  ),
-                  Paragraph(
-                      f"<b>Total HT :</b>"
-                      f" {ligne_selectionnee.get('Total_HT', '')} € |"
-                      f" <b>Total TTC :</b>"
-                      f" {ligne_selectionnee.get('Total_TTC', '')} €",
-                      getSampleStyleSheet()["Normal"],
-                  ),
-              ]
-              doc.build(story)
-              st.success(
-                  "✅ PDF régénéré avec succès ! Vous pouvez maintenant le"
-                  " télécharger."
-              )
-              st.rerun()
-            except Exception as e_reg:
-              st.error(f"❌ Erreur lors de la régénération : {e_reg}")
+          nouveau_chemin = os.path.join(
+              PDF_DIR, f"Devis_{str(devis_a_dupliquer).replace('/', '_')}.pdf"
+          )
+
+          try:
+            doc = SimpleDocTemplate(
+                nouveau_chemin,
+                pagesize=A4,
+                rightMargin=30,
+                leftMargin=30,
+                topMargin=30,
+                bottomMargin=30,
+            )
+            story = [
+                Paragraph(
+                    "<b>APEX - Devis régénéré</b>",
+                    getSampleStyleSheet()["Normal"],
+                ),
+                Spacer(1, 15),
+                Paragraph(
+                    f"<b>N° Devis :</b> {devis_a_dupliquer}",
+                    getSampleStyleSheet()["Normal"],
+                ),
+                Paragraph(
+                    f"<b>Client :</b> {ligne_selectionnee.get('Client', '')}"
+                    f" ({ligne_selectionnee.get('Entreprise', '')})",
+                    getSampleStyleSheet()["Normal"],
+                ),
+                Paragraph(
+                    f"<b>Total HT :</b>"
+                    f" {ligne_selectionnee.get('Total_HT', '')} € |"
+                    f" <b>Total TTC :</b>"
+                    f" {ligne_selectionnee.get('Total_TTC', '')} €",
+                    getSampleStyleSheet()["Normal"],
+                ),
+            ]
+            doc.build(story)
+            st.success(
+                "✅ PDF régénéré avec succès ! Vous pouvez maintenant le"
+                " télécharger."
+            )
+            st.rerun()
+          except Exception as e_reg:
+            st.error(f"❌ Erreur lors de la régénération : {e_reg}")
+            
     if st.button("🚀 Charger ce devis dans les articles"):
       st.session_state["client_entreprise_val"] = str(
           ligne_selectionnee.get("Entreprise", "")
