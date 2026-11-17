@@ -302,26 +302,36 @@ def chercher_entreprise_hubspot_par_siret(siret):
       "Content-Type": "application/json",
   }
   
-  # On récupère les entreprises avec le champ siret explicitement demandé
-  url = "https://api.hubapi.com/crm/v3/objects/companies?limit=100&properties=name,address,city,zip,phone,siret"
+  # Utilisation de l'API de recherche officielle HubSpot (interroge toute la base, sans limite de 50)
+  url = "https://api.hubapi.com/crm/v3/objects/companies/search"
+
+  payload = {
+      "filterGroups": [
+          {
+              "filters": [
+                  {
+                      "propertyName": "siret",
+                      "operator": "EQ",
+                      "value": siret_nettoye  # On cherche le SIRET complet exact
+                  }
+              ]
+          }
+      ],
+      "properties": ["name", "address", "city", "zip", "phone", "siret"],
+      "limit": 1
+  }
 
   try:
-    response = requests.get(url, headers=headers, timeout=5)
+    response = requests.post(url, headers=headers, json=payload, timeout=5)
     if response.status_code == 200:
-      entreprises = response.json().get("results", [])
-      siret_9 = siret_nettoye[:9]
-      
-      for ent in entreprises:
-        props = ent.get("properties", {})
-        siret_hs = "".join(filter(str.isdigit, str(props.get("siret", ""))))
-        
-        # On compare si le SIREN (9 chiffres) ou le SIRET complet correspond
-        if siret_hs and (siret_9 in siret_hs or siret_nettoye in siret_hs or siret_hs in siret_nettoye):
-          return props
+      results = response.json().get("results", [])
+      if results:
+        # Retourne directement les propriétés de l'entreprise trouvée
+        return results[0].get("properties", {})
     else:
-      st.error(f"Erreur lecture HubSpot ({response.status_code}) : {response.text}")
+      st.error(f"❌ Erreur recherche HubSpot ({response.status_code}) : {response.text}")
   except Exception as e:
-    st.error(f"Erreur de connexion HubSpot (Recherche) : {e}")
+    st.error(f"❌ Exception technique : {e}")
     
   return None
 
