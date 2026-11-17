@@ -302,7 +302,6 @@ def chercher_entreprise_hubspot_par_siret(siret):
       "Content-Type": "application/json",
   }
   
-  # Utilisation de l'API de recherche officielle HubSpot (interroge toute la base, sans limite de 50)
   url = "https://api.hubapi.com/crm/v3/objects/companies/search"
 
   payload = {
@@ -312,12 +311,13 @@ def chercher_entreprise_hubspot_par_siret(siret):
                   {
                       "propertyName": "siret",
                       "operator": "EQ",
-                      "value": siret_nettoye  # On cherche le SIRET complet exact
+                      "value": siret_nettoye
                   }
               ]
           }
       ],
       "properties": ["name", "address", "city", "zip", "phone", "siret"],
+      "associations": ["contacts"],  # 👈 On demande à HubSpot de lier les contacts associés
       "limit": 1
   }
 
@@ -326,8 +326,27 @@ def chercher_entreprise_hubspot_par_siret(siret):
     if response.status_code == 200:
       results = response.json().get("results", [])
       if results:
-        # Retourne directement les propriétés de l'entreprise trouvée
-        return results[0].get("properties", {})
+        entreprise = results[0]
+        props = entreprise.get("properties", {})
+        
+        # On va chercher le premier contact associé pour récupérer son nom, email et téléphone
+        associations = entreprise.get("associations", {})
+        contacts_associes = associations.get("contacts", {}).get("results", [])
+        
+        if contacts_associes:
+          contact_id = contacts_associes[0].get("id")
+          # Appel rapide pour récupérer les détails du contact
+          contact_url = f"https://api.hubapi.com/crm/v3/objects/contacts/{contact_id}?properties=firstname,lastname,email,phone"
+          resp_contact = requests.get(contact_url, headers=headers, timeout=5)
+          if resp_contact.status_code == 200:
+            c_props = resp_contact.json().get("properties", {})
+            prenom = c_props.get("firstname", "")
+            nom = c_props.get("lastname", "")
+            props["contact_nom"] = f"{prenom} {nom}".strip()
+            props["contact_email"] = c_props.get("email", "")
+            props["contact_phone"] = c_props.get("phone", "")
+            
+        return props
     else:
       st.error(f"❌ Erreur recherche HubSpot ({response.status_code}) : {response.text}")
   except Exception as e:
@@ -809,16 +828,24 @@ if st.sidebar.button("🔍 Rechercher le client via le SIRET"):
   if client_siret:
     infos_hs = chercher_entreprise_hubspot_par_siret(client_siret)
     if infos_hs:
-      st.sidebar.success("✅ Entreprise trouvée dans HubSpot !")
+      st.sidebar.success("✅ Entreprise et contact trouvés dans HubSpot !")
       st.session_state["client_entreprise_val"] = infos_hs.get("name", "")
       adresse_ligne = infos_hs.get("address", "")
       ville = infos_hs.get("city", "")
       cp = infos_hs.get("zip", "")
-      st.session_state["client_adresse_val"] = (
-          f"{adresse_ligne}\n{cp} {ville}".strip()
-      )
-      if infos_hs.get("phone"):
-        st.session_state["client_tel_val"] = infos_hs.get("phone")
+      st.session_state["client_adresse_val"] = f"{adresse_ligne}\n{cp} {ville}".strip()
+      
+      # Récupération du téléphone (priorité au contact, sinon entreprise)
+      tel_final = infos_hs.get("contact_phone") or infos_hs.get("phone", "")
+      if tel_final:
+        st.session_state["client_tel_val"] = tel_final
+        
+      # Récupération du nom du contact et de l'e-mail
+      if infos_hs.get("contact_nom"):
+        st.session_state["client_nom_val"] = infos_hs.get("contact_nom")
+      if infos_hs.get("contact_email"):
+        st.session_state["client_email_val"] = infos_hs.get("contact_email")
+        
       st.rerun()
     else:
       st.sidebar.warning("⚠️ Aucun client trouvé dans HubSpot avec ce SIRET.")
