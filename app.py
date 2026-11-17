@@ -285,7 +285,6 @@ def obtenir_prix_catalogue_exact_robuste(
     return round(prix_palier_min, 4)
 
 
-# --- SYNCHRONISATION HUBSPOT & RECHERCHE PAR SIRET ---
 # --- SYNCHRONISATION HUBSPOT & RECHERCHE PAR SIRET (VERSION CORRIGÉE AVEC DEBUG) ---
 
 def chercher_entreprise_hubspot_par_siret(siret):
@@ -304,16 +303,18 @@ def chercher_entreprise_hubspot_par_siret(siret):
   }
   
   url = "https://api.hubapi.com/crm/v3/objects/companies/search"
-  siret_9 = siret_nettoye[:9]
+
+  # On teste d'abord avec les 9 chiffres, puis si besoin avec le bloc complet
+  siret_recherche = siret_nettoye[:9]
 
   payload = {
       "filterGroups": [
           {
               "filters": [
                   {
-                      "propertyName": "siret",  # ⚠️ Vérifiez que c'est le nom interne exact dans HubSpot
-                      "operator": "EQ",
-                      "value": siret_9
+                      "propertyName": "siret",
+                      "operator": "CONTAINS_TOKEN",
+                      "value": siret_recherche
                   }
               ]
           }
