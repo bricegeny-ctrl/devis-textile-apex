@@ -302,35 +302,24 @@ def chercher_entreprise_hubspot_par_siret(siret):
       "Content-Type": "application/json",
   }
   
-  url = "https://api.hubapi.com/crm/v3/objects/companies/search"
-
-  # On teste d'abord avec les 9 chiffres, puis si besoin avec le bloc complet
-  siret_recherche = siret_nettoye[:9]
-
-  payload = {
-      "filterGroups": [
-          {
-              "filters": [
-                  {
-                      "propertyName": "siret",
-                      "operator": "CONTAINS_TOKEN",
-                      "value": siret_recherche
-                  }
-              ]
-          }
-      ],
-      "properties": ["name", "address", "city", "zip", "phone", "siret"],
-      "limit": 5
-  }
+  # On récupère les entreprises avec le champ siret explicitement demandé
+  url = "https://api.hubapi.com/crm/v3/objects/companies?limit=100&properties=name,address,city,zip,phone,siret"
 
   try:
-    response = requests.post(url, headers=headers, json=payload, timeout=5)
+    response = requests.get(url, headers=headers, timeout=5)
     if response.status_code == 200:
-      results = response.json().get("results", [])
-      if results:
-        return results[0].get("properties", {})
+      entreprises = response.json().get("results", [])
+      siret_9 = siret_nettoye[:9]
+      
+      for ent in entreprises:
+        props = ent.get("properties", {})
+        siret_hs = "".join(filter(str.isdigit, str(props.get("siret", ""))))
+        
+        # On compare si le SIREN (9 chiffres) ou le SIRET complet correspond
+        if siret_hs and (siret_9 in siret_hs or siret_nettoye in siret_hs or siret_hs in siret_nettoye):
+          return props
     else:
-      st.error(f"Erreur recherche HubSpot ({response.status_code}) : {response.text}")
+      st.error(f"Erreur lecture HubSpot ({response.status_code}) : {response.text}")
   except Exception as e:
     st.error(f"Erreur de connexion HubSpot (Recherche) : {e}")
     
