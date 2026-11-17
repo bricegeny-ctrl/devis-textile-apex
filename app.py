@@ -77,7 +77,7 @@ def charger_crm_gsheets():
     
     df = pd.DataFrame(data)
     
-    # Correction stricte : on remplace la virgule par un point pour garder les centimes exacts
+    # Correction : on nettoie les colonnes numériques
     for col in ["Total_HT", "Total_TTC"]:
       if col in df.columns:
         def nettoyer_prix(val):
@@ -87,8 +87,6 @@ def charger_crm_gsheets():
             return float(val)
           
           s = str(val).strip().replace(" ", "").replace("€", "")
-          
-          # Si le format utilise une virgule (ex: "180,73"), on la convertit en point (".73")
           if "," in s:
             s = s.replace(".", "").replace(",", ".")
             
@@ -106,7 +104,6 @@ def charger_crm_gsheets():
 
 
 def enregistrer_dans_crm_gsheets(devis_data):
-  # On conserve désormais Lignes_Articles pour l'enregistrer dans Google Sheets
   devis_data_propre = {
       k: ("" if pd.isna(v) else v) for k, v in devis_data.items()
   }
@@ -122,7 +119,6 @@ def enregistrer_dans_crm_gsheets(devis_data):
 
     entetes_actuels = sheet.row_values(1)
 
-    # Si la colonne Lignes_Articles n'existe pas dans le Google Sheet, on met à jour les en-têtes
     if not entetes_actuels or "Lignes_Articles" not in entetes_actuels:
       entetes_actuels = list(devis_data_propre.keys())
       sheet.update("A1", [entetes_actuels])
@@ -141,7 +137,7 @@ def enregistrer_dans_crm_gsheets(devis_data):
       sheet.append_row(ligne_a_ecrire)
 
   except Exception as e:
-    st.error(f"❌ Erreur lors de l'enregistrement CRM : {e_reg if 'e_reg' in locals() else e}")
+    st.error(f"❌ Erreur lors de l'enregistrement CRM : {e}")
 
 
 def mettre_a_jour_statut_gsheets(num_devis, nouveau_statut):
@@ -303,20 +299,37 @@ def chercher_entreprise_hubspot_par_siret(siret):
       "Authorization": f"Bearer {hubspot_token}",
       "Content-Type": "application/json",
   }
-  url = "https://api.hubapi.com/crm/v3/objects/companies?limit=100&properties=name,address,city,zip,phone,siret"
+  
+  # Utilisation de l'API de recherche HubSpot (plus rapide, sans limite de 100 fiches)
+  url = "https://api.hubapi.com/crm/v3/objects/companies/search"
+  siret_9 = siret_nettoye[:9]
+
+  payload = {
+      "filterGroups": [
+          {
+              "filters": [
+                  {
+                      "propertyName": "siret",
+                      "operator": "CONTAINS_TOKEN",
+                      "value": siret_9
+                  }
+              ]
+          }
+      ],
+      "properties": ["name", "address", "city", "zip", "phone", "siret"],
+      "limit": 5
+  }
 
   try:
-    response = requests.get(url, headers=headers, timeout=5)
+    response = requests.post(url, headers=headers, json=payload, timeout=5)
     if response.status_code == 200:
-      entreprises = response.json().get("results", [])
-      siret_9 = siret_nettoye[:9]
-      for ent in entreprises:
-        props = ent.get("properties", {})
-        siret_hs = "".join(filter(str.isdigit, str(props.get("siret", ""))))
-        if siret_9 in siret_hs or siret_nettoye in siret_hs:
-          return props
-  except:
-    pass
+      results = response.json().get("results", [])
+      if results:
+        # Retourne directement les propriétés de la première entreprise trouvée
+        return results[0].get("properties", {})
+  except Exception as e:
+    print(f"Erreur recherche SIRET HubSpot : {e}")
+    
   return None
 
 
@@ -746,6 +759,8 @@ if "client_nom_val" not in st.session_state:
   st.session_state["client_nom_val"] = ""
 if "client_email_val" not in st.session_state:
   st.session_state["client_email_val"] = ""
+if "articles_dupliques" not in st.session_state:
+  st.session_state["articles_dupliques"] = []
 
 st.sidebar.title("📋 Infos Client & Expédition")
 
@@ -832,9 +847,16 @@ if df_catalogue is None:
       " dossier."
   )
 
+# Récupération optionnelle des articles chargés en cas de duplication
+articles_dupliques_session = st.session_state.get("articles_dupliques", [])
+
 for i in range(10):
   with onglets[i]:
     st.subheader(f"Configuration de l'Article {i+1}")
+    
+    # Valeurs par défaut pour une éventuelle duplication
+    def_item = articles_dupliques_session[i] if i < len(articles_dupliques_session) else {}
+    
     metier_type = st.radio(
         f"Univers / Métier pour l'Article {i+1}",
         [
@@ -848,25 +870,26 @@ for i in range(10):
     if "Textile" in metier_type:
       sans_marquage = st.checkbox(
           f"Vêtement sans marquage (fourniture seule) {i+1}",
+          value=def_item.get("sans_marquage", False),
           key=f"sans_marq_{i}",
       )
       col1, col2 = st.columns(2)
       with col1:
         nom_article = st.text_input(
             f"Référence / Nom du vêtement {i+1}",
-            value="T-Shirt 100% coton bio" if i == 0 else f"Vêtement {i+1}",
+            value=def_item.get("nom_article", "T-Shirt 100% coton bio" if i == 0 else f"Vêtement {i+1}"),
             key=f"nom_textile_{i}",
         )
         qte = st.number_input(
             f"Quantité (pcs) {i+1}",
             min_value=0,
-            value=10 if i == 0 else 0,
+            value=int(def_item.get("quantite", 10 if i == 0 else 0)),
             key=f"qte_textile_{i}",
         )
         prix_vetement_ht = st.number_input(
             f"Prix unitaire HT support (€) {i+1}",
             min_value=0.0,
-            value=4.92,
+            value=float(def_item.get("prix_vet_unit", 4.92)),
             format="%.2f",
             key=f"px_textile_{i}",
         )
@@ -920,7 +943,9 @@ for i in range(10):
           marquages.append({"technique": t_marq, "emplacement": emp})
 
       option_ensachage = st.checkbox(
-          f"Option ensachage individuel {i+1}", key=f"ens_{i}"
+          f"Option ensachage individuel {i+1}",
+          value=def_item.get("option_ensachage", False),
+          key=f"ens_{i}",
       )
       type_sachet = (
           st.selectbox(
@@ -932,16 +957,20 @@ for i in range(10):
           else ""
       )
       option_assurance = st.checkbox(
-          f"Option assurance garantie textile {i+1}", key=f"ass_{i}"
+          f"Option assurance garantie textile {i+1}",
+          value=def_item.get("option_assurance", False),
+          key=f"ass_{i}",
       )
       option_stockage = st.checkbox(
-          f"Option stockage + picking {i+1}", key=f"stock_{i}"
+          f"Option stockage + picking {i+1}",
+          value=def_item.get("option_stockage", False),
+          key=f"stock_{i}",
       )
       remise_fidelite = st.number_input(
           f"Réduction fidélité (%) {i+1}",
           min_value=0.0,
           max_value=100.0,
-          value=0.0,
+          value=float(def_item.get("remise_fidelite", 0.0)),
           key=f"rem_{i}",
       )
 
@@ -1097,6 +1126,11 @@ for i in range(10):
             "remise_fidelite": remise_fidelite,
         })
 
+# --- NETTOYAGE DE LA SESSION DE DUPLICATION APRÈS LECTURE ---
+if "articles_dupliques" in st.session_state and st.session_state["articles_dupliques"]:
+  # On remet à vide pour ne pas écraser les modifications manuelles ultérieures
+  st.session_state["articles_dupliques"] = []
+
 # --- CALCUL DES QUANTITÉS CUMULÉES ---
 quantites_cumulees_marquages = {}
 for item in articles_saisis:
@@ -1137,7 +1171,6 @@ with onglets[10]:
       taux_remise = item["remise_fidelite"] / 100.0
       prix_original = item["prix_vet_unit"]
       
-      # Application de la réduction sur le support
       px_support = prix_original * (1.0 - taux_remise)
       tot_support = q * px_support
       
@@ -1159,7 +1192,6 @@ with onglets[10]:
                 m["technique"], m["emplacement"], qte_tot_ref
             )
           
-          # Application de la même réduction sur le tarif du marquage
           tarif_m = tarif_m_brut * (1.0 - taux_remise)
           tot_marquages += tarif_m * q
           marquages_calcules.append({
@@ -1263,7 +1295,6 @@ with onglets[10]:
     if st.button("📄 Générer le numéro de devis et le PDF"):
       num_devis = obtenir_prochain_numero_devis()
       
-      # Création indispensable du dossier PDF s'il n'existe pas
       if not os.path.exists(PDF_DIR):
         os.makedirs(PDF_DIR)
         
@@ -1279,7 +1310,6 @@ with onglets[10]:
           else ""
       )
       
-      # On sérialise les articles pour pouvoir les recharger plus tard si besoin
       lignes_export_str = json.dumps(articles_saisis, ensure_ascii=False)
 
       data_crm = {
@@ -1292,24 +1322,21 @@ with onglets[10]:
           "Email": client_email,
           "Telephone": client_contact_tel,
           "Quantite_Totale": quantite_globale_totale,
-          "Total_HT": round(total_general_ht / 100.0, 2),
-          "Total_TTC": round(total_ttc / 100.0, 2),
+          "Total_HT": round(total_general_ht, 2),
+          "Total_TTC": round(total_ttc, 2),
           "Statut": "En cours",
           "Mode_Reglement": mode_reglement,
           "PDF_Path": pdf_filename,
           "Deal_ID": "",
-          "Lignes_Articles": lignes_export_str, # Gardé en mémoire pour la duplication
+          "Lignes_Articles": lignes_export_str,
       }
 
-      # 1. Synchronisation HubSpot
       deal_id = synchroniser_avec_hubspot(data_crm)
       if deal_id:
         data_crm["Deal_ID"] = deal_id
 
-      # 2. Enregistrement persistant dans Google Sheets (CRM_Apex)
       enregistrer_dans_crm_gsheets(data_crm)
 
-      # 3. Génération effective du fichier PDF via ReportLab
       try:
         doc = SimpleDocTemplate(
             pdf_filename,
@@ -1452,7 +1479,6 @@ with onglets[10]:
               f"{item['prix_vet_unit']*item['quantite']:.2f} €",
           ])
           
-          # Mention claire de la réduction appliquée sur l'ensemble de la ligne
           if item["remise_fidelite"] > 0:
             table_data.append([
                 Paragraph(
@@ -1587,7 +1613,7 @@ with onglets[10]:
         st.success(
             f"✅ Devis PDF professionnel généré avec succès sous le numéro : **{num_devis}**"
         )
-        st.rerun() # Actualise l'affichage pour rendre le bouton de téléchargement visible instantanément
+        st.rerun()
       except Exception as e_pdf:
         st.error(f"❌ Erreur lors de la génération du PDF : {e_pdf}")
 
@@ -1642,7 +1668,6 @@ with onglets[11]:
         "Statut" if "Statut" in df_crm.columns else "Statut du Devis"
     )
 
-    # Configuration des colonnes pour forcer l'affichage propre des prix en euros et centimes
     column_config_dict = {
         colonne_statut: st.column_config.SelectboxColumn(
             "Statut du Devis",
@@ -1780,7 +1805,6 @@ with onglets[11]:
                 alignment=2,
             )
 
-            # --- GESTION DU LOGO APEX ---
             logo_path = (
                 "logo.png"
                 if os.path.exists("logo.png")
@@ -1815,7 +1839,6 @@ with onglets[11]:
             )
             story.append(Spacer(1, 10))
 
-            # --- INFOS CLIENT ---
             client_nom_val = ligne_selectionnee.get("Client", "")
             client_ent_val = ligne_selectionnee.get("Entreprise", "")
             client_email_val = ligne_selectionnee.get("Email", "")
@@ -1855,7 +1878,6 @@ with onglets[11]:
             story.append(t_info)
             story.append(Spacer(1, 15))
 
-            # --- RESTAURATION DES ARTICLES DEPUIS LE JSON ---
             table_data = [[
                 Paragraph(
                     "<b>DÉSIGNATION & CARACTÉRISTIQUES</b>", style_cell_bold
@@ -2047,7 +2069,7 @@ with onglets[11]:
       st.success(
           f"✅ Devis {devis_a_dupliquer} chargé avec succès ! Redirection..."
       )
-      st.rerun() # Indispensable pour actualiser l'interface et appliquer le chargement
+      st.rerun()
   else:
     st.info(
         "Aucun devis dans le CRM pour le moment. Générez votre premier devis"
