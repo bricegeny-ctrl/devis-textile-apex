@@ -317,7 +317,7 @@ def chercher_entreprise_hubspot_par_siret(siret):
           }
       ],
       "properties": ["name", "address", "city", "zip", "phone", "siret"],
-      "associations": ["contacts"],  # 👈 On demande à HubSpot de lier les contacts associés
+      "associations": ["contacts"],
       "limit": 1
   }
 
@@ -327,15 +327,25 @@ def chercher_entreprise_hubspot_par_siret(siret):
       results = response.json().get("results", [])
       if results:
         entreprise = results[0]
+        company_id = entreprise.get("id")
         props = entreprise.get("properties", {})
         
-        # On va chercher le premier contact associé pour récupérer son nom, email et téléphone
-        associations = entreprise.get("associations", {})
-        contacts_associes = associations.get("contacts", {}).get("results", [])
-        
+        # Recherche du contact associé (via les associations directes ou l'API v4)
+        contact_id = None
+        contacts_associes = entreprise.get("associations", {}).get("contacts", {}).get("results", [])
         if contacts_associes:
           contact_id = contacts_associes[0].get("id")
-          # Appel rapide pour récupérer les détails du contact
+          
+        if not contact_id and company_id:
+          assoc_url = f"https://api.hubapi.com/crm/v4/objects/companies/{company_id}/associations/contacts"
+          resp_assoc = requests.get(assoc_url, headers=headers, timeout=5)
+          if resp_assoc.status_code == 200:
+            assoc_results = resp_assoc.json().get("results", [])
+            if assoc_results:
+              contact_id = assoc_results[0].get("toObjectId")
+
+        # Récupération des détails du contact (Nom, Email, Téléphone)
+        if contact_id:
           contact_url = f"https://api.hubapi.com/crm/v3/objects/contacts/{contact_id}?properties=firstname,lastname,email,phone"
           resp_contact = requests.get(contact_url, headers=headers, timeout=5)
           if resp_contact.status_code == 200:
@@ -806,19 +816,16 @@ def calculer_frais_port(montant_base, zone):
       return 0.0
 
 
-# --- INITIALISATION SESSION STATE DUPLICATION ---
-if "client_entreprise_val" not in st.session_state:
-  st.session_state["client_entreprise_val"] = ""
-if "client_adresse_val" not in st.session_state:
-  st.session_state["client_adresse_val"] = ""
-if "client_tel_val" not in st.session_state:
-  st.session_state["client_tel_val"] = ""
-if "client_nom_val" not in st.session_state:
-  st.session_state["client_nom_val"] = ""
-if "client_email_val" not in st.session_state:
-  st.session_state["client_email_val"] = ""
-if "articles_dupliques" not in st.session_state:
-  st.session_state["articles_dupliques"] = []
+# Initialisation propre des valeurs par défaut dans le session_state
+for k, default_val in [
+    ("client_entreprise_val", ""),
+    ("client_adresse_val", ""),
+    ("client_tel_val", ""),
+    ("client_nom_val", "Client Exemple"),
+    ("client_email_val", "client@exemple.com")
+]:
+  if k not in st.session_state:
+    st.session_state[k] = default_val
 
 st.sidebar.title("📋 Infos Client & Expédition")
 
@@ -828,19 +835,18 @@ if st.sidebar.button("🔍 Rechercher le client via le SIRET"):
   if client_siret:
     infos_hs = chercher_entreprise_hubspot_par_siret(client_siret)
     if infos_hs:
-      st.sidebar.success("✅ Entreprise et contact trouvés dans HubSpot !")
+      st.sidebar.success("✅ Entreprise et contact trouvés !")
       st.session_state["client_entreprise_val"] = infos_hs.get("name", "")
+      
       adresse_ligne = infos_hs.get("address", "")
       ville = infos_hs.get("city", "")
       cp = infos_hs.get("zip", "")
       st.session_state["client_adresse_val"] = f"{adresse_ligne}\n{cp} {ville}".strip()
       
-      # Récupération du téléphone (priorité au contact, sinon entreprise)
       tel_final = infos_hs.get("contact_phone") or infos_hs.get("phone", "")
       if tel_final:
         st.session_state["client_tel_val"] = tel_final
         
-      # Récupération du nom du contact et de l'e-mail
       if infos_hs.get("contact_nom"):
         st.session_state["client_nom_val"] = infos_hs.get("contact_nom")
       if infos_hs.get("contact_email"):
@@ -850,24 +856,13 @@ if st.sidebar.button("🔍 Rechercher le client via le SIRET"):
     else:
       st.sidebar.warning("⚠️ Aucun client trouvé dans HubSpot avec ce SIRET.")
 
-client_nom = st.sidebar.text_input(
-    "Nom du Client",
-    value=st.session_state.get("client_nom_val", "Client Exemple"),
-)
-client_entreprise = st.sidebar.text_input(
-    "Société / Entreprise", value=st.session_state["client_entreprise_val"]
-)
-client_contact = st.sidebar.text_input("Nom de contact", "")
-client_adresse = st.sidebar.text_area(
-    "Adresse complète", value=st.session_state["client_adresse_val"]
-)
-client_email = st.sidebar.text_input(
-    "Email", value=st.session_state.get("client_email_val", "client@exemple.com")
-)
-client_contact_tel = st.sidebar.text_input(
-    "Téléphone", value=st.session_state["client_tel_val"]
-)
-logo_file = st.sidebar.file_uploader(
+# Widgets liés aux clés du session_state pour forcer la mise à jour graphique
+client_nom = st.sidebar.text_input("Nom du Client", key="client_nom_val")
+client_entreprise = st.sidebar.text_input("Société / Entreprise", key="client_entreprise_val")
+client_contact = st.sidebar.text_input("Nom de contact", key="client_contact_val")
+client_adresse = st.sidebar.text_area("Adresse complète", key="client_adresse_val")
+client_email = st.sidebar.text_input("Email", key="client_email_val")
+client_contact_tel = st.sidebar.text_input("Téléphone", key="client_tel_val")logo_file = st.sidebar.file_uploader(
     "Logo entreprise (PNG/JPG)", type=["png", "jpg", "jpeg"]
 )
 
