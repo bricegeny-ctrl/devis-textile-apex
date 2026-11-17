@@ -862,7 +862,9 @@ client_entreprise = st.sidebar.text_input("Société / Entreprise", key="client_
 client_contact = st.sidebar.text_input("Nom de contact", key="client_contact_val")
 client_adresse = st.sidebar.text_area("Adresse complète", key="client_adresse_val")
 client_email = st.sidebar.text_input("Email", key="client_email_val")
-client_contact_tel = st.sidebar.text_input("Téléphone", key="client_tel_val")logo_file = st.sidebar.file_uploader(
+client_contact_tel = st.sidebar.text_input("Téléphone", key="client_tel_val")logo_file = st.sidebar.file_uploader
+
+(
     "Logo entreprise (PNG/JPG)", type=["png", "jpg", "jpeg"]
 )
 
