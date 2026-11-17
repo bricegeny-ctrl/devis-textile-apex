@@ -286,6 +286,8 @@ def obtenir_prix_catalogue_exact_robuste(
 
 
 # --- SYNCHRONISATION HUBSPOT & RECHERCHE PAR SIRET ---
+# --- SYNCHRONISATION HUBSPOT & RECHERCHE PAR SIRET (VERSION CORRIGÉE AVEC DEBUG) ---
+
 def chercher_entreprise_hubspot_par_siret(siret):
   siret_nettoye = "".join(filter(str.isdigit, str(siret)))
   if not siret_nettoye:
@@ -293,6 +295,7 @@ def chercher_entreprise_hubspot_par_siret(siret):
 
   hubspot_token = st.secrets.get("HUBSPOT_TOKEN", "")
   if not hubspot_token:
+    st.error("❌ Token HubSpot manquant dans st.secrets.")
     return None
 
   headers = {
@@ -300,7 +303,6 @@ def chercher_entreprise_hubspot_par_siret(siret):
       "Content-Type": "application/json",
   }
   
-  # Utilisation de l'API de recherche HubSpot (plus rapide, sans limite de 100 fiches)
   url = "https://api.hubapi.com/crm/v3/objects/companies/search"
   siret_9 = siret_nettoye[:9]
 
@@ -309,8 +311,8 @@ def chercher_entreprise_hubspot_par_siret(siret):
           {
               "filters": [
                   {
-                      "propertyName": "siret",
-                      "operator": "CONTAINS_TOKEN",
+                      "propertyName": "siret",  # ⚠️ Vérifiez que c'est le nom interne exact dans HubSpot
+                      "operator": "EQ",
                       "value": siret_9
                   }
               ]
@@ -325,10 +327,11 @@ def chercher_entreprise_hubspot_par_siret(siret):
     if response.status_code == 200:
       results = response.json().get("results", [])
       if results:
-        # Retourne directement les propriétés de la première entreprise trouvée
         return results[0].get("properties", {})
+    else:
+      st.error(f"Erreur recherche HubSpot ({response.status_code}) : {response.text}")
   except Exception as e:
-    print(f"Erreur recherche SIRET HubSpot : {e}")
+    st.error(f"Erreur de connexion HubSpot (Recherche) : {e}")
     
   return None
 
@@ -336,6 +339,7 @@ def chercher_entreprise_hubspot_par_siret(siret):
 def synchroniser_avec_hubspot(client_data):
   hubspot_token = st.secrets.get("HUBSPOT_TOKEN", "")
   if not hubspot_token or hubspot_token == "VOTRE_TOKEN_ACCES_PRIVE_HUBSPOT":
+    st.error("❌ Token HubSpot non configuré.")
     return None
 
   headers = {
@@ -370,8 +374,10 @@ def synchroniser_avec_hubspot(client_data):
         results = response.json().get("results", [])
         if results:
           company_id = results[0]["id"]
-    except:
-      pass
+      else:
+        st.warning(f"Recherche entreprise échec ({response.status_code}): {response.text}")
+    except Exception as e:
+      st.error(f"Erreur exception recherche entreprise : {e}")
 
     if not company_id:
       create_company_url = "https://api.hubapi.com/crm/v3/objects/companies"
@@ -391,14 +397,14 @@ def synchroniser_avec_hubspot(client_data):
         )
         if resp_comp.status_code in [200, 201]:
           company_id = resp_comp.json().get("id")
-      except:
-        pass
+        else:
+          st.error(f"Erreur création entreprise HubSpot ({resp_comp.status_code}) : {resp_comp.text}")
+      except Exception as e:
+        st.error(f"Erreur exception création entreprise : {e}")
 
   contact_id = None
   if email:
-    contact_search_url = (
-        "https://api.hubapi.com/crm/v3/objects/contacts/search"
-    )
+    contact_search_url = "https://api.hubapi.com/crm/v3/objects/contacts/search"
     contact_search_payload = {
         "filterGroups": [{
             "filters": [{
@@ -419,8 +425,8 @@ def synchroniser_avec_hubspot(client_data):
         c_results = resp_c_search.json().get("results", [])
         if c_results:
           contact_id = c_results[0]["id"]
-    except:
-      pass
+    except Exception as e:
+      st.error(f"Erreur recherche contact : {e}")
 
   parts_nom = nom_client.split(" ", 1)
   prenom = parts_nom[0]
@@ -442,15 +448,17 @@ def synchroniser_avec_hubspot(client_data):
       )
       if resp_contact.status_code in [200, 201]:
         contact_id = resp_contact.json().get("id")
-    except:
-      pass
+      else:
+        st.error(f"Erreur création contact HubSpot ({resp_contact.status_code}) : {resp_contact.text}")
+    except Exception as e:
+      st.error(f"Erreur exception création contact : {e}")
 
   if contact_id and company_id:
     assoc_url = f"https://api.hubapi.com/crm/v3/objects/contacts/{contact_id}/associations/companies/{company_id}/contact_to_company"
     try:
       requests.put(assoc_url, headers=headers, timeout=5)
-    except:
-      pass
+    except Exception as e:
+      st.error(f"Erreur association contact/entreprise : {e}")
 
   deal_id = None
   if company_id:
@@ -474,10 +482,41 @@ def synchroniser_avec_hubspot(client_data):
         deal_id = resp_deal.json().get("id")
         assoc_deal_url = f"https://api.hubapi.com/crm/v3/objects/deals/{deal_id}/associations/companies/{company_id}/deal_to_company"
         requests.put(assoc_deal_url, headers=headers, timeout=5)
-    except:
-      pass
+      else:
+        st.error(f"Erreur création transaction (Deal) HubSpot ({resp_deal.status_code}) : {resp_deal.text}")
+    except Exception as e:
+      st.error(f"Erreur exception création deal : {e}")
 
   return deal_id
+
+
+def mettre_a_jour_statut_deal_hubspot(deal_id, statut_str):
+  if not deal_id or pd.isna(deal_id) or str(deal_id).strip() == "":
+    return
+  hubspot_token = st.secrets.get("HUBSPOT_TOKEN", "")
+  if not hubspot_token:
+    return
+
+  mapping_stages = {
+      "En cours": "appointmentscheduled",
+      "Envoyé": "qualifiedtobuy",
+      "Accepté (Gagné)": "closedwon",
+      "Refusé (Perdu)": "closedlost",
+  }
+  stage_hs = mapping_stages.get(statut_str, "appointmentscheduled")
+
+  url = f"https://api.hubapi.com/crm/v3/objects/deals/{deal_id}"
+  headers = {
+      "Authorization": f"Bearer {hubspot_token}",
+      "Content-Type": "application/json",
+  }
+  payload = {"properties": {"dealstage": stage_hs}}
+  try:
+    response = requests.patch(url, headers=headers, json=payload, timeout=5)
+    if response.status_code != 200:
+      st.error(f"Erreur mise à jour statut Deal HubSpot ({response.status_code}) : {response.text}")
+  except Exception as e:
+    st.error(f"Erreur exception mise à jour statut Deal : {e}")
 
 
 def mettre_a_jour_statut_deal_hubspot(deal_id, statut_str):
