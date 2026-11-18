@@ -77,7 +77,7 @@ def charger_crm_gsheets():
     
     df = pd.DataFrame(data)
     
-    # Correction : on nettoie les colonnes numériques
+    # Nettoyage strict et sécurisé des colonnes financières
     for col in ["Total_HT", "Total_TTC"]:
       if col in df.columns:
         def nettoyer_prix(val):
