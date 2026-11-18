@@ -1454,7 +1454,7 @@ with onglets[10]:
             "<b>APEX - SOLUTIONS VISUELLES, PRINT & TEXTILE</b><br/>Plasne"
             " (Jura)<br/>Tél (Brice Geny) : 06 32 69 73 28 &nbsp;|&nbsp; Tél"
             " (Brice Bugna) : 06 29 92 94 74<br/>Email :"
-            " brice.geny@gmail.com",
+            " contact@apex-bc.fr",
             style_sub,
         )
         if logo_path and os.path.exists(logo_path):
