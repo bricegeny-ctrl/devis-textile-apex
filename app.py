@@ -71,32 +71,26 @@ def charger_crm_gsheets():
   try:
     sh = client.open("CRM_Apex")
     sheet = sh.sheet1
-    data = sheet.get_all_records()
+    # UNFORMATTED_VALUE force Google Sheets à renvoyer de vrais nombres (ex: 125.95) sans formatage texte français
+    data = sheet.get_all_records(value_render_option="UNFORMATTED_VALUE")
     if not data:
       return pd.DataFrame()
-    
+
     df = pd.DataFrame(data)
-    
-    # Nettoyage strict et sécurisé des colonnes financières
+
     for col in ["Total_HT", "Total_TTC"]:
       if col in df.columns:
-        def nettoyer_prix(val):
-          if pd.isna(val) or str(val).strip() == "":
-            return 0.0
-          if isinstance(val, (int, float)):
-            return float(val)
-          
-          s = str(val).strip().replace(" ", "").replace("€", "")
-          if "," in s:
-            s = s.replace(".", "").replace(",", ".")
-            
-          try:
-            return float(s)
-          except:
-            return 0.0
+        # Sécurité au cas où une cellule contiendrait encore du texte avec une virgule
+        df[col] = (
+            df[col]
+            .astype(str)
+            .str.replace("€", "", regex=False)
+            .str.replace("\xa0", "", regex=False)
+            .str.replace(" ", "", regex=False)
+            .str.replace(",", ".", regex=False)
+        )
+        df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0.0)
 
-        df[col] = df[col].apply(nettoyer_prix)
-        
     return df
   except Exception as e:
     st.error(f"❌ Erreur lors du chargement du CRM : {e}")
