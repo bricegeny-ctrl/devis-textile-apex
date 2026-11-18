@@ -1454,7 +1454,7 @@ with onglets[10]:
             "<b>APEX - SOLUTIONS VISUELLES, PRINT & TEXTILE</b><br/>Plasne"
             " (Jura)<br/>Tél (Brice Geny) : 06 32 69 73 28 &nbsp;|&nbsp; Tél"
             " (Brice Bugna) : 06 29 92 94 74<br/>Email :"
-            " contact@apex-visual.fr",
+            " brice.geny@gmail.com",
             style_sub,
         )
         if logo_path and os.path.exists(logo_path):
@@ -1494,7 +1494,7 @@ with onglets[10]:
         order_info_text = (
             f"<b>DÉTAILS DE LA COMMANDE :</b><br/>Quantité globale :"
             f" {quantite_globale_totale} pièces<br/>Délai estimé : 8 à 10 jours"
-            f" ouvrés<br/>Commercial (Owner) : {conseiller_nom}"
+            f" ouvrés, sauf broderie, 3 à 4 semaines <br/>Commercial : {conseiller_nom}"
         )
 
         t_info = Table(
